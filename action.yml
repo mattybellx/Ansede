@@ -1,0 +1,124 @@
+name: 'ansede-static'
+description: 'Zero-dependency SAST scanner — detects IDOR, auth bypass, SQLi, path traversal, and 20+ categories. No GPU, no API keys.'
+author: 'ansede'
+
+inputs:
+  path:
+    description: 'File or directory to scan (default: current directory)'
+    required: false
+    default: '.'
+  fail-on:
+    description: 'Exit 1 when any finding at this severity or above is found (critical/high/medium/low/info/never)'
+    required: false
+    default: 'high'
+  format:
+    description: 'Output format: text, json, or sarif'
+    required: false
+    default: 'sarif'
+  output:
+    description: 'Write output to this file (stdout if omitted). Required for SARIF upload.'
+    required: false
+    default: 'ansede.sarif'
+  exclude:
+    description: 'Comma-separated path patterns to exclude (e.g. "tests,migrations")'
+    required: false
+    default: ''
+  version:
+    description: 'ansede-static version to install (default: latest)'
+    required: false
+    default: ''
+  upload-sarif:
+    description: 'Upload SARIF results to GitHub Code Scanning (requires contents:write and security-events:write permissions)'
+    required: false
+    default: 'true'
+
+outputs:
+  findings-count:
+    description: 'Total number of findings across all files'
+    value: ${{ steps.scan.outputs.findings_count }}
+  sarif-file:
+    description: 'Path to the generated SARIF file'
+    value: ${{ inputs.output }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Install ansede-static
+      shell: bash
+      env:
+        INPUT_VERSION: ${{ inputs.version }}
+      run: |
+        if [ -n "$INPUT_VERSION" ]; then
+          pip install --quiet "ansede-static==$INPUT_VERSION"
+        else
+          pip install --quiet ansede-static
+        fi
+
+    - name: Run ansede-static
+      id: scan
+      shell: bash
+      env:
+        INPUT_PATH: ${{ inputs.path }}
+        INPUT_FORMAT: ${{ inputs.format }}
+        INPUT_OUTPUT: ${{ inputs.output }}
+        INPUT_EXCLUDE: ${{ inputs.exclude }}
+      run: |
+        ARGS=("$INPUT_PATH" --format "$INPUT_FORMAT" --fail-on never)
+        COUNT_ARGS=("$INPUT_PATH" --format json --fail-on never)
+        if [ -n "$INPUT_OUTPUT" ]; then
+          ARGS+=(--output "$INPUT_OUTPUT")
+        fi
+        if [ -n "$INPUT_EXCLUDE" ]; then
+          for pat in $(echo "$INPUT_EXCLUDE" | tr ',' ' '); do
+            ARGS+=(--exclude "$pat")
+            COUNT_ARGS+=(--exclude "$pat")
+          done
+        fi
+
+        ansede-static "${ARGS[@]}"
+
+        TMP_JSON="$(mktemp)"
+        ansede-static "${COUNT_ARGS[@]}" > "$TMP_JSON" 2>/dev/null || true
+        FINDINGS_COUNT="$(python3 - "$TMP_JSON" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as handle:
+    data = json.load(handle)
+
+if isinstance(data, dict):
+    summary = data.get("summary")
+    if isinstance(summary, dict) and isinstance(summary.get("total_findings"), int):
+        print(summary["total_findings"])
+    else:
+        results = data.get("results", [])
+        print(sum(len(entry.get("findings", [])) for entry in results if isinstance(entry, dict)))
+elif isinstance(data, list):
+    print(sum(len(entry.get("findings", [])) for entry in data if isinstance(entry, dict)))
+else:
+    print(0)
+PY
+        )"
+        rm -f "$TMP_JSON"
+        echo "findings_count=$FINDINGS_COUNT" >> "$GITHUB_OUTPUT"
+
+    - name: Upload SARIF to Code Scanning
+      if: ${{ inputs.upload-sarif == 'true' && inputs.format == 'sarif' && inputs.output != '' }}
+      uses: github/codeql-action/upload-sarif@v3
+      with:
+        sarif_file: ${{ inputs.output }}
+        category: ansede-static
+
+    - name: Enforce fail-on threshold
+      shell: bash
+      env:
+        INPUT_FAIL_ON: ${{ inputs.fail-on }}
+        INPUT_PATH: ${{ inputs.path }}
+      run: |
+        if [ "$INPUT_FAIL_ON" != "never" ]; then
+          ansede-static "$INPUT_PATH" --fail-on "$INPUT_FAIL_ON" --format text --no-colour 2>&1 || exit 1
+        fi
+
+branding:
+  icon: 'shield'
+  color: 'red'

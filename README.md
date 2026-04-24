@@ -1,0 +1,398 @@
+﻿# ansede-static
+
+**Static security analysis that finds what Bandit misses.**
+
+Detects **IDOR, unauthorized access, and auth bypass** at the AST level — plus SQL injection,
+command injection, hardcoded secrets, and 20+ other categories. Zero dependencies. No GPU.
+Works on Python 3.9+.
+
+```bash
+pip install ansede-static
+ansede-static src/
+```
+
+[![PyPI version](https://badge.fury.io/py/ansede-static.svg)](https://pypi.org/project/ansede-static/)
+[![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
+[![CI](https://github.com/ansede/ansede-static/actions/workflows/ci.yml/badge.svg)](https://github.com/ansede/ansede-static/actions)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
+---
+
+## The problem with existing tools
+
+Bandit finds `subprocess(shell=True)`. It does not find this:
+
+```python
+# CWE-639 — IDOR (Insecure Direct Object Reference)
+# Bandit: silent.  ansede-static: CRITICAL
+
+@app.route("/invoice/<invoice_id>")
+@login_required
+def get_invoice(invoice_id):
+    #                              no WHERE user_id = current_user.id
+    return db.execute("SELECT * FROM invoices WHERE id = ?", (invoice_id,))
+```
+
+Or this:
+
+```python
+# CWE-285 — Missing Ownership Check
+# Bandit: silent.  ansede-static: HIGH
+
+@app.route("/post/<post_id>/delete", methods=["POST"])
+@login_required
+def delete_post(post_id):
+    # No: if post.author_id != current_user.id: abort(403)
+    Post.query.filter_by(id=post_id).delete()
+```
+
+Or this:
+
+```python
+# CWE-862 — Missing Authentication
+# Bandit: silent.  ansede-static: HIGH
+
+@app.route("/admin/users")
+def list_users():      # no @login_required, no @admin_required
+    return User.query.all()
+```
+
+These are the bugs that appear in CVE databases. These are the bugs that cost companies millions.
+`ansede-static` is a zero-dependency SAST tool that detects them at the AST level.
+
+---
+
+## Quick start
+
+```bash
+pip install ansede-static
+
+# Scan a directory (recursive)
+ansede-static src/
+
+# Fail CI on high/critical findings
+ansede-static src/ --fail-on high
+
+# SARIF output for GitHub Code Scanning
+ansede-static src/ --format sarif --output results.sarif
+
+# JSON for scripting
+ansede-static src/ --format json | python -m json.tool
+
+# Scan from stdin
+cat app.py | ansede-static --stdin --lang python
+
+# Only show NEW findings vs. a saved baseline
+ansede-static src/ --format json --output baseline.json   # first run
+ansede-static src/ --baseline baseline.json               # later runs
+```
+
+---
+
+## Inline suppression
+
+Silence individual findings with a comment on the same line:
+
+```python
+@app.route("/public/feed")   # ansede: ignore[CWE-862]
+def public_feed():
+    return get_posts()
+```
+
+```javascript
+document.getElementById("out").innerHTML = safe;  // ansede: ignore[CWE-79]
+```
+
+Use `# ansede: ignore` (no brackets) to suppress **all** findings on a line.
+
+---
+
+## Baseline diffing (`--baseline`)
+
+Generate a baseline, then only see new findings on subsequent runs:
+
+```bash
+# Save current state
+ansede-static src/ --format json --output .ansede-baseline.json
+
+# CI — only fail on NEW findings
+ansede-static src/ --baseline .ansede-baseline.json --fail-on high
+```
+
+This is ideal for adopting ansede-static on a large codebase incrementally.
+
+---
+
+## GitHub Action (one line)
+
+```yaml
+# .github/workflows/security.yml
+- uses: ansede/ansede-static@v1
+  with:
+    path: src/
+    fail-on: high       # optional: critical/high/medium/low/never
+    upload-sarif: true  # uploads to GitHub Code Scanning automatically
+```
+
+---
+
+## VS Code extension
+
+Install from the VS Code marketplace: **Ansede Security Scanner**
+
+Squiggles appear inline as you type. Clicking a CWE code opens the MITRE definition.
+Works with any `ansede-static` version installed in your project venv.
+
+---
+
+## Detection coverage
+
+### What Bandit cannot detect (ansede-static novel categories)
+
+| CWE     | Category                       | Example pattern                              |
+|---------|--------------------------------|----------------------------------------------|
+| CWE-639 | IDOR                           | Auth route query without ownership WHERE     |
+| CWE-285 | Broken Access Control / Ownership | Mutation without owner guard or admin route with auth only |
+| CWE-862 | Missing Authentication         | Flask/FastAPI route with no auth decorator   |
+| CWE-287 | Auth Bypass via Presence-Check | `if token:` without verifying the token      |
+| CWE-117 | Log Injection                  | Untrusted data in `log.*()` calls (CRLF)     |
+
+### Python (AST-based — 27 rule categories)
+
+| CWE    | Category                   | Notes                                        |
+|--------|----------------------------|----------------------------------------------|
+| CWE-89  | SQL Injection             | Taint: f-string, %-format, `.format()`       |
+| CWE-78  | Command Injection         | `subprocess` + `shell=True` + dynamic arg    |
+| CWE-95  | Code Injection            | `eval()`, `exec()`, `compile()`              |
+| CWE-502 | Unsafe Deserialization    | `pickle`, `marshal`, `yaml.load`             |
+| CWE-22  | Path Traversal            | `os.path.join` with unsanitized variable     |
+| CWE-918 | SSRF                      | HTTP clients with unvalidated URLs           |
+| CWE-798 | Hardcoded Secrets         | API keys, tokens, passwords, AWS creds       |
+| CWE-1188 | Dangerous Defaults       | `debug=True`, `verify=False`, CORS wildcard  |
+| CWE-327 | Weak Cryptography         | MD5/SHA1 for password hashing                |
+| CWE-338 | Weak PRNG                 | `random` module for security tokens          |
+| CWE-617 | Silent Exception Swallowing | `except Exception: pass`                   |
+| CWE-345 | Broken Auth               | JWT `verify=False`                           |
+| —       | Inter-procedural Taint    | Tracks taint across function calls           |
+| —       | Cyclomatic Complexity     | Flags CC > 15 (high-risk code paths)         |
+
+### JavaScript / TypeScript (23+ pattern categories)
+
+| CWE     | Category               | Example                                        |
+|---------|------------------------|------------------------------------------------|
+| CWE-79  | XSS                    | `innerHTML`, `document.write`, unsafe templates |
+| CWE-95  | Code Injection         | `eval()`, `new Function()`, `setTimeout(str)` |
+| CWE-78  | Command Injection      | `exec()` with template literals               |
+| CWE-89  | SQL Injection          | Template literal in `query()`                 |
+| CWE-798 | Hardcoded Secrets      | API keys, JWT secrets, AWS creds              |
+| CWE-22  | Path Traversal         | `fs.readFile` with `req.*` input              |
+| CWE-1321 | Prototype Pollution   | `Object.assign`, `__proto__`, spread          |
+| CWE-1333 | ReDoS                 | Catastrophic backtracking regex               |
+| CWE-307 | No Rate Limiting       | Auth routes without rate-limiter middleware   |
+| CWE-352 | Missing CSRF           | POST/PUT without CSRF middleware              |
+| CWE-862 | Missing Authentication | Sensitive/admin route with no auth middleware |
+| CWE-287 | Auth Bypass            | `if (token)` gate without verification        |
+| CWE-639 | Route-level IDOR       | `findByPk(req.params.id)` without owner scope |
+| CWE-285 | Broken Access Control / Ownership | `post.destroy()` after ID lookup, no owner guard; admin route with auth only |
+
+JS/TS route findings now carry trace evidence too, so SARIF output includes code flows that show
+the route, resource parameter, auth middleware (if any), the missing guard, and the lookup or mutation sink.
+
+### Current scope and limitations
+
+- **Python** findings are AST/dataflow heuristics over common Flask/FastAPI/Django-style patterns. They are strong on common auth, ownership, injection, and deserialization bugs, but they are not full symbolic execution.
+- **JavaScript / TypeScript** findings are currently strongest on Express/Router-style server code. The route-aware checks reason about common middleware, role guards, credential presence checks, resource lookups, and mutations, but they are not yet parser-semantic whole-program analysis.
+- **Trust metadata helps triage, not certainty.** Findings now include stable `rule_id`, plus `analysis_kind` and `confidence`, so you can tell both which detector fired and whether it came from a direct pattern, route heuristic, decorator heuristic, or taint flow. That still does not guarantee exploitability.
+- **Synthetic benchmarks are signal, not proof.** The CVE corpus below measures recall on curated reproductions of real vulnerability patterns, not large real-world codebases.
+
+---
+
+## Comparison
+
+| Capability                       | ansede-static | Bandit | Semgrep OSS |
+|----------------------------------|:---:|:---:|:---:|
+| Zero runtime dependencies        | ✅  | ❌  | ❌  |
+| Works fully offline              | ✅  | ✅  | ✅  |
+| Python support                   | ✅  | ✅  | ✅  |
+| JavaScript / TypeScript support  | ✅  | ❌  | ✅  |
+| SARIF output                     | ✅  | ❌  | ✅  |
+| GitHub Action (marketplace)      | ✅  | ❌  | ✅  |
+| VS Code extension                | ✅  | ❌  | ✅  |
+| Pre-commit hook                  | ✅  | ✅  | ✅  |
+| **IDOR / CWE-639**               | ✅  | ❌  | ❌* |
+| **Missing auth / CWE-862**       | ✅  | ❌  | ❌* |
+| **Ownership check / CWE-285**    | ✅  | ❌  | ❌* |
+| Inline suppression comments      | ✅  | ✅  | ✅  |
+| Baseline diffing (`--baseline`)  | ✅  | ❌  | ❌  |
+| Python API                       | ✅  | ✅  | ✅  |
+| Free / open source               | ✅  | ✅  | ✅  |
+
+*Semgrep can detect these with custom rules you write yourself; not in the default ruleset.
+
+---
+
+## Output formats
+
+### Text (default)
+
+```
+  ────────────────────────────────────────────────────
+    ansede-static  —  3 file(s) scanned
+  ────────────────────────────────────────────────────
+
+  app.py  (python)
+  [CRITICAL] L47   CWE-78:  Command injection in run_cmd() (shell=True + dynamic arg)
+  [CRITICAL] L81   CWE-639: IDOR — query in get_invoice() missing ownership WHERE clause
+  [HIGH    ] L23   CWE-89:  SQL Injection in get_user() via f-string
+  [HIGH    ] L103  CWE-862: Route /admin/users has no authentication decorator
+
+  Total: 4 findings — 2 critical, 2 high
+```
+
+### SARIF 2.1.0
+
+SARIF results preserve stable analyzer-specific rule IDs (for example `PY-024`, `JS-034`), per-finding `analysisKind`, `confidence`, and trace-backed code flows so downstream tools can distinguish direct pattern matches from heuristic route findings without collapsing everything under a raw CWE.
+
+```bash
+ansede-static src/ --format sarif --output results.sarif
+```
+
+### JSON
+
+JSON findings include stable `rule_id` values alongside `cwe`, `analysis_kind`, and `confidence`, which makes it easier to build triage dashboards, baseline filters, or CI policies around specific detectors instead of whole CWE buckets.
+
+```bash
+ansede-static src/ --format json \
+  | python -c "
+import sys, json
+for r in json.load(sys.stdin)['results']:
+    for f in r['findings']:
+        print(f[\"severity\"], f[\"cwe\"], f[\"title\"])
+"
+```
+
+---
+
+## Pattern recall benchmark
+
+The `benchmarks/` directory contains 26 hand-crafted code snippets that reproduce
+vulnerability _patterns_ from real CVE entries.
+
+> **Honest note:** These are _synthetic pattern reproductions_, not tests against
+> real-world project code. 100% recall on synthetic patterns is a necessary but not
+> sufficient condition for production-grade detection.
+
+```bash
+git clone https://github.com/ansede/ansede-static
+cd ansede-static
+pip install -e .
+python -m benchmarks.nvd_benchmark
+```
+
+```
+  ┌──────────────────────────────────────────────────────────────────┐
+  │        ansede-static  Pattern Recall Benchmark                   │
+  │   (Synthetic CVE Pattern Reproductions — not real projects)      │
+  └──────────────────────────────────────────────────────────────────┘
+
+  ✓  CVE-2022-24439  CWE-78   python  [1 critical — command injection]
+  ✓  CVE-2022-36087  CWE-918  python  [1 high    — SSRF]
+  ✓  CVE-2019-14234  CWE-89   python  [1 critical — SQL injection]
+  ✓  CVE-2021-32556  CWE-502  python  [1 critical — pickle deserialization]
+  ✓  CVE-2019-10744  CWE-1321 js      [1 high    — prototype pollution]
+
+  Python (13 patterns):  13/13  (100% recall)
+  JS/TS  (13 patterns):  13/13  (100% recall)
+
+  Overall: 26/26  ·  100.0% recall  ·  ~43ms
+```
+
+---
+
+## Python API
+
+```python
+from ansede_static import scan_file, scan_code
+
+# Scan a file
+result = scan_file("app.py")
+for finding in result.sorted_findings():
+    print(f"[{finding.severity.value}] L{finding.line} {finding.cwe}: {finding.title}")
+
+# Scan code in memory (useful for test suites)
+result = scan_code(source_code, language="python")
+assert result.critical_count == 0, f"{result.critical_count} critical findings"
+
+# SARIF
+from ansede_static.reporters import format_sarif
+sarif_str = format_sarif([result])
+```
+
+---
+
+## CI integration
+
+### GitHub Actions (recommended)
+
+```yaml
+steps:
+  - uses: actions/checkout@v4
+  - uses: ansede/ansede-static@v1
+    with:
+      path: src/
+      fail-on: high
+      upload-sarif: true
+```
+
+### Manual step
+
+```yaml
+- name: Security scan
+  run: |
+    pip install ansede-static
+    ansede-static src/ --format sarif --output ansede.sarif --fail-on high
+- name: Upload SARIF
+  if: always()
+  uses: github/codeql-action/upload-sarif@v3
+  with:
+    sarif_file: ansede.sarif
+```
+
+### Pre-commit
+
+```yaml
+repos:
+  - repo: https://github.com/ansede/ansede-static
+    rev: v1.1.0
+    hooks:
+      - id: ansede-static
+        args: [--fail-on, high]
+```
+
+---
+
+## Development
+
+```bash
+git clone https://github.com/ansede/ansede-static
+cd ansede-static
+pip install -e ".[dev]"
+pytest tests/ -v
+python -m benchmarks.nvd_benchmark
+
+# Self-scan: use this to catch regressions in rules, contracts, and reporters
+ansede-static src/ --fail-on high
+```
+
+### Adding detection rules
+
+- **Python:** Add a `_rule_NN(ctx: _Ctx)` function in [src/ansede_static/python_analyzer.py](src/ansede_static/python_analyzer.py) and register it in `_detect()`
+- **JavaScript:** Add either a `_Rule(...)` entry or a contextual `_check_*` function in [src/ansede_static/js_analyzer.py](src/ansede_static/js_analyzer.py), then register it in `analyze_js()`
+- **Benchmark test:** Add a `CVEEntry(...)` to [benchmarks/cve_corpus.py](benchmarks/cve_corpus.py)
+- See [CONTRIBUTING.md](CONTRIBUTING.md) for the full checklist
+
+---
+
+## License
+
+MIT — see [LICENSE](LICENSE).

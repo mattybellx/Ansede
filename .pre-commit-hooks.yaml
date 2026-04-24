@@ -1,0 +1,11 @@
+repos:
+  - repo: https://github.com/ansede/ansede-static
+    rev: v1.1.0
+    hooks:
+      - id: ansede-static
+        name: ansede-static security scan
+        language: python
+        entry: ansede-static
+        args: [--fail-on, high]
+        types: [python]
+        additional_dependencies: []
