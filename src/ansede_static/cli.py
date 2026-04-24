@@ -36,6 +36,7 @@ try:
 except ImportError:
     console = None
     Progress = None
+    SpinnerColumn = BarColumn = TextColumn = TimeElapsedColumn = None
 
 def _detect_language(path: Path) -> str | None:
     ext = path.suffix.lower()
@@ -170,11 +171,15 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "paths", nargs="*", type=Path,
         metavar="PATH",
-        help="File(s) or directory/directories to scan. Recursively scans directories.",
+        help="File(s) or directory/directories to scan. Defaults to current directory if not provided.",
     )
     parser.add_argument(
         "--stdin", action="store_true",
         help="Read source code from stdin (requires --lang).",
+    )
+    parser.add_argument(
+        "--init", action="store_true",
+        help="Initialize a new ansede.json configuration file in the current directory.",
     )
     parser.add_argument(
         "--lang", choices=["python", "javascript"],
@@ -244,12 +249,72 @@ def main() -> None:
         help="Apply auto-fixes directly to the source files when possible (Warning: overwrites code)",
     )
     
+    parser.add_argument(
+        "--incremental", action="store_true",
+        help="Scan only files changed in git diff (massive monorepo optimization)",
+    )
+    
     args = parser.parse_args()
+    from pathlib import Path
+
+    # ── Handle Init ────────────────────────────────────────────────────────
+    if getattr(args, "init", False):
+        init_file = Path.cwd() / "ansede.json"
+        if init_file.exists():
+            print(f"Error: {init_file} already exists.")
+            sys.exit(1)
+        init_file.write_text('''{
+  "exclude_paths": [
+    "tests/fixtures",
+    "legacy_code",
+    "__pycache__",
+    "node_modules",
+    ".git"
+  ],
+  "disable_rules": [
+    "PY-WEAK-CRYPTO"
+  ],
+  "custom_sources": [
+    "get_untrusted_user_input",
+    "request.headers.get"
+  ],
+  "custom_sinks": {
+    "my_vulnerable_db_execute": ["Custom SQLi", "Unsanitized input to db_execute", "high"]
+  }
+}
+''')
+        print(f"✅ Created a starter configuration file at {init_file}")
+        sys.exit(0)
 
     # Disable colour if not a tty or explicitly disabled
     colour = args.colour and sys.stdout.isatty()
 
     results: list[AnalysisResult] = []
+
+    # Default path to current directory if not specified and not using stdin
+    if not args.paths and not args.stdin and not args.incremental:
+        args.paths = [Path(".")]
+
+    # ── Load Enterprise Configuration ───────────────────────────────────────
+    from ansede_static.config import load_config
+    import subprocess
+    from pathlib import Path
+    workspace_root = Path.cwd()
+    if args.paths:
+        workspace_root = Path(args.paths[0]).resolve()
+        if workspace_root.is_file():
+            workspace_root = workspace_root.parent
+    config = load_config(workspace_root)
+
+    # ── Inject Configured Sinks and Sources ─────────────────────────────────
+    try:
+        from ansede_static.python_analyzer import TAINT_SOURCES, TAINT_SINKS
+        for src in config.custom_sources:
+            TAINT_SOURCES[src] = "Custom internal taint source"
+        for sink, data in config.custom_sinks.items():
+             TAINT_SINKS[sink] = data
+    except ImportError:
+        pass
 
     # ── stdin mode ─────────────────────────────────────────────────────────
     if args.stdin:
@@ -262,9 +327,57 @@ def main() -> None:
             results.append(analyze_js(code, filename="<stdin>"))
 
     # ── file/directory mode ────────────────────────────────────────────────
+    files: list[Path] = []
+    
+    if args.incremental:
+        if console:
+            console.print("[bold yellow]⚡ Running in Incremental Git-Diff Mode (ignoring unmodified files)...[/bold yellow]")
+        
+        try:
+            diff_out = subprocess.check_output(
+                ["git", "diff", "--name-status", "HEAD"], 
+                cwd=str(workspace_root), 
+                text=True
+            )
+            # also get untracked files
+            untracked_out = subprocess.check_output(
+                ["git", "ls-files", "--others", "--exclude-standard"],
+                cwd=str(workspace_root),
+                text=True
+            )
+            
+            changed_files = []
+            for line in diff_out.splitlines():
+                if line.startswith("D"):
+                    continue
+                parts = line.split("\t", 1)
+                if len(parts) == 2:
+                    changed_files.append(parts[1].strip())
+                    
+            changed_files.extend(untracked_out.splitlines())
+            
+            files = []
+            for f in set(changed_files):
+                p = (workspace_root / f).resolve()
+                if p.exists() and p.suffix in (".py", ".js", ".jsx", ".ts", ".tsx"):
+                    # Check exclusions
+                    if any(ex in str(p) for ex in config.exclude_paths):
+                        continue
+                    files.append(p)
+            
+            if not files:
+                if console:
+                    console.print("[dim]No valid source files found in git diff.[/dim]")
+                sys.exit(0)
+                
+        except Exception as e:
+            if console:
+                console.print(f"[bold red]Failed to run git diff: {e}[/bold red]")
+            sys.exit(1)
+
     elif args.paths:
         exclude_extra = [".venv", "node_modules", "__pycache__", ".git",
-                         "site-packages", "dist", "build", ".tox"] + args.exclude
+                         "site-packages", "dist", "build", ".tox"] + args.exclude + config.exclude_paths
         files = _collect_files(args.paths, exclude_extra)
         if not files:
             if console:
@@ -278,11 +391,11 @@ def main() -> None:
         # Two-Pass Orchestration with Rich UI
         if Progress and args.format == "text":
             with Progress(
-                SpinnerColumn(),
-                TextColumn("[progress.description]{task.description}"),
-                BarColumn(),
-                TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
-                TimeElapsedColumn(),
+                SpinnerColumn(), # type: ignore
+                TextColumn("[progress.description]{task.description}"), # type: ignore
+                BarColumn(), # type: ignore
+                TextColumn("[progress.percentage]{task.percentage:>3.0f}%"), # type: ignore
+                TimeElapsedColumn(), # type: ignore
                 console=console
             ) as progress:
                 
@@ -350,9 +463,9 @@ def main() -> None:
         results = _apply_baseline(results, baseline_fps)
 
     # ── AI Triage (Zero-False-Positive Phase) ──────────────────────────────
-    if getattr(args, "ai_triage", False):
+    if getattr(args, "ai_triage", False) and not args.stdin:
         code_map = {}
-        for fpath in (files if args.paths else []):
+        for fpath in files:
             try:
                 code_map[str(fpath)] = fpath.read_text(encoding="utf-8", errors="replace")
             except OSError:
@@ -368,9 +481,65 @@ def main() -> None:
 
     # ── Format output ───────────────────────────────────────────────────────
     
+    if args.format == "text":
+        output = format_text_multi(results, colour=colour, verbose=args.verbose)
+    elif args.format == "json":
+        output = format_json(results)
+    elif args.format == "sarif":
+        output = format_sarif(results)
+    elif args.format == "ciso":
+        output = format_ciso_report(results)
+    else:
+        output = format_text_multi(results, colour=colour, verbose=args.verbose)
+
+    # ── Write output ────────────────────────────────────────────────────────
+    if args.output:
+        try:
+            args.output.write_text(output, encoding="utf-8")
+            if args.format == "text":
+                total = sum(len(r.findings) for r in results)
+                msg = f"ansede-static: {total} findings written to {args.output}"
+                if console:
+                    console.print(f"[bold green]✓[/bold green] {msg}")
+                else:
+                    print(msg)
+        except OSError as exc:
+            msg = f"ansede-static: cannot write to {args.output}: {exc}"
+            if console:
+                console.print(f"[bold red]{msg}[/bold red]")
+            else:
+                print(msg, file=sys.stderr)
+            sys.exit(2)
+    else:
+        # For rich text formatter, the output is empty because it handles stdout rendering inside reporters.py
+        # But for json and sarif, we must write to stdout buffer.
+        if output:
+            out_bytes = output.encode("utf-8", errors="replace")
+            try:
+                sys.stdout.buffer.write(out_bytes + b"\n")
+                sys.stdout.buffer.flush()
+            except AttributeError:
+                print(output)
+
+    # ── Interactive Auto-Fix Prompter ─────────────────────────────────────────
+    fixable_count = sum(1 for r in results for f in r.findings if f.auto_fix)
+    
+    # Prompt the user if they didn't explicitly request fixes initially
+    if not getattr(args, "apply_fixes", False) and fixable_count > 0 and args.format == "text" and not args.output and console:
+        # Check standard input file descriptor directly if isatty is wonky in some test shells
+        try:
+            import os
+            if os.isatty(sys.stdin.fileno()):
+                console.print(f"\n[bold yellow]💡 Found {fixable_count} auto-fixable issue(s).[/bold yellow]")
+                ans = input("Would you like to automatically apply these fixes now? [y/N] ")
+                if ans.lower().strip() in ("y", "yes"):
+                    setattr(args, "apply_fixes", True)
+        except Exception:
+            pass
+
     if getattr(args, "apply_fixes", False):
         if console:
-            console.print("[bold yellow]🛠️  Applying Interactive Code Auto-Fixes...[/bold yellow]")
+            console.print("\n[bold yellow]🛠️  Applying Code Auto-Fixes...[/bold yellow]")
         for r in results:
             if not r.findings:
                 continue
@@ -401,49 +570,6 @@ def main() -> None:
             except Exception as e:
                 if console:
                     console.print(f"  [red]✖ Failed to apply fixes[/red] to {r.file_path}: {e}")
-
-    if args.format == "text":
-        if console and sys.stdout.isatty():
-             output = format_text_multi(results, colour=colour, verbose=args.verbose)
-        else:
-             output = format_text_multi(results, colour=colour, verbose=args.verbose)
-    elif args.format == "json":
-        output = format_json(results)
-    elif args.format == "sarif":
-        output = format_sarif(results)
-    elif args.format == "ciso":
-        output = format_ciso_report(results)
-    else:
-        output = format_text_multi(results, colour=colour, verbose=args.verbose)
-
-    # ── Write output ────────────────────────────────────────────────────────
-    if args.output:
-        try:
-            args.output.write_text(output, encoding="utf-8")
-            if args.format == "text":
-                total = sum(len(r.findings) for r in results)
-                msg = f"ansede-static: {total} findings written to {args.output}"
-                if console:
-                    console.print(f"[bold green]✓[/bold green] {msg}")
-                else:
-                    print(msg)
-        except OSError as exc:
-            msg = f"ansede-static: cannot write to {args.output}: {exc}"
-            if console:
-                console.print(f"[bold red]{msg}[/bold red]")
-            else:
-                print(msg, file=sys.stderr)
-            sys.exit(2)
-    else:
-        # For rich text formatter, the output string is usually empty because the reporter handles stdout rendering.
-        # But for json and sarif, we must write to stdout buffer.
-        if output:
-            out_bytes = output.encode("utf-8", errors="replace")
-            try:
-                sys.stdout.buffer.write(out_bytes + b"\n")
-                sys.stdout.buffer.flush()
-            except AttributeError:
-                print(output)
 
     # ── Exit code ───────────────────────────────────────────────────────────
     if args.fail_on != "never" and _should_fail(results, args.fail_on):
