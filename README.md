@@ -12,9 +12,14 @@ ansede-static src/
 ```
 
 [![PyPI version](https://badge.fury.io/py/ansede-static.svg)](https://pypi.org/project/ansede-static/)
+[![PyPI downloads](https://img.shields.io/pypi/dm/ansede-static.svg?label=PyPI%20downloads)](https://pypi.org/project/ansede-static/)
 [![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
-[![CI](https://github.com/mattybellx/Ansede/actions/workflows/ci.yml/badge.svg)](https://github.com/mattybellx/Ansede/actions)
+[![CI](https://github.com/mattybellx/Ansede/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/mattybellx/Ansede/actions)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![GitHub stars](https://img.shields.io/github/stars/mattybellx/Ansede?style=social)](https://github.com/mattybellx/Ansede/stargazers)
+[![Discussions](https://img.shields.io/github/discussions/mattybellx/Ansede?label=Discussions)](https://github.com/mattybellx/Ansede/discussions)
+
+> **If ansede-static catches a bug in your project, please ⭐ star the repo** — it helps other developers find it.
 
 ---
 
@@ -432,6 +437,32 @@ Benchmark corpus: [`benchmarks/cve_corpus.py`](benchmarks/cve_corpus.py)
 
 ---
 
+## Contributing
+
+Contributions are very welcome — see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+
+The most impactful contributions are:
+
+- **New detection rules** — if you find a vulnerability class in Python or JavaScript that the tool misses, open an issue with a minimal code snippet or a PR with a new rule + test.
+- **False-positive reports** — if the tool flags safe code, open a bug report so we can tighten the heuristic.
+- **Real-world corpus testing** — the benchmark suite uses synthetic patterns; PRs that test against real CVE-affected open-source projects are especially valuable.
+
+### Quick contributor setup
+
+```bash
+git clone https://github.com/mattybellx/Ansede
+cd Ansede
+pip install -e ".[dev]"
+pytest tests/ -q           # 168 tests, ~0.6 s
+```
+
+---
+
 ## License
 
 MIT — see [LICENSE](LICENSE).
+
+---
+
+*Found a real bug with ansede-static? Open a [discussion](https://github.com/mattybellx/Ansede/discussions) or tweet about it — community signal is the best way to help other developers find this tool.*
+

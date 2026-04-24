@@ -1,0 +1,63 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write   # needed to create a GitHub Release
+
+jobs:
+  release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Extract version from tag
+        id: version
+        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      # Pull the matching section out of CHANGELOG.md for the release body.
+      # Grabs everything between the first "## [<version>]" heading and the
+      # next "## [" heading (or EOF).
+      - name: Extract changelog section
+        id: changelog
+        run: |
+          VERSION="${{ steps.version.outputs.VERSION }}"
+          NOTES=$(awk "/^## \[$VERSION\]/,/^## \[/" CHANGELOG.md \
+            | grep -v "^## \[" | sed '/^$/N;/^\n$/d')
+          {
+            echo "NOTES<<CHANGELOG_EOF"
+            echo "$NOTES"
+            echo "CHANGELOG_EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: "ansede-static ${{ github.ref_name }}"
+          body: |
+            ## What's changed
+
+            ${{ steps.changelog.outputs.NOTES }}
+
+            ---
+
+            **Install**
+
+            ```bash
+            pip install "ansede-static==${{ steps.version.outputs.VERSION }}"
+
+            # With colored output
+            pip install "ansede-static[rich]==${{ steps.version.outputs.VERSION }}"
+            ```
+
+            **Full changelog:** https://github.com/mattybellx/Ansede/blob/master/CHANGELOG.md
+          draft: false
+          prerelease: ${{ contains(github.ref_name, '-') }}
+          generate_release_notes: true

@@ -1,0 +1,12 @@
+{
+  "exclude_paths": [
+    "tests/fixtures",
+    "build",
+    "dist",
+    ".venv",
+    "__pycache__"
+  ],
+  "disable_rules": [],
+  "custom_sources": [],
+  "custom_sinks": {}
+}

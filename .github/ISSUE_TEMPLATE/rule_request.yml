@@ -1,0 +1,52 @@
+---
+name: 💡 Rule Request / False Negative
+description: Request a new detection rule or report a vulnerability pattern that ansede-static misses
+labels: ["enhancement", "rule-request"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping improve ansede-static's coverage!  
+        A good rule request includes a minimal code snippet that **should** trigger a finding but currently does not.
+
+  - type: textarea
+    id: code
+    attributes:
+      label: Code that should be flagged
+      description: Paste the smallest Python or JavaScript snippet that contains the vulnerability
+      render: python
+    validations:
+      required: true
+
+  - type: input
+    id: cwe
+    attributes:
+      label: CWE (if known)
+      description: "e.g. CWE-306, CWE-400"
+      placeholder: "CWE-XXX"
+
+  - type: dropdown
+    id: language
+    attributes:
+      label: Language
+      options:
+        - Python
+        - JavaScript / TypeScript
+        - Both
+    validations:
+      required: true
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Why should this be flagged?
+      description: Explain the vulnerability and what the expected output / severity should be
+    validations:
+      required: true
+
+  - type: textarea
+    id: safe_variant
+    attributes:
+      label: Safe variant (should NOT be flagged)
+      description: Optional — provide a fixed version of the snippet that the rule should not trigger on
+      render: python

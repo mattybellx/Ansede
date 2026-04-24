@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 💬 Discussions (questions, ideas, show-and-tell)
+    url: https://github.com/mattybellx/Ansede/discussions
+    about: Ask questions, share how you use ansede-static, or discuss new ideas
+  - name: 🔒 Security vulnerability (private disclosure)
+    url: https://github.com/mattybellx/Ansede/security/advisories/new
+    about: Report a security issue privately via GitHub's advisory system
