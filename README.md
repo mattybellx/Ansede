@@ -7,17 +7,18 @@ command injection, hardcoded secrets, and 20+ other categories. Zero dependencie
 Works on Python 3.9+.
 
 ```bash
-python -m pip install ansede-static
+python -m pip install "ansede-static @ git+https://github.com/mattybellx/Ansede.git"
 ansede-static src/
 ```
 
-[![PyPI](https://img.shields.io/pypi/v/ansede-static?label=PyPI)](https://pypi.org/project/ansede-static/)
-[![PyPI Downloads](https://img.shields.io/pypi/dm/ansede-static?label=PyPI%20downloads)](https://pypi.org/project/ansede-static/)
-[![Python](https://img.shields.io/pypi/pyversions/ansede-static)](https://pypi.org/project/ansede-static/)
-[![CI](https://img.shields.io/github/actions/workflow/status/mattybellx/Ansede/ci.yml?branch=master&label=CI)](https://github.com/mattybellx/Ansede/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/mattybellx/Ansede?display_name=tag&sort=semver&label=release)](https://github.com/mattybellx/Ansede/releases)
+[![Python 3.9+](https://img.shields.io/badge/python-3.9%2B-blue)](https://github.com/mattybellx/Ansede/blob/master/pyproject.toml)
+[![CI](https://github.com/mattybellx/Ansede/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/mattybellx/Ansede/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-MIT-yellow.svg)](LICENSE)
 [![GitHub stars](https://img.shields.io/github/stars/mattybellx/Ansede?style=social)](https://github.com/mattybellx/Ansede/stargazers)
 [![Discussions](https://img.shields.io/github/discussions/mattybellx/Ansede?label=Discussions)](https://github.com/mattybellx/Ansede/discussions)
+
+> **Install note:** PyPI publishing is configured for the project, but the package is not currently live there, so the install commands below use the GitHub source directly.
 
 > **If ansede-static catches a bug in your project, please ⭐ star the repo** — it helps other developers find it.
 
@@ -71,10 +72,10 @@ These are the bugs that appear in CVE databases. These are the bugs that cost co
 
 ```bash
 # Zero-dependency install (plain text output)
-pip install ansede-static
+pip install "ansede-static @ git+https://github.com/mattybellx/Ansede.git"
 
 # With colored terminal output (recommended for local use)
-pip install "ansede-static[rich]"
+pip install "ansede-static[rich] @ git+https://github.com/mattybellx/Ansede.git"
 
 # Scan a directory (recursive)
 ansede-static src/
@@ -544,7 +545,7 @@ steps:
 ```yaml
 - name: Security scan
   run: |
-    pip install ansede-static
+    python -m pip install "ansede-static @ git+https://github.com/mattybellx/Ansede.git"
     ansede-static src/ --format sarif --output ansede.sarif --fail-on high
 - name: Upload SARIF
   if: always()
@@ -629,7 +630,7 @@ The most impactful contributions are:
 git clone https://github.com/mattybellx/Ansede
 cd Ansede
 pip install -e ".[dev]"
-pytest tests/ -q           # 168 tests, ~0.6 s
+pytest tests/ -q           # current validation target: full suite green
 ```
 
 ---

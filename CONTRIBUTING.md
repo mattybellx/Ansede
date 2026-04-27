@@ -5,12 +5,14 @@ Thanks for considering contributing! Here's how to get started.
 ## Development Setup
 
 ```bash
-git clone https://github.com/YOUR_ORG/ansede-static.git
-cd ansede-static
+git clone https://github.com/mattybellx/Ansede.git
+cd Ansede
 python -m venv .venv
-.venv/Scripts/activate   # Windows
+# Windows PowerShell
+.venv\Scripts\Activate.ps1
+
 # source .venv/bin/activate  # macOS/Linux
-pip install -e ".[dev]"
+python -m pip install -e ".[dev]"
 ```
 
 ## Running Tests
