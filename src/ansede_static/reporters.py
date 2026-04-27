@@ -22,7 +22,7 @@ from typing import Any
 
 from ansede_static._types import AnalysisResult, Finding, Severity
 from ansede_static.engine_version import get_engine_version
-from ansede_static.rules import get_rule_contract
+from ansede_static.rules import get_rule_contract, _unique_tags
 from ansede_static.schema import build_report
 
 try:
@@ -343,8 +343,7 @@ def format_sarif(results: list[AnalysisResult], *, execution: dict[str, Any] | N
                 _sarif_precision(f.confidence),
             )
             if rule_id not in rules_by_id:
-                tags = [f.finding_class, f.category]
-                tags.extend(contract.tags)
+                tags = list(_unique_tags(f.finding_class, f.category, contract.tags))
                 properties: dict[str, Any] = {
                     "tags": tags,
                     "precision": precision,

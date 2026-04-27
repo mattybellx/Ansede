@@ -153,6 +153,14 @@ def test_json_and_sarif_can_include_execution_metadata():
     assert sarif_payload["runs"][0]["properties"]["execution"]["js_backend"]["requested"] == "auto"
 
 
+def test_sarif_rule_tags_are_unique():
+    payload = json.loads(format_sarif(_sample_results()))
+
+    for rule in payload["runs"][0]["tool"]["driver"]["rules"]:
+        tags = rule["properties"]["tags"]
+        assert len(tags) == len(set(tags))
+
+
 def test_stable_hash_is_deterministic():
     assert stable_hash("abc") == stable_hash("abc")
     assert stable_hash("abc") != stable_hash("xyz")
