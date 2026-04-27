@@ -44,7 +44,7 @@ import re
 import tokenize as _tokenize
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Union
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -92,7 +92,7 @@ TAINT_SOURCES: dict[str, str] = {
 # Taint sink catalogue — maps callee name → (CWE, vuln description)
 # ──────────────────────────────────────────────────────────────────────────────
 
-_SinkInfo = tuple[str, str] | tuple[str, str, str]
+_SinkInfo = Union[tuple[str, str], tuple[str, str, str]]
 
 
 TAINT_SINKS: dict[str, _SinkInfo] = {
