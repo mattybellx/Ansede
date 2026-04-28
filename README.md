@@ -1,5 +1,5 @@
 ﻿# ansede-static
-
+https://github.com/mattybellx/Ansede/blob/master/unnamed.png
 **Static security analysis that finds what Bandit misses.**
 
 Detects **IDOR, unauthorized access, and auth bypass** at the AST level — plus SQL injection,
