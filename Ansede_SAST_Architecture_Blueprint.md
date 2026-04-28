@@ -71,6 +71,25 @@ To make this project truly world-class, implement the following advanced feature
 * **SARIF Output Integration:** Output results natively in standard SARIF format (Static Analysis Results Interchange Format) using the `json` library, allowing instant integration into GitHub Advanced Security (GHAS) dashboards.
 
 ---
+Addtional implementations in full for after or during, whatevers best:
+
+Based on the provided documentation for Ansede, the developers have already outlined several known limitations and "non-goals" they do not intend to implement, such as dynamic analysis (DAST), dependency scanning, and full symbolic execution
+. They also acknowledge the need to eventually improve cross-file taint analysis and template engine support (like Jinja2)
+.
+However, evaluating the tool's current features, the biggest improvements it could benefit from that are not currently spoken about in the provided text include:
+(Please note: The following improvements are external insights drawn from analyzing the gaps in your provided source material, as the sources do not explicitly discuss these as future roadmap items).
+Broader Programming Language Support: Ansede is currently built specifically for Python (which makes up 99.9% of its codebase) and JavaScript/TypeScript
+. The biggest unspoken improvement would be expanding its AST-level scanning to other major enterprise languages like Java, C#, Go, or C++. Competitors listed in Ansede's own matrix, such as Semgrep and CodeQL, already support a much wider variety of languages
+.
+Expansion to Other Major IDEs: The documentation heavily promotes its dedicated Visual Studio Code extension for real-time inline security scanning
+. However, there is no mention of supporting JetBrains IDEs (like PyCharm, IntelliJ, or WebStorm) or providing a standard Language Server Protocol (LSP) for editors like Neovim. Building these would vastly increase developer adoption.
+Vulnerability Detection for Non-Web Frameworks: Ansede's detection heuristics are heavily optimized for common web server frameworks such as Flask, FastAPI, Django, Express, Koa, and Nest
+. An unspoken but highly valuable improvement would be creating rulesets tailored to data science/engineering pipelines (e.g., unsafe data loading in Pandas or PySpark) or mobile app frameworks like React Native.
+Native Plugins for Enterprise CI/CD Platforms: The project currently offers a seamless, one-line GitHub Action for CI integration
+ and briefly mentions that it can run in GitLab CI or any shell
+. It does not, however, discuss offering native integrations, extensions, or pre-configured templates for other massive enterprise CI/CD environments like Jenkins, Azure DevOps, or AWS CodePipeline.
+Adding these capabilities would help Ansede scale from a specialized web-backend tool into a comprehensive, enterprise-grade static analysis platform.
+
 
 ## 🤖 Instructions for AI Implementation (Read Carefully)
 As the LLM tasked with building this codebase, execute the following steps in order:
