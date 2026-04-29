@@ -1,80 +1,495 @@
-# Ansede v2.0: Architecture & Implementation Specification
+# Ansede v2.0 — Architecture & Implementation Specification
 
-## Executive Summary
-Ansede is an ambitious, functional prototype that attempts to solve a domain-hard problem (Zero-Dependency SAST) by tightly coupling parsing, intermediate representation (IR), and rule evaluation entirely in Python. While this achieved fast initial velocity, it is structurally a technical debt trap. 
-
-To reach v2.0 (Enterprise-Grade), Ansede must enforce a strict three-layer separation: **Parse $\rightarrow$ Represent $\rightarrow$ Evaluate**. This specification outlines the complete overhaul required to move away from hardcoded AST visits to a decoupled, highly performant, and scalable engine.
+**Status:** Draft for Engineering Review  
+**Audience:** Core contributors, security engineering stakeholders  
+**Scope:** Full engine overhaul from prototype to enterprise-grade SAST
 
 ---
 
-## Phase 1: Rule Engine Decoupling (The Python DSL)
+## Executive Summary
 
-Hardcoding `_rule_NN(ctx: _Ctx)` functions inside core analyzer files violates the Open-Closed Principle and forces O(N) AST visits.
+Ansede v1 achieved meaningful initial coverage by co-locating parsing, IR construction, and rule evaluation inside monolithic analyzer files. That choice bought velocity. It is now the primary obstacle to correctness, performance, and maintainability.
 
-### 1. Implement a Typed Rule Registry
-Create a Python DSL using decorators so rules can subscribe to specific node types. This decoupling means adding a new rule never touches engine core code.
+The specific structural failures are:
+
+- **Rules are entangled with the engine.** Every new detection requires touching core files, and every AST walk re-evaluates all rules. There is no isolation boundary.
+- **Two competing JS analyzers exist.** `js_ast_analyzer.py` and the secondary JS path have diverged. Maintaining a hand-rolled JS parser against the ECMAScript spec is not a viable long-term strategy.
+- **Taint tracking is heuristic, not structural.** `engine/triage.py` adjusts confidence scores as a proxy for real dataflow analysis. This produces both false negatives (missed paths) and false positives (no sanitizer awareness).
+- **The config schema is not validated.** Malformed `ansede.json` silently drops custom sinks, which is unacceptable in a security tool.
+
+v2.0 enforces a strict three-layer pipeline: **Parse → Normalize → Evaluate**. Each layer has a defined interface; no layer reaches through another. This document specifies that contract.
+
+---
+
+## Guiding Principles
+
+1. **Correctness over completeness.** A finding we cannot explain is a finding we should not emit. Prefer conservative analysis.
+2. **The security tool must not be a security risk.** Unreadable rule names (`_rule_07`) and silent config failures are themselves vulnerabilities.
+3. **O(N) is the budget.** Every phase that adds a second pass over the AST requires explicit justification.
+4. **Enterprise adoption requires suppressability.** If engineers cannot dismiss a false positive in-line, they will disable the tool entirely.
+
+---
+
+## Phase Ordering and Dependencies
+
+Phases must be executed in dependency order. The rule engine (Phase 2) depends on a stable node vocabulary, which depends on the normalization layer (Phase 1). Dataflow analysis (Phase 3) depends on both.
+
+```
+Phase 1: Parsing & AST Normalization     ← No external dependencies
+Phase 2: Rule Engine Decoupling          ← Depends on Phase 1 (ASTNode contract)
+Phase 3: Dataflow & Taint Tracking       ← Depends on Phases 1 & 2
+Phase 4: Configuration & Caching         ← Can run in parallel with Phase 2
+Phase 5: Performance & Memory            ← Depends on Phase 1 architecture
+Phase 6: Enterprise Polish               ← Depends on stable Phase 2 output
+```
+
+> **Note on the original ordering:** The original spec led with the rule engine, but rules cannot be written against a stable contract until the normalization layer exists. Phases 1 and 2 are swapped in this revision.
+
+---
+
+## Phase 1: Parsing & AST Normalization
+
+### 1.1 Drop the Hand-Rolled JS/TS Parser
+
+`js_ast_analyzer.py` is a liability. Maintaining parser parity with a living language specification (ECMAScript, TypeScript) is a full-time job. The zero-dependency constraint that motivated it is not worth the maintenance cost or the correctness risk.
+
+**Decision:** Replace with [tree-sitter](https://github.com/tree-sitter/tree-sitter) via the `tree-sitter-python` bindings. Tree-sitter handles malformed and partial code gracefully, covers JS/TS/JSX/Python from a single API surface, and is actively maintained against language specs.
+
+**Migration:**
+- Deprecate `js_ast_analyzer.py` immediately. Put a module-level `DeprecationWarning` on import.
+- Consolidate all JS/TS/JSX parsing into `js_ts_analyzer.py` backed by tree-sitter.
+- Delete the deprecated file only after the new analyzer passes the existing integration test suite.
+
+### 1.2 Thin Normalization Layer (The Node Contract)
+
+Tree-sitter nodes must not leak into the rule engine. Raw tree-sitter dictionaries have language-specific field names (`"function_definition"` vs `"method_definition"`) that would force every rule author to know parser internals. Build a normalization layer that maps language-specific parse trees to a shared vocabulary.
+
+```python
+from __future__ import annotations
+from dataclasses import dataclass, field
+from typing import Protocol, Sequence, runtime_checkable
+
+@dataclass(frozen=True, slots=True)
+class SourceLocation:
+    file_path: str
+    line: int
+    column: int
+
+@dataclass(frozen=True, slots=True)
+class ASTNode:
+    node_type: str         # Normalized vocabulary: 'CALL', 'ASSIGN', 'IMPORT', etc.
+    location: SourceLocation
+    language: str          # 'python' | 'javascript' | 'typescript' | 'jsx'
+    raw_text: str          # Original source slice — for fingerprinting, not analysis
+
+@dataclass(frozen=True, slots=True)
+class CallNode(ASTNode):
+    callee: str
+    args: tuple[ASTNode, ...]   # Immutable; rules must not mutate
+    is_method_call: bool = False
+
+@dataclass(frozen=True, slots=True)
+class AssignNode(ASTNode):
+    target: str
+    value: ASTNode
+
+@dataclass(frozen=True, slots=True)
+class ImportNode(ASTNode):
+    module: str
+    names: tuple[str, ...]
+```
+
+**Design notes:**
+- `frozen=True` prevents rules from accidentally mutating shared nodes.
+- `slots=True` reduces per-object memory overhead, which matters at scale.
+- `args` is a `tuple`, not a `list`. Sequences passed to rules are read-only by contract.
+- Do not model every possible node type upfront. Start with `CALL`, `ASSIGN`, `IMPORT`, `RETURN`, `FORMATTED_STRING`, and `ATTRIBUTE_ACCESS`. Add others as rules require them.
+
+### 1.3 SemanticModel as the Unit of Work
+
+After parsing a file, the raw AST is converted into a `SemanticModel` and the AST is discarded. The `SemanticModel` is what persists into the rule engine and dataflow graph.
+
+```python
+@dataclass
+class SemanticModel:
+    file_path: str
+    language: str
+    nodes_by_type: dict[str, list[ASTNode]]   # Pre-indexed; rules pay O(1) for lookup
+    imports: list[ImportNode]
+    scope_map: dict[str, list[ASTNode]]        # Variable name → definition sites
+```
+
+Pre-indexing by node type here is the architectural decision that makes single-pass rule evaluation in Phase 2 possible.
+
+---
+
+## Phase 2: Rule Engine Decoupling
+
+### 2.1 The Rule Protocol
+
+Define the rule contract as a `Protocol`, not a base class. This avoids inheritance chains and lets rule authors implement `evaluate` without knowing anything about the engine.
+
+```python
+from typing import Protocol, Optional, runtime_checkable
+
+@runtime_checkable
+class Rule(Protocol):
+    rule_id: str       # Stable machine-readable identifier, e.g. "PY-SEC-001"
+    cwe: str
+    severity: str      # "critical" | "high" | "medium" | "low" | "informational"
+    title: str
+
+    def evaluate(self, node: ASTNode, model: SemanticModel) -> Optional["Finding"]:
+        ...
+
+@dataclass
+class Finding:
+    rule_id: str
+    cwe: str
+    severity: str
+    title: str
+    location: SourceLocation
+    message: str
+    confidence: str    # "confirmed" | "likely" | "possible"
+    suppressed: bool = False
+```
+
+### 2.2 Typed Rule Registry
 
 ```python
 from collections import defaultdict
-from dataclasses import dataclass
-from typing import Optional, List
+from typing import Iterator
 
 class RuleRegistry:
-    _rules = defaultdict(list)
-    
-    @classmethod
-    def register(cls, *node_types):
-        def decorator(rule_cls):
+    """
+    Registry that maps normalized node types to subscribed rules.
+    Rules are registered at class-definition time via the @register decorator.
+    The engine makes exactly one call to dispatch() per node type per file.
+    """
+    def __init__(self) -> None:
+        self._rules: dict[str, list[Rule]] = defaultdict(list)
+
+    def register(self, *node_types: str):
+        def decorator(rule_cls: type) -> type:
+            instance = rule_cls()
+            assert isinstance(instance, Rule), (
+                f"{rule_cls.__name__} does not implement the Rule protocol"
+            )
             for nt in node_types:
-                cls._rules[nt].append(rule_cls())
+                self._rules[nt].append(instance)
             return rule_cls
         return decorator
 
-@RuleRegistry.register('CALL', 'FORMATTED_STRING')
-class SQLInjectionRule:
-    cwe = "CWE-89"
-    severity = "critical"
-    
-    def evaluate(self, node, ctx) -> Optional[dict]:
-        # Taint evaluation logic goes here
-        pass
-2. File-by-File Actionspython_analyzer.py / js_analyzer.py: Extract all _rule_NN functions into a new rules/python/ and rules/js/ directory.Rename immediately: _rule_01 $\rightarrow$ HardcodedSecretRule, _rule_07 $\rightarrow$ SubprocessInjectionRule. Unreadable names are a security risk in themselves.Single-Pass Visit: The core engine should do exactly one pass over the AST to build a SemanticModel, then pass relevant nodes to the RuleRegistry subscribers.Phase 2: Parsing & AST NormalizationMaintaining a custom "zero-dependency" JS/TS/JSX parser in Python (js_ast_analyzer.py) locks the project into perpetual catch-up with ECMAScript/TypeScript specs.1. Tree-sitter IntegrationDrop the zero-dependency requirement for JS/TS parsing.Use the tree-sitter Python bindings for JS, TS, JSX, and Python. It natively handles malformed code and is heavily optimized.Deprecate the two competing JS analyzers and unify them under js_ts_analyzer.py.2. Thin AST Normalization LayerDo not expose raw Tree-sitter dictionaries to the rule engine. Build a thin abstraction layer that normalizes Python and JS nodes into a shared vocabulary.Python@dataclass
-class SourceLocation:
-    line: int
-    column: int
-    file_path: str
+    def dispatch(self, node: ASTNode, model: SemanticModel) -> Iterator[Finding]:
+        for rule in self._rules.get(node.node_type, []):
+            result = rule.evaluate(node, model)
+            if result is not None:
+                yield result
 
-@dataclass
-class ASTNode:
-    node_type: str
-    location: SourceLocation
-    language: str  # 'Python' | 'JS' | 'TS' | 'JSX'
+# Module-level singleton — one registry per process
+REGISTRY = RuleRegistry()
+```
 
-@dataclass
-class CallNode(ASTNode):
-    callee: str
-    args: List[ASTNode]
-Phase 3: Dataflow & Taint TrackingCurrently, engine/triage.py relies heavily on heuristic confidence adjustments, which is a symptom of weak dataflow pathing.1. Explicit Taint PrimitivesBefore attempting full Interprocedural Finite Distributive Subset (IFDS) analysis, implement a conservative taint graph using explicit primitives. This eliminates the need for triage heuristics.Pythonclass TaintSource(NamedTuple):
-    node: 'ASTNode'
-    category: str  # "user_input" | "env" | "file"
+> **Why a module-level singleton?** The registry is write-once (populated at import time) and read-many. A singleton is appropriate here. If you later need per-scan registry overrides (e.g., for rule configuration), inject it via the scan context rather than making the registry itself mutable at runtime.
+
+### 2.3 Rule Naming and File Layout
+
+Rename all existing `_rule_NN` functions before any other refactoring work. Unreadable identifiers in a security codebase are an operational risk: they make code review harder, bug reports ambiguous, and suppression comments opaque.
+
+| Old name | New name | File |
+|---|---|---|
+| `_rule_01` | `HardcodedSecretRule` | `rules/python/secrets.py` |
+| `_rule_07` | `SubprocessInjectionRule` | `rules/python/injection.py` |
+| `_rule_12` | `SQLInjectionRule` | `rules/shared/sql_injection.py` |
+
+Each rule file is a single Python module. Each module imports `REGISTRY` and uses `@REGISTRY.register(...)` to subscribe. The engine never imports rule modules directly — they are discovered via package scanning at startup.
+
+### 2.4 Single-Pass Engine Execution
+
+```python
+class Engine:
+    def scan_file(self, file_path: str) -> list[Finding]:
+        model = self.parser.parse(file_path)          # Phase 1
+        findings: list[Finding] = []
+
+        for node_type, nodes in model.nodes_by_type.items():
+            for node in nodes:
+                findings.extend(REGISTRY.dispatch(node, model))
+
+        return [f for f in findings if not f.suppressed]
+```
+
+One pass. No rule touches the AST outside of `dispatch`. The `SemanticModel` is the only shared state.
+
+---
+
+## Phase 3: Dataflow & Taint Tracking
+
+> **Scope caveat:** Full interprocedural analysis (IFDS/IDE algorithms) is correct to name as the long-term target, but it is a multi-quarter effort and requires significant academic grounding to implement without introducing soundness bugs. This phase specifies a conservative intraprocedural taint graph that replaces the current heuristic confidence adjustments. IFDS is explicitly deferred.
+
+### 3.1 Taint Primitives
+
+```python
+from typing import NamedTuple
+
+class TaintSource(NamedTuple):
+    node: ASTNode
+    category: str    # "user_input" | "env" | "file" | "network" | "database"
+    confidence: str  # "confirmed" | "likely"
 
 class TaintSink(NamedTuple):
-    node: 'ASTNode'
-    argument_index: int  # Which argument is dangerous
+    node: ASTNode
+    argument_index: int    # 0-indexed; -1 for return value
+    keyword_arg: str | None  # For keyword arguments, e.g. "query="
     cwe: str
 
 class Sanitizer(NamedTuple):
-    node: 'ASTNode'
-    clears: List[str]  # Which taint categories this clears
-2. NetworkX Integrationglobal_graph.py: Ditch the homemade adjacency lists. Use networkx to store the call/dataflow graph. It provides shortest-path and reachability queries out of the box.Edge Limits: Add a hard cap (e.g., max 50 callees) for dynamic dispatch scenarios to prevent O(n²) memory explosion during edge resolution.Phase 4: Configuration, Caching, & Schema1. Argument-Level Taint in ansede.jsonThe current custom_sinks definition is too primitive. Upgrade the schema to support positional and keyword argument index tracking.JSON{
+    node: ASTNode
+    clears: frozenset[str]    # Which taint categories this sanitizer clears
+```
+
+### 3.2 Call Graph with networkx
+
+Replace `global_graph.py`'s homemade adjacency lists with `networkx.DiGraph`. This is the right tool: it provides shortest-path, reachability, and cycle detection out of the box, and its overhead is negligible compared to the parsing cost.
+
+```python
+import networkx as nx
+
+class CallGraph:
+    def __init__(self, max_callees_per_node: int = 50) -> None:
+        self._graph: nx.DiGraph = nx.DiGraph()
+        self._max_callees = max_callees_per_node
+
+    def add_call(self, caller: ASTNode, callee: ASTNode) -> None:
+        if self._graph.out_degree(caller) >= self._max_callees:
+            # Dynamic dispatch explosion guard. Log and skip; don't crash.
+            return
+        self._graph.add_edge(caller, callee)
+
+    def is_reachable(self, source: ASTNode, sink: ASTNode) -> bool:
+        return nx.has_path(self._graph, source, sink)
+```
+
+**The `max_callees` limit is non-negotiable.** In codebases with heavy dynamic dispatch (e.g., plugin architectures), edge counts can explode to O(n²) during resolution. 50 callees per node is a conservative default; make it configurable via `ansede.json`.
+
+> **Future path to IFDS:** When interprocedural analysis is ready, the `CallGraph` is the foundation. IFDS operates over the same graph structure — it adds exploded supergraph construction on top. Investing in a clean `CallGraph` API now avoids a full rewrite later.
+
+---
+
+## Phase 4: Configuration, Caching & Schema
+
+### 4.1 Upgraded Sink Definition
+
+The current `custom_sinks` schema is too coarse. Taint analysis must know *which arguments* are dangerous. Upgrade to:
+
+```json
+{
   "sinks": [
     {
+      "rule_id": "CUSTOM-001",
       "cwe": "CWE-89",
-      "title": "Custom SQL Injection sink",
+      "title": "SQL injection via db.execute",
       "function": "db.execute",
       "tainted_args": [0],
-      "safe_args": [1]
+      "safe_args": [1],
+      "language": "python"
     }
-  ]
+  ],
+  "sources": [
+    {
+      "function": "request.get_json",
+      "category": "user_input",
+      "language": "python"
+    }
+  ],
+  "max_callees_per_node": 50,
+  "exclude_paths": ["node_modules", ".venv", "dist", "build", "__pycache__"]
 }
-2. JSON Schema ValidationIntegrate the jsonschema library so malformed configs fail loudly at startup, rather than silently dropping custom sinks mid-scan.3. Caching & Incremental Analysis (sqlite_store.py)WAL Mode: Enable Write-Ahead Logging on connection init (PRAGMA journal_mode=WAL) to prevent database locks.Incremental Scanning: Store file content hashes alongside AST blobs. On subsequent scans, only re-analyze files whose hashes (or dependencies) have changed.Phase 5: Performance & Memory ManagementStandard CI runners often have limited RAM (4GB–8GB). Loading massive codebases into Python ASTs will cause out-of-memory (OOM) crashes.1. AST Garbage CollectionImplement a streaming architecture for file parsing.Parse File A $\rightarrow$ Extract nodes to SemanticModel / global_graph.Explicitly del the raw AST.Call gc.collect() before moving to File B.2. Multiprocessing the Parsing PhaseAST generation is an embarrassingly parallel task.Use concurrent.futures.ProcessPoolExecutor.Worker processes parse files and return serialized SemanticModel fragments.The main process aggregates these fragments into the networkx graph.Phase 6: Enterprise PolishWithout these features, enterprise adoption will stall regardless of engine accuracy.1. Inline Suppressions & BaselinesAdd token parsing to support # ansede: ignore comments. If a developer cannot suppress a false positive, they will uninstall the tool.Implement baseline file support (e.g., --baseline-commit) to track new findings vs. historical technical debt.2. The Exclusion StrategyHardcode a fail-safe exclusion list (node_modules, .venv, dist, build, __pycache__) directly into the traversal bootstrapper. Never rely on the user remembering to configure this in ansede.json.
+```
+
+### 4.2 Schema Validation at Startup
+
+Integrate `jsonschema`. A security tool that silently ignores malformed configuration is not a security tool. Validation must run before the first file is parsed. Failure exits with code 2 and a human-readable error.
+
+```python
+import jsonschema, json, sys
+from pathlib import Path
+
+SCHEMA = json.loads((Path(__file__).parent / "ansede.schema.json").read_text())
+
+def load_config(path: str) -> dict:
+    config = json.loads(Path(path).read_text())
+    try:
+        jsonschema.validate(config, SCHEMA)
+    except jsonschema.ValidationError as e:
+        print(f"[ansede] Invalid configuration: {e.message}", file=sys.stderr)
+        sys.exit(2)
+    return config
+```
+
+Ship `ansede.schema.json` as a first-class artifact in the repository, not as a code comment. IDEs will use it for inline validation.
+
+### 4.3 Incremental Analysis (sqlite_store.py)
+
+Two changes required:
+
+**WAL mode** prevents database locks on concurrent reads (e.g., parallel worker processes writing results):
+```python
+conn = sqlite3.connect("ansede.db")
+conn.execute("PRAGMA journal_mode=WAL")
+conn.execute("PRAGMA synchronous=NORMAL")  # Safe with WAL; halves write latency
+```
+
+**Content-addressed caching** skips re-analysis of unchanged files:
+```python
+import hashlib
+
+def file_hash(path: str) -> str:
+    return hashlib.blake2b(Path(path).read_bytes(), digest_size=20).hexdigest()
+
+def is_cached(conn: sqlite3.Connection, path: str, current_hash: str) -> bool:
+    row = conn.execute(
+        "SELECT content_hash FROM file_cache WHERE path = ?", (path,)
+    ).fetchone()
+    return row is not None and row[0] == current_hash
+```
+
+Use BLAKE2b over MD5/SHA1. It's faster than SHA-256 and not MD5.
+
+---
+
+## Phase 5: Performance & Memory
+
+### 5.1 AST Garbage Collection
+
+Python's garbage collector does not promptly free memory from large AST objects because reference cycles are common in tree structures. Be explicit:
+
+```python
+import gc
+from typing import Generator
+
+def parse_files_streaming(file_paths: list[str]) -> Generator[SemanticModel, None, None]:
+    for path in file_paths:
+        raw_ast = parser.parse_file(path)
+        model = normalizer.to_semantic_model(raw_ast, path)
+        del raw_ast          # Drop the tree-sitter tree
+        gc.collect()         # Collect cycles before next file
+        yield model
+```
+
+This keeps peak memory proportional to the largest single file, not the entire codebase.
+
+### 5.2 Parallel Parsing with ProcessPoolExecutor
+
+Parsing is embarrassingly parallel — each file is independent. Use processes, not threads, to bypass the GIL.
+
+```python
+from concurrent.futures import ProcessPoolExecutor, as_completed
+
+def parse_all(file_paths: list[str], max_workers: int = 4) -> list[SemanticModel]:
+    models = []
+    with ProcessPoolExecutor(max_workers=max_workers) as pool:
+        futures = {pool.submit(parse_single_file, p): p for p in file_paths}
+        for future in as_completed(futures):
+            path = futures[future]
+            try:
+                models.append(future.result())
+            except Exception as e:
+                log.warning(f"Parse failed for {path}: {e}")
+                # Log and continue. One bad file should not abort the scan.
+    return models
+```
+
+**Default `max_workers` to `min(4, os.cpu_count())`**, not `os.cpu_count()`. Standard CI runners (GitHub Actions free tier, Jenkins with limited agents) often run on 2-core machines where full parallelism creates thrashing.
+
+The dataflow graph aggregation (Phase 3) must happen in the main process after all workers complete. Do not attempt concurrent graph writes.
+
+---
+
+## Phase 6: Enterprise Polish
+
+These are not optional. Without them, engineering teams will not adopt or sustain Ansede regardless of detection accuracy.
+
+### 6.1 Inline Suppressions
+
+```python
+# ansede: ignore PY-SEC-001 -- False positive: input is validated upstream
+result = db.execute(query)
+```
+
+The suppression comment must include the rule ID. A bare `# ansede: ignore` without a rule ID is rejected — it is too easy to accidentally suppress everything. The scanner should emit a warning when it encounters a bare suppression.
+
+Implement suppression parsing in the normalization layer (Phase 1), not in individual rules. Suppressed nodes are marked on the `ASTNode` before they reach the rule engine.
+
+### 6.2 Baseline Support
+
+```bash
+ansede scan --baseline-file baseline.json
+ansede baseline generate --output baseline.json
+```
+
+`baseline.json` stores fingerprints (rule ID + file path + line + source hash) of known findings. On subsequent scans, baseline matches are marked `suppressed=true` in output but are not removed from the finding list. This lets teams distinguish new findings from pre-existing technical debt without permanently silencing anything.
+
+### 6.3 Hardcoded Exclusion List
+
+Do not rely on users to configure `node_modules` exclusion. These paths must be excluded at the traversal bootstrapper level, before any file is opened:
+
+```python
+ALWAYS_EXCLUDE = frozenset({
+    "node_modules", ".venv", "venv", "env",
+    "dist", "build", "__pycache__", ".git",
+    ".tox", "site-packages", "vendor",
+})
+
+def should_exclude(path: Path) -> bool:
+    return any(part in ALWAYS_EXCLUDE for part in path.parts)
+```
+
+This list is hardcoded and not user-overridable downward (users cannot remove from it). Users can extend it via `ansede.json` `exclude_paths`.
+
+---
+
+## Missing From the Original Spec
+
+The following concerns are absent from the original document and must be addressed before v2.0 ships.
+
+### Testing Strategy
+
+There is no testing strategy specified. For a security tool, this is critical. Define three layers:
+
+- **Unit tests:** Each rule has a dedicated fixture file (`fixtures/python/sql_injection_positive.py`, `fixtures/python/sql_injection_negative.py`). CI enforces that every rule has at least one true-positive and one true-negative fixture.
+- **Integration tests:** The existing integration suite must pass against the new engine before the old engine is retired.
+- **Regression corpus:** Maintain a private corpus of real-world CVE-triggering code patterns. Regressions on this corpus block releases.
+
+### v1 Migration Path
+
+The spec does not describe how to migrate from v1 to v2 without breaking existing users. At minimum:
+- Config format changes (Phase 4) must be backward-compatible or include a migration command (`ansede migrate-config`).
+- The `--baseline-file` format from Phase 6 must be stable across minor versions.
+- Emit a `CHANGELOG.md` entry for every breaking change to the finding output schema.
+
+### Observability
+
+Add structured logging from day one. The engine should emit `DEBUG`-level events for every file parsed, every finding emitted, and every suppression applied. Use Python's standard `logging` module with a JSON formatter for CI environments. A scan that produces zero findings with no log output is indistinguishable from a broken scan.
+
+### Risk Register
+
+| Risk | Likelihood | Mitigation |
+|---|---|---|
+| Tree-sitter bindings lag a language spec update | Medium | Pin tree-sitter grammar versions; test against new language spec releases in CI |
+| IFDS implementation introduces soundness bugs | High | Do not attempt IFDS without a dedicated verification effort; keep intraprocedural taint as the default |
+| ProcessPoolExecutor serialization overhead exceeds parse time for small repos | Medium | Benchmark; fall back to ThreadPoolExecutor for repos under a configurable file count threshold |
+| networkx memory footprint on very large call graphs | Low-Medium | The 50-callee cap mitigates this; add a hard node count limit per-graph as a secondary guard |
+| Incremental cache invalidation is incorrect (stale results) | Medium | Cache invalidation must also propagate to dependents (files that import changed modules); start with whole-file invalidation, not line-level |
+
+---
+
+## Definition of Done (per Phase)
+
+Each phase is complete when:
+
+1. **All new code has ≥80% line coverage.** Measured in CI; PRs that drop coverage below the threshold are blocked.
+2. **No phase introduces a regression in the integration test suite.**
+3. **The rule API is documented** in `docs/writing-rules.md` before Phase 2 is merged.
+4. **Performance benchmarks are recorded** against a reference corpus before and after Phase 5.
+5. **Breaking changes to the CLI or output schema are documented** in `CHANGELOG.md` and communicated to users with a deprecation notice in the prior minor release.
