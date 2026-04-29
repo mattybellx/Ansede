@@ -17,11 +17,19 @@ Additional types added beyond the spec minimum:
 """
 from __future__ import annotations
 
+import sys
 from dataclasses import dataclass, field
 from typing import Optional
 
 
-@dataclass(frozen=True, slots=True)
+def _frozen_node_dataclass(cls: type) -> type:
+    """Apply frozen dataclass semantics with slots when supported."""
+    if sys.version_info >= (3, 10):
+        return dataclass(frozen=True, slots=True)(cls)
+    return dataclass(frozen=True)(cls)
+
+
+@_frozen_node_dataclass
 class SourceLocation:
     """Immutable source position reference."""
     file_path: str
@@ -32,7 +40,7 @@ class SourceLocation:
         return f"{self.file_path}:{self.line}:{self.column}"
 
 
-@dataclass(frozen=True, slots=True)
+@_frozen_node_dataclass
 class ASTNode:
     """
     Base normalized AST node shared across all languages.
@@ -52,7 +60,7 @@ class ASTNode:
     suppression_rule_id: str = ""  # empty → bare ignore (warn); non-empty → scoped
 
 
-@dataclass(frozen=True, slots=True)
+@_frozen_node_dataclass
 class CallNode(ASTNode):
     """A function or method call site."""
     callee: str = ""
@@ -60,14 +68,14 @@ class CallNode(ASTNode):
     is_method_call: bool = False
 
 
-@dataclass(frozen=True, slots=True)
+@_frozen_node_dataclass
 class AssignNode(ASTNode):
     """A variable assignment."""
     target: str = ""
     value: Optional["ASTNode"] = None
 
 
-@dataclass(frozen=True, slots=True)
+@_frozen_node_dataclass
 class ImportNode(ASTNode):
     """An import statement."""
     module: str = ""
@@ -75,20 +83,20 @@ class ImportNode(ASTNode):
     alias_map: tuple[tuple[str, str], ...] = field(default_factory=tuple)  # (original, alias)
 
 
-@dataclass(frozen=True, slots=True)
+@_frozen_node_dataclass
 class ReturnNode(ASTNode):
     """A return statement."""
     value: Optional["ASTNode"] = None
 
 
-@dataclass(frozen=True, slots=True)
+@_frozen_node_dataclass
 class FormattedStringNode(ASTNode):
     """An f-string or template literal with interpolation."""
     parts: tuple[str, ...] = field(default_factory=tuple)  # raw text segments
     expressions: tuple[str, ...] = field(default_factory=tuple)  # interpolated expressions
 
 
-@dataclass(frozen=True, slots=True)
+@_frozen_node_dataclass
 class AttributeAccessNode(ASTNode):
     """An attribute/property access expression."""
     object_name: str = ""
@@ -99,7 +107,7 @@ class AttributeAccessNode(ASTNode):
         return f"{self.object_name}.{self.attribute}" if self.object_name else self.attribute
 
 
-@dataclass(frozen=True, slots=True)
+@_frozen_node_dataclass
 class BinaryOpNode(ASTNode):
     """A binary operation (arithmetic, logical, etc.)."""
     operator: str = ""
@@ -107,7 +115,7 @@ class BinaryOpNode(ASTNode):
     right: Optional["ASTNode"] = None
 
 
-@dataclass(frozen=True, slots=True)
+@_frozen_node_dataclass
 class CompareNode(ASTNode):
     """A comparison expression."""
     left: Optional["ASTNode"] = None
@@ -115,7 +123,7 @@ class CompareNode(ASTNode):
     ops: tuple[str, ...] = field(default_factory=tuple)
 
 
-@dataclass(frozen=True, slots=True)
+@_frozen_node_dataclass
 class FuncDefNode(ASTNode):
     """A function or method definition."""
     name: str = ""
@@ -124,7 +132,7 @@ class FuncDefNode(ASTNode):
     is_async: bool = False
 
 
-@dataclass(frozen=True, slots=True)
+@_frozen_node_dataclass
 class ClassDefNode(ASTNode):
     """A class definition."""
     name: str = ""
