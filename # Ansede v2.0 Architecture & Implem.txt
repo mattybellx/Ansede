@@ -1,0 +1,80 @@
+# Ansede v2.0: Architecture & Implementation Specification
+
+## Executive Summary
+Ansede is an ambitious, functional prototype that attempts to solve a domain-hard problem (Zero-Dependency SAST) by tightly coupling parsing, intermediate representation (IR), and rule evaluation entirely in Python. While this achieved fast initial velocity, it is structurally a technical debt trap. 
+
+To reach v2.0 (Enterprise-Grade), Ansede must enforce a strict three-layer separation: **Parse $\rightarrow$ Represent $\rightarrow$ Evaluate**. This specification outlines the complete overhaul required to move away from hardcoded AST visits to a decoupled, highly performant, and scalable engine.
+
+---
+
+## Phase 1: Rule Engine Decoupling (The Python DSL)
+
+Hardcoding `_rule_NN(ctx: _Ctx)` functions inside core analyzer files violates the Open-Closed Principle and forces O(N) AST visits.
+
+### 1. Implement a Typed Rule Registry
+Create a Python DSL using decorators so rules can subscribe to specific node types. This decoupling means adding a new rule never touches engine core code.
+
+```python
+from collections import defaultdict
+from dataclasses import dataclass
+from typing import Optional, List
+
+class RuleRegistry:
+    _rules = defaultdict(list)
+    
+    @classmethod
+    def register(cls, *node_types):
+        def decorator(rule_cls):
+            for nt in node_types:
+                cls._rules[nt].append(rule_cls())
+            return rule_cls
+        return decorator
+
+@RuleRegistry.register('CALL', 'FORMATTED_STRING')
+class SQLInjectionRule:
+    cwe = "CWE-89"
+    severity = "critical"
+    
+    def evaluate(self, node, ctx) -> Optional[dict]:
+        # Taint evaluation logic goes here
+        pass
+2. File-by-File Actionspython_analyzer.py / js_analyzer.py: Extract all _rule_NN functions into a new rules/python/ and rules/js/ directory.Rename immediately: _rule_01 $\rightarrow$ HardcodedSecretRule, _rule_07 $\rightarrow$ SubprocessInjectionRule. Unreadable names are a security risk in themselves.Single-Pass Visit: The core engine should do exactly one pass over the AST to build a SemanticModel, then pass relevant nodes to the RuleRegistry subscribers.Phase 2: Parsing & AST NormalizationMaintaining a custom "zero-dependency" JS/TS/JSX parser in Python (js_ast_analyzer.py) locks the project into perpetual catch-up with ECMAScript/TypeScript specs.1. Tree-sitter IntegrationDrop the zero-dependency requirement for JS/TS parsing.Use the tree-sitter Python bindings for JS, TS, JSX, and Python. It natively handles malformed code and is heavily optimized.Deprecate the two competing JS analyzers and unify them under js_ts_analyzer.py.2. Thin AST Normalization LayerDo not expose raw Tree-sitter dictionaries to the rule engine. Build a thin abstraction layer that normalizes Python and JS nodes into a shared vocabulary.Python@dataclass
+class SourceLocation:
+    line: int
+    column: int
+    file_path: str
+
+@dataclass
+class ASTNode:
+    node_type: str
+    location: SourceLocation
+    language: str  # 'Python' | 'JS' | 'TS' | 'JSX'
+
+@dataclass
+class CallNode(ASTNode):
+    callee: str
+    args: List[ASTNode]
+Phase 3: Dataflow & Taint TrackingCurrently, engine/triage.py relies heavily on heuristic confidence adjustments, which is a symptom of weak dataflow pathing.1. Explicit Taint PrimitivesBefore attempting full Interprocedural Finite Distributive Subset (IFDS) analysis, implement a conservative taint graph using explicit primitives. This eliminates the need for triage heuristics.Pythonclass TaintSource(NamedTuple):
+    node: 'ASTNode'
+    category: str  # "user_input" | "env" | "file"
+
+class TaintSink(NamedTuple):
+    node: 'ASTNode'
+    argument_index: int  # Which argument is dangerous
+    cwe: str
+
+class Sanitizer(NamedTuple):
+    node: 'ASTNode'
+    clears: List[str]  # Which taint categories this clears
+2. NetworkX Integrationglobal_graph.py: Ditch the homemade adjacency lists. Use networkx to store the call/dataflow graph. It provides shortest-path and reachability queries out of the box.Edge Limits: Add a hard cap (e.g., max 50 callees) for dynamic dispatch scenarios to prevent O(n²) memory explosion during edge resolution.Phase 4: Configuration, Caching, & Schema1. Argument-Level Taint in ansede.jsonThe current custom_sinks definition is too primitive. Upgrade the schema to support positional and keyword argument index tracking.JSON{
+  "sinks": [
+    {
+      "cwe": "CWE-89",
+      "title": "Custom SQL Injection sink",
+      "function": "db.execute",
+      "tainted_args": [0],
+      "safe_args": [1]
+    }
+  ]
+}
+2. JSON Schema ValidationIntegrate the jsonschema library so malformed configs fail loudly at startup, rather than silently dropping custom sinks mid-scan.3. Caching & Incremental Analysis (sqlite_store.py)WAL Mode: Enable Write-Ahead Logging on connection init (PRAGMA journal_mode=WAL) to prevent database locks.Incremental Scanning: Store file content hashes alongside AST blobs. On subsequent scans, only re-analyze files whose hashes (or dependencies) have changed.Phase 5: Performance & Memory ManagementStandard CI runners often have limited RAM (4GB–8GB). Loading massive codebases into Python ASTs will cause out-of-memory (OOM) crashes.1. AST Garbage CollectionImplement a streaming architecture for file parsing.Parse File A $\rightarrow$ Extract nodes to SemanticModel / global_graph.Explicitly del the raw AST.Call gc.collect() before moving to File B.2. Multiprocessing the Parsing PhaseAST generation is an embarrassingly parallel task.Use concurrent.futures.ProcessPoolExecutor.Worker processes parse files and return serialized SemanticModel fragments.The main process aggregates these fragments into the networkx graph.Phase 6: Enterprise PolishWithout these features, enterprise adoption will stall regardless of engine accuracy.1. Inline Suppressions & BaselinesAdd token parsing to support # ansede: ignore comments. If a developer cannot suppress a false positive, they will uninstall the tool.Implement baseline file support (e.g., --baseline-commit) to track new findings vs. historical technical debt.2. The Exclusion StrategyHardcode a fail-safe exclusion list (node_modules, .venv, dist, build, __pycache__) directly into the traversal bootstrapper. Never rely on the user remembering to configure this in ansede.json.
