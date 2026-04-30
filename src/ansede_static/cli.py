@@ -1099,6 +1099,11 @@ def main() -> None:
                     _inc_cache = None
 
             global_graph = GlobalGraph()
+            if files:
+                try:
+                    global_graph.invalidate_changed_files({str(path) for path in files})
+                except Exception:
+                    pass
 
             # ── Helper for scanning one file (used in both serial and parallel) ──
             def _scan_one(fpath: Path) -> AnalysisResult:

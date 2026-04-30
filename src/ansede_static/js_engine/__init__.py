@@ -22,6 +22,11 @@ from ansede_static.js_engine.taint import (
     trace_for_expr,
     trace_has_sanitizer,
 )
+from ansede_static.js_engine.source_map_resolver import (
+    load_sourcemap_path,
+    parse_sourcemap_segments,
+    remap_findings_to_source_map,
+)
 
 __all__ = [
     "COMMENT_LINE_RE",
@@ -39,6 +44,9 @@ __all__ = [
     "first_referenced_taint_name",
     "merge_traces",
     "parse_object_literal",
+    "parse_sourcemap_segments",
+    "load_sourcemap_path",
+    "remap_findings_to_source_map",
     "strip_comments",
     "trace_for_expr",
     "trace_has_sanitizer",

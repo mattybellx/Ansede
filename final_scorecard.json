@@ -1,0 +1,40 @@
+{
+  "kind": "ansede-final-scorecard",
+  "version": 1,
+  "metrics": {
+    "cve": {
+      "recall_pct": 100.0,
+      "precision_pct": 100.0,
+      "f1_pct": 100.0,
+      "fp_rate_pct": 0.0,
+      "tp": 35,
+      "fp": 0,
+      "fn": 0,
+      "passed_cases": 35,
+      "total_cases": 35
+    },
+    "quality": {
+      "score_pct": 100.0,
+      "checks_passed": 41,
+      "checks_total": 41
+    },
+    "external": {
+      "score_pct": 100.0,
+      "checks_passed": 19,
+      "checks_total": 19
+    },
+    "noise_quotient": {
+      "unit": "fp_per_1k_loc",
+      "value": 0.0,
+      "baseline": "CVE corpus total LOC",
+      "total_loc": 407
+    }
+  },
+  "targets": {
+    "fp_rate_below_10_pct": true,
+    "recall_above_90_pct": true,
+    "noise_quotient_below_2_per_1k_loc": true,
+    "core_cve_pass": true
+  },
+  "all_targets_met": true
+}

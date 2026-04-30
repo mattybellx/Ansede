@@ -10,6 +10,33 @@ Interprocedural Taint Analysis (IFDS/IDE) Architecture & Usage Guide
 
 Ansede v2.0 now includes a **production-grade interprocedural dataflow analysis framework** based on IFDS (Interprocedural Finite Distributive Set), a foundational algorithm in static analysis.
 
+## Where IFDS Lives Today
+
+Ansede currently has **two related IFDS layers**:
+
+1. **The v2 framework** in `src/ansede_static/v2/*`
+    - formal IFDS solver primitives
+    - explicit contexts / call sites
+    - dedicated integration tests
+
+2. **The production Python analyzer path** in `src/ansede_static/python_analyzer.py`
+    plus `src/ansede_static/ir/global_graph.py`
+    - builds lightweight `FunctionSummary` objects per function
+    - persists summaries in the workspace cache
+    - propagates interprocedural taint through `GlobalGraph.propagate_call_facts(...)`
+    - records bounded call-string and IDE-style return facts for incremental scans
+
+That means the shipped Python scanner is **not a pure rewrite on top of the v2 solver**.
+It is a **hybrid architecture**:
+
+- **intraprocedural reasoning** still lives primarily inside `python_analyzer.py`
+- **interprocedural propagation** is delegated to `GlobalGraph`
+- **incremental invalidation** uses persisted summary dependencies
+
+This hybrid design is intentional for now: it keeps the production analyzer fast,
+stdlib-only, and benchmark-stable while still giving it formal IFDS-style summary
+transfer across helper calls.
+
 ### What is IFDS?
 
 IFDS is a tabulation-based algorithm for computing precise interprocedural dataflow facts:
@@ -33,6 +60,24 @@ This work completes Spec §3 (Dataflow & Taint Tracking), moving beyond the cons
 | **Interprocedural taint** | ❌ | ✅ IFDS/IDE |
 | **Context-sensitive** | ❌ | ✅ Call-site-specific |
 | **Interprocedural calls** | ❌ | ✅ Parameter & return taint |
+
+### Production Python Analyzer Mapping
+
+For the mainline Python scanner, the practical mapping is:
+
+| Concern | Production implementation |
+|---------|---------------------------|
+| Local taint discovery | `_rule_03(...)` in `python_analyzer.py` |
+| Local helper summaries | `_build_function_taint_summaries(...)` |
+| Summary dependency graph | `_collect_function_dependencies(...)` + `GlobalGraph.record_function_summary(...)` |
+| Cross-call transfer | `GlobalGraph.propagate_call_facts(...)` |
+| Context sensitivity | bounded `call_string` (default $k = 2$) |
+| IDE-style lattice state | `IDETaintFact` stored per `(file, function, value, call-string)` |
+| Incremental invalidation | `GlobalGraph.invalidate_changed_files(...)` |
+
+So if you are reading the production code path, treat `GlobalGraph` as the
+**interprocedural authority**, and `python_analyzer.py` as the
+**intraprocedural front-end plus finding synthesis layer**.
 
 ---
 
@@ -311,7 +356,7 @@ result = ff(TaintFact(label="tainted_result", category="user_input"))
 
 ## Limitations & Future Work
 
-### Current (v2.1)
+### Current (v2.1 / production mainline)
 
 ✅ **Supported:**
 - Intraprocedural taint propagation with IFDS tabulation
@@ -320,6 +365,8 @@ result = ff(TaintFact(label="tainted_result", category="user_input"))
 - Bounded call stack (default depth 3)
 - Taint categories (user_input, env, file, network, database)
 - Sanitizer neutralization
+- Production Python summary propagation with persisted `FunctionSummary` objects
+- Bounded call-string propagation in the shipped Python analyzer (default $k = 2$)
 
 ❌ **Not Yet Supported:**
 - **IDE (Environment)** — abstract values beyond binary (tainted/not) facts
@@ -328,6 +375,7 @@ result = ff(TaintFact(label="tainted_result", category="user_input"))
 - **Field-sensitive analysis** — tracking taint within object fields
 - **Heap analysis** — array/dictionary element tracking
 - **Distributed codebase** — cross-module analysis (requires global symbol table)
+- **Full unification** — the shipped Python analyzer still uses a hybrid local-analysis + summary-transfer architecture rather than routing every Python flow through the standalone v2 solver
 
 ### v2.2+ Roadmap
 

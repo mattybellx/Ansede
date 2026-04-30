@@ -6,6 +6,7 @@ Unit tests for the Python AST security analyzer.
 from __future__ import annotations
 
 import pytest
+from ansede_static.ir.global_graph import GlobalGraph
 from ansede_static.python_analyzer import analyze_python
 from ansede_static._types import Severity
 
@@ -673,6 +674,30 @@ def fetch():
     return resp.text
 """
         assert _has_cwe(code, "CWE-918")
+
+    def test_ssrf_helper_chain_trace_keeps_bounded_ifds_context(self):
+        code = """
+import requests
+from flask import request
+
+def build_target(target):
+    return target
+
+def normalize_target(target):
+    return target.strip()
+
+def fetch():
+    url = request.args.get('callback_url')
+    return requests.get(normalize_target(build_target(url))).text
+"""
+        result = analyze_python(code, filename="app.py", global_graph=GlobalGraph())
+        finding = next(f for f in result.findings if f.cwe == "CWE-918")
+        labels = [frame.label for frame in finding.trace]
+
+        ctx_labels = [label for label in labels if label.startswith("call `normalize_target()` [ctx:")]
+        assert ctx_labels
+        assert "normalize_target" in ctx_labels[0]
+        assert "build_target" in ctx_labels[0]
 
 
 # ── Auto-fix generation ───────────────────────────────────────────────────────

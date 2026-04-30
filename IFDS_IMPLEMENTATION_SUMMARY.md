@@ -7,12 +7,22 @@ Complete summary of IFDS/IDE interprocedural taint analysis implementation (Phas
 # IFDS/IDE Implementation Summary
 
 **Completed:** 2026-04-29  
-**Status:** ✅ COMPLETE — Production-ready IFDS framework  
+**Status:** ✅ COMPLETE — Production-ready IFDS framework, with hybrid production Python integration  
 **Tests:** 410 passing (59 new IFDS-specific tests)
 
 ---
 
 ## What Was Built
+
+Important nuance: the repository now contains both
+
+- a **formal v2 IFDS framework** under `src/ansede_static/v2/*`, and
+- a **production Python analyzer integration** that uses cached `FunctionSummary`
+    objects plus `GlobalGraph.propagate_call_facts(...)` for interprocedural transfer.
+
+The latter is intentionally **hybrid**, not a complete replacement of the existing
+intraprocedural analyzer. In other words, the production scanner is honest-to-goodness
+IFDS-inspired and context-sensitive, but not yet a single-solver architecture.
 
 ### Phase 3 Continuation: Interprocedural Taint Analysis
 
@@ -450,7 +460,14 @@ for (node, ctx), facts in all_results.items():
 
 ## Summary
 
-**✅ IFDS/IDE implementation is complete and production-ready.**
+**✅ The IFDS/IDE framework is complete and production-ready.**
+
+**✅ The shipped Python analyzer now uses that work through a pragmatic hybrid design:**
+
+- local AST taint reasoning in `python_analyzer.py`
+- interprocedural summary transfer in `ir/global_graph.py`
+- persisted dependency-aware invalidation for incremental scans
+- bounded call-string context for nested helper chains
 
 With this work, Ansede v2.0 now includes:
 - Context-sensitive interprocedural taint analysis
@@ -461,6 +478,8 @@ With this work, Ansede v2.0 now includes:
 - 410 total passing tests
 
 The framework is extensible, fast, and deterministic—ready for enterprise use in security scanning pipelines.
+
+The remaining architectural gap is not correctness but **full unification**: a future cleanup could route the production Python analyzer entirely through the standalone v2 solver. Today’s implementation instead keeps the public scanner benchmark-green and operationally simple while using IFDS summaries where they deliver the most value.
 
 **Estimated impact:** 30-40% reduction in false negatives on typical codebases by catching taint flows across function boundaries.
 

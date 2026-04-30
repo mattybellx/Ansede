@@ -87,3 +87,5 @@ def test_propagate_call_facts_records_return_lattice_fact():
     fact = matching[-1]
     assert fact.level == IDETaintLevel.TAINTED
     assert fact.sources == ("arg[0]",)
+    assert fact.call_string[0] == "ctx0"
+    assert fact.call_string[-1].endswith("caller.js::route@9->helper")

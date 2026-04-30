@@ -727,15 +727,12 @@ def deploy_candidate_suppressions_with_cve_guard(
         scored.append((occurrences, rule))
     scored.sort(key=lambda item: item[0], reverse=True)
 
-    enabled_ids: set[str] = set()
-    for _, rule in scored[: max(0, max_enable)]:
-        rid = str(rule.get("id") or "")
-        if rid:
-            enabled_ids.add(rid)
+    ranked_rules: list[dict[str, Any]] = [rule for _, rule in scored if isinstance(rule, dict)]
+    initial_enable_count = min(max(0, int(max_enable)), len(ranked_rules))
 
-    for rule in candidates:
-        if isinstance(rule, dict):
-            rule["enabled"] = str(rule.get("id") or "") in enabled_ids
+    for index, rule in enumerate(ranked_rules):
+        rule["enabled"] = index < initial_enable_count
+        rule["deployment_status"] = "proposed-enabled" if rule["enabled"] else "proposed-disabled"
 
     out = Path(output_path)
     out.parent.mkdir(parents=True, exist_ok=True)
@@ -755,27 +752,59 @@ def deploy_candidate_suppressions_with_cve_guard(
         baseline_cases = baseline_report.get("cases", []) if isinstance(baseline_report, dict) else []
         baseline_failed = sum(1 for case in baseline_cases if isinstance(case, dict) and not bool(case.get("passed", False)))
 
-        cve_report = run_cve_recall(quiet=True, suppression_config=out)
-        summary = cve_report.get("summary", {}) if isinstance(cve_report, dict) else {}
-        cases = cve_report.get("cases", []) if isinstance(cve_report, dict) else []
-        failed_cases = sum(1 for case in cases if isinstance(case, dict) and not bool(case.get("passed", False)))
-        regression_delta = max(0, failed_cases - baseline_failed)
-        passed = regression_delta <= int(cve_regression_budget)
+        selected_count = initial_enable_count
+        selected_summary: dict[str, Any] = {}
+        selected_failed_cases = baseline_failed
+        selected_regression_delta = 0
+        selected_report: dict[str, Any] = {}
+
+        for enable_count in range(initial_enable_count, -1, -1):
+            for index, rule in enumerate(ranked_rules):
+                rule["enabled"] = index < enable_count
+                rule["deployment_status"] = "proposed-enabled" if rule["enabled"] else "proposed-disabled"
+
+            out.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+            cve_report = run_cve_recall(quiet=True, suppression_config=out)
+            summary = cve_report.get("summary", {}) if isinstance(cve_report, dict) else {}
+            cases = cve_report.get("cases", []) if isinstance(cve_report, dict) else []
+            failed_cases = sum(1 for case in cases if isinstance(case, dict) and not bool(case.get("passed", False)))
+            regression_delta = max(0, failed_cases - baseline_failed)
+            if regression_delta <= int(cve_regression_budget):
+                selected_count = enable_count
+                selected_summary = summary if isinstance(summary, dict) else {}
+                selected_failed_cases = failed_cases
+                selected_regression_delta = regression_delta
+                selected_report = cve_report if isinstance(cve_report, dict) else {}
+                break
+
+        for index, rule in enumerate(ranked_rules):
+            rule["enabled"] = index < selected_count
+            if rule["enabled"]:
+                rule["deployment_status"] = "enabled"
+            elif index < initial_enable_count and selected_count < initial_enable_count:
+                rule["deployment_status"] = "rejected_cve_regression"
+            else:
+                rule["deployment_status"] = "disabled"
+
+        passed = selected_regression_delta <= int(cve_regression_budget)
         validation = {
             "cve_guard": "executed",
             "passed": passed,
             "details": {
                 "baseline_failed_cases": baseline_failed,
-                "failed_cases": failed_cases,
-                "regression_delta": regression_delta,
+                "failed_cases": selected_failed_cases,
+                "regression_delta": selected_regression_delta,
                 "regression_budget": int(cve_regression_budget),
-                "summary": summary,
+                "initial_enable_count": initial_enable_count,
+                "final_enable_count": selected_count,
+                "auto_refined": selected_count != initial_enable_count,
+                "summary": selected_summary,
+                "report_meta": {
+                    "total_cases": selected_report.get("summary", {}).get("total_cases") if isinstance(selected_report.get("summary"), dict) else None,
+                    "passed_cases": selected_report.get("summary", {}).get("passed_cases") if isinstance(selected_report.get("summary"), dict) else None,
+                },
             },
         }
-        if not passed:
-            for rule in candidates:
-                if isinstance(rule, dict):
-                    rule["enabled"] = False
     except Exception as exc:  # noqa: BLE001
         validation = {
             "cve_guard": "error",
@@ -785,8 +814,18 @@ def deploy_candidate_suppressions_with_cve_guard(
         for rule in candidates:
             if isinstance(rule, dict):
                 rule["enabled"] = False
+                rule["deployment_status"] = "blocked_guard_error"
 
     payload["validation"] = validation
+    payload["deployment"] = {
+        "enabled_rule_ids": [
+            str(rule.get("id") or "")
+            for rule in candidates
+            if isinstance(rule, dict) and bool(rule.get("enabled", False))
+        ],
+        "enabled_count": sum(1 for rule in candidates if isinstance(rule, dict) and bool(rule.get("enabled", False))),
+        "candidate_count": sum(1 for rule in candidates if isinstance(rule, dict)),
+    }
     out.write_text(json.dumps(payload, indent=2), encoding="utf-8")
     return payload
 

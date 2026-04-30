@@ -262,7 +262,7 @@ RULES: list[Rule] = [
         "CWE-942: CORS wildcard origin at line {line}",
         "CORS is configured to allow all origins (`*`) at L{line}: `{snippet}`.",
         "Set `origin` to a specific allowlist of trusted domains instead of `*`.",
-        Severity.MEDIUM,
+        Severity.HIGH,
         r'origin\s*:\s*["\'][*]["\']|allowedOrigins\s*:\s*\[\s*["\'][*]["\']',
     ),
     Rule(
@@ -286,7 +286,7 @@ RULES: list[Rule] = [
         "CWE-1333: Potential ReDoS — catastrophic backtracking regex at line {line}",
         "Regex with nested quantifiers or ambiguous alternation at L{line}: `{snippet}`.",
         "Use safe regex patterns or a non-backtracking engine.",
-        Severity.MEDIUM,
+        Severity.HIGH,
         r'new\s+RegExp\s*\(|/(?:[^/\\]|\\.)*\((?:[^()\\/]|\\.)*(?:\+|\*|\{[\d,]+\})(?:[^()\\/]|\\.)*\)(?:\?|\+|\*|\{[\d,]+\})',
     ),
     Rule(

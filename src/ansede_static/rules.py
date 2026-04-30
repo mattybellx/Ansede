@@ -546,7 +546,7 @@ _CWE_CONTRACTS: dict[str, RuleContract] = {
     "CWE-942": _contract(
         title="Overly permissive CORS policy",
         category="security",
-        default_severity="medium",
+        default_severity="high",
         languages=("javascript", "typescript"),
         cwe="CWE-942",
         precision="high",
@@ -594,7 +594,7 @@ _CWE_CONTRACTS: dict[str, RuleContract] = {
     "CWE-1333": _contract(
         title="Potential catastrophic-backtracking regular expression",
         category="security",
-        default_severity="medium",
+        default_severity="high",
         languages=("javascript", "typescript"),
         cwe="CWE-1333",
         precision="medium",

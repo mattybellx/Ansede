@@ -9,6 +9,12 @@ description = "AST-based SAST for Python and JavaScript — detects IDOR, auth b
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.9"
+authors = [
+    { name = "Matty Bell" }
+]
+maintainers = [
+    { name = "Matty Bell" }
+]
 keywords = [
     "security", "sast", "static-analysis", "vulnerability", "linter",
     "code-review", "cwe", "owasp", "injection", "python", "javascript",
@@ -47,10 +53,21 @@ ansede-static-lsp = "ansede_static.lsp_server:run_lsp_server"
 Homepage   = "https://github.com/mattybellx/Ansede"
 Repository = "https://github.com/mattybellx/Ansede"
 Issues     = "https://github.com/mattybellx/Ansede/issues"
+Documentation = "https://github.com/mattybellx/Ansede#readme"
+Changelog = "https://github.com/mattybellx/Ansede/blob/main/CHANGELOG.md"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/ansede_static"]
 artifacts = ["src/ansede_static/schemas/ansede.schema.json"]
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "/src",
+    "/tests",
+    "/README.md",
+    "/CHANGELOG.md",
+    "/LICENSE",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

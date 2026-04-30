@@ -59,6 +59,27 @@ from ansede_static._types import Finding, Severity, AnalysisResult, TraceFrame
 
 
 _TaintInfo = tuple[str, int, set[str], tuple[TraceFrame, ...]]
+_ExprTaintInfo = tuple[str, str, int, set[str], tuple[TraceFrame, ...], tuple[str, ...]]
+DEFAULT_IFDS_CALL_STRING_K = 2
+IFDS_RETURN_VALUE_LABEL = "$ret"
+
+
+def _extend_ifds_call_string(
+    call_string: tuple[str, ...],
+    *,
+    caller_file: str,
+    caller_name: str,
+    callee_name: str,
+    call_line: int | None,
+    call_string_k: int = DEFAULT_IFDS_CALL_STRING_K,
+) -> tuple[str, ...]:
+    """Return a bounded call-string that includes the current callsite."""
+    caller = caller_name or "<module>"
+    site_label = f"{caller_file or '<stdin>'}::{caller}@{call_line or 0}->{callee_name}"
+    extended = call_string + (site_label,)
+    if call_string_k <= 0:
+        return ()
+    return extended[-call_string_k:]
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -939,6 +960,53 @@ def _build_function_taint_summaries(
     return summaries
 
 
+def _collect_function_dependencies(
+    func_defs: dict[str, ast.FunctionDef | ast.AsyncFunctionDef],
+    filename: str,
+) -> dict[str, tuple[str, ...]]:
+    """Collect intra-file call dependencies for IFDS summary invalidation."""
+    known_functions = set(func_defs)
+    deps: dict[str, tuple[str, ...]] = {}
+    for function_name, fnode in func_defs.items():
+        called: set[str] = set()
+        for node in ast.walk(fnode):
+            if not isinstance(node, ast.Call):
+                continue
+            callee = _get_local_callee_name(node)
+            if callee and callee in known_functions and callee != function_name:
+                called.add(f"{filename or '<stdin>'}::{callee}")
+        deps[function_name] = tuple(sorted(called))
+    return deps
+
+
+def _resolve_callee_file_for_global_graph(
+    global_graph: object,
+    *,
+    caller_file: str,
+    callee_name: str,
+) -> str:
+    """Resolve callee file path for IFDS propagation with fuzzy fallback."""
+    if hasattr(global_graph, "get_function_summary"):
+        try:
+            summary = global_graph.get_function_summary(caller_file, callee_name)
+            if summary is not None and getattr(summary, "file_path", None):
+                return str(summary.file_path)
+        except Exception:
+            pass
+
+    # Fallback: scan available summary map for matching function names.
+    try:
+        summaries = getattr(global_graph, "function_summaries", {})
+        if isinstance(summaries, dict):
+            for (file_path, function_name), _summary in summaries.items():
+                if function_name == callee_name and isinstance(file_path, str):
+                    return file_path
+    except Exception:
+        pass
+
+    return caller_file or "<stdin>"
+
+
 def _call_taint_from_summary(
     node: ast.Call,
     tainted: dict[str, _TaintInfo],
@@ -948,14 +1016,30 @@ def _call_taint_from_summary(
     global_graph: object | None = None,
     caller_file: str = "",
     caller_name: str = "",
-) -> tuple[str, str, int, set[str], tuple[TraceFrame, ...]] | None:
+    call_string: tuple[str, ...] = (),
+    call_string_k: int = DEFAULT_IFDS_CALL_STRING_K,
+) -> _ExprTaintInfo | None:
     """Resolve taint flowing out of a helper call using its function summary."""
     callee = _get_local_callee_name(node)
     summary = func_summaries.get(callee)
+    next_call_string = _extend_ifds_call_string(
+        call_string,
+        caller_file=caller_file,
+        caller_name=caller_name,
+        callee_name=callee,
+        call_line=getattr(node, "lineno", None),
+        call_string_k=call_string_k,
+    )
 
     # Prefer the unified GlobalGraph IFDS transfer when available.
     if global_graph is not None and hasattr(global_graph, "propagate_call_facts"):
+        callee_file = _resolve_callee_file_for_global_graph(
+            global_graph,
+            caller_file=caller_file or "<stdin>",
+            callee_name=callee,
+        )
         tainted_arg_indexes: set[int] = set()
+        nested_call_strings: list[tuple[str, ...]] = []
         if summary is not None and summary.parameters:
             arg_map = _map_call_arguments(node, summary.parameters)
             for idx, param in enumerate(summary.parameters):
@@ -970,9 +1054,13 @@ def _call_taint_from_summary(
                     global_graph=global_graph,
                     caller_file=caller_file,
                     caller_name=caller_name,
+                    call_string=call_string,
+                    call_string_k=call_string_k,
                 )
                 if info:
                     tainted_arg_indexes.add(idx)
+                    if info[5]:
+                        nested_call_strings.append(info[5])
         else:
             for idx, arg_node in enumerate(node.args):
                 info = _find_tainted_expr_info(
@@ -983,26 +1071,32 @@ def _call_taint_from_summary(
                     global_graph=global_graph,
                     caller_file=caller_file,
                     caller_name=caller_name,
+                    call_string=call_string,
+                    call_string_k=call_string_k,
                 )
                 if info:
                     tainted_arg_indexes.add(idx)
+                    if info[5]:
+                        nested_call_strings.append(info[5])
+
+        incoming_call_string = max(nested_call_strings, key=len, default=call_string)
 
         try:
             sink_hit, sink_trace, ret_hit, return_trace = global_graph.propagate_call_facts(
                 caller_file=caller_file or "<stdin>",
                 caller_name=caller_name or "<module>",
-                callee_file=caller_file or "<stdin>",
+                callee_file=callee_file,
                 callee_name=callee,
                 tainted_arg_indexes=tainted_arg_indexes,
                 call_line=getattr(node, "lineno", None),
-                call_string=(),
-                call_string_k=2,
+                call_string=incoming_call_string,
+                call_string_k=call_string_k,
             )
             if ret_hit:
                 src = "interprocedural return taint (global IFDS)"
                 trace = return_trace or sink_trace
                 trace = _append_trace(trace, "helper", f"through `{callee}()`", node)
-                return (f"{callee}()", src, getattr(node, "lineno", 0), set(), trace)
+                return (f"{callee}()", src, getattr(node, "lineno", 0), set(), trace, next_call_string)
         except Exception:
             pass
 
@@ -1013,7 +1107,7 @@ def _call_taint_from_summary(
         if summary.source_line:
             trace = _append_trace(trace, "source", summary.source, line=summary.source_line)
         trace = _append_trace(trace, "helper", f"through `{callee}()`", node)
-        return (f"{callee}()", summary.source, getattr(node, "lineno", 0), set(), trace)
+        return (f"{callee}()", summary.source, getattr(node, "lineno", 0), set(), trace, next_call_string)
 
     arg_map = _map_call_arguments(node, summary.parameters)
     for param_name in summary.tainted_params:
@@ -1028,11 +1122,14 @@ def _call_taint_from_summary(
             global_graph=global_graph,
             caller_file=caller_file,
             caller_name=caller_name,
+            call_string=call_string,
+            call_string_k=call_string_k,
         )
         if info:
-            label, src, line, san, trace = info
+            label, src, line, san, trace, nested_call_string = info
             trace = _append_trace(trace, "helper", f"through `{callee}()`", node)
-            return (f"{callee}() via `{label}`", src, line, san, trace)
+            effective_call_string = nested_call_string or next_call_string
+            return (f"{callee}() via `{label}`", src, line, san, trace, effective_call_string)
     return None
 
 
@@ -1045,7 +1142,9 @@ def _find_tainted_expr_info(
     global_graph: object | None = None,
     caller_file: str = "",
     caller_name: str = "",
-) -> tuple[str, str, int, set[str], tuple[TraceFrame, ...]] | None:
+    call_string: tuple[str, ...] = (),
+    call_string_k: int = DEFAULT_IFDS_CALL_STRING_K,
+) -> _ExprTaintInfo | None:
     """Return the first tainted origin found inside an expression, including helper calls."""
     if visited is None:
         visited = set()
@@ -1057,13 +1156,13 @@ def _find_tainted_expr_info(
 
     if isinstance(node, ast.Name) and node.id in tainted:
         src, line, san, trace = tainted[node.id]
-        return (node.id, src, line, san, trace)
+        return (node.id, src, line, san, trace, call_string)
 
     # Collection element taint: x = tainted_list[i] → x is tainted
     if isinstance(node, ast.Subscript) and isinstance(node.value, ast.Name):
         if node.value.id in tainted:
             src, line, san, trace = tainted[node.value.id]
-            return (node.value.id, src, line, san, trace)
+            return (node.value.id, src, line, san, trace, call_string)
 
     # List/tuple literal: [tainted, clean] → result is tainted
     if isinstance(node, (ast.List, ast.Tuple, ast.Set)):
@@ -1076,6 +1175,8 @@ def _find_tainted_expr_info(
                 global_graph=global_graph,
                 caller_file=caller_file,
                 caller_name=caller_name,
+                call_string=call_string,
+                call_string_k=call_string_k,
             )
             if info:
                 return info
@@ -1085,7 +1186,7 @@ def _find_tainted_expr_info(
         if src:
             label = _safe_unparse(node)[:80] or "untrusted input"
             trace = (_make_trace_frame("source", label, node),)
-            return (label, src, getattr(node, "lineno", 0), set(), trace)
+            return (label, src, getattr(node, "lineno", 0), set(), trace, call_string)
 
     if isinstance(node, ast.Call):
         summary_info = _call_taint_from_summary(
@@ -1096,10 +1197,12 @@ def _find_tainted_expr_info(
             global_graph=global_graph,
             caller_file=caller_file,
             caller_name=caller_name,
+            call_string=call_string,
+            call_string_k=call_string_k,
         )
         sanitized_cwes = _get_sanitized_cwes(node)
         if summary_info:
-            label, src, line, san, trace = summary_info
+            label, src, line, san, trace, nested_call_string = summary_info
             if sanitized_cwes:
                 trace = _append_trace(
                     trace,
@@ -1107,7 +1210,7 @@ def _find_tainted_expr_info(
                     f"sanitize via `{_get_call_name(node) or 'call'}`",
                     node,
                 )
-            return (label, src, line, san | sanitized_cwes, trace)
+            return (label, src, line, san | sanitized_cwes, trace, nested_call_string)
         if sanitized_cwes:
             for arg in node.args:
                 info = _find_tainted_expr_info(
@@ -1118,6 +1221,8 @@ def _find_tainted_expr_info(
                     global_graph=global_graph,
                     caller_file=caller_file,
                     caller_name=caller_name,
+                    call_string=call_string,
+                    call_string_k=call_string_k,
                 )
                 if info:
                     trace = _append_trace(
@@ -1126,7 +1231,7 @@ def _find_tainted_expr_info(
                         f"sanitize via `{_get_call_name(node) or 'call'}`",
                         node,
                     )
-                    return (info[0], info[1], info[2], info[3] | sanitized_cwes, trace)
+                    return (info[0], info[1], info[2], info[3] | sanitized_cwes, trace, info[5])
             for kw in node.keywords:
                 info = _find_tainted_expr_info(
                     kw.value,
@@ -1136,6 +1241,8 @@ def _find_tainted_expr_info(
                     global_graph=global_graph,
                     caller_file=caller_file,
                     caller_name=caller_name,
+                    call_string=call_string,
+                    call_string_k=call_string_k,
                 )
                 if info:
                     trace = _append_trace(
@@ -1144,7 +1251,7 @@ def _find_tainted_expr_info(
                         f"sanitize via `{_get_call_name(node) or 'call'}`",
                         node,
                     )
-                    return (info[0], info[1], info[2], info[3] | sanitized_cwes, trace)
+                    return (info[0], info[1], info[2], info[3] | sanitized_cwes, trace, info[5])
 
     for child in ast.iter_child_nodes(node):
         info = _find_tainted_expr_info(
@@ -1155,10 +1262,41 @@ def _find_tainted_expr_info(
             global_graph=global_graph,
             caller_file=caller_file,
             caller_name=caller_name,
+            call_string=call_string,
+            call_string_k=call_string_k,
         )
         if info:
             return info
     return None
+
+
+def _record_function_summaries_in_global_graph(
+    global_graph: object,
+    *,
+    filename: str,
+    func_summaries: dict[str, _FunctionTaintSummary],
+    summary_dependencies: dict[str, tuple[str, ...]],
+) -> None:
+    """Publish local Python summaries into the shared GlobalGraph IFDS store."""
+    from ansede_static.ir.global_graph import FunctionSummary
+
+    for function_name, summary in func_summaries.items():
+        parameters = list(summary.parameters)
+        tainted_params = set(summary.tainted_params)
+        arg_indexes = tuple(
+            idx for idx, param in enumerate(parameters)
+            if param in tainted_params
+        )
+        global_graph.record_function_summary(FunctionSummary(
+            file_path=filename or "<stdin>",
+            function_name=function_name,
+            args_to_sink=arg_indexes,
+            args_to_return=arg_indexes,
+            return_from_source=bool(summary.source),
+            side_effect_symbols=(),
+            depends_on=summary_dependencies.get(function_name, ()),
+        ))
+    global_graph.save_summaries()
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -1562,7 +1700,7 @@ def _rule_03(ctx: _Ctx) -> list[Finding]:
                                     caller_name=fname,
                                 )
                                 if lam_info:
-                                    _, lsrc, lline, lsan, ltrace = lam_info
+                                    _, lsrc, lline, lsan, ltrace, _ = info
                                     lam_tainted[lam_arg.arg] = (lsrc, lline, lsan, ltrace)
                         lam_result = _find_tainted_expr_info(
                             lam.body,
@@ -1573,7 +1711,7 @@ def _rule_03(ctx: _Ctx) -> list[Finding]:
                             caller_name=fname,
                         )
                         if lam_result:
-                            lbl, lsrc2, lline2, lsan2, ltrace2 = lam_result
+                            lbl, lsrc2, lline2, lsan2, ltrace2, _ = lam_result
                             tainted_vars[target.id] = (
                                 f"lambda result from `{lbl}` ({lsrc2})",
                                 lline2,
@@ -1592,7 +1730,7 @@ def _rule_03(ctx: _Ctx) -> list[Finding]:
                     )
                     if not taint_info:
                         continue
-                    label, source_desc, source_line, inherited_san, inherited_trace = taint_info
+                    label, source_desc, source_line, inherited_san, inherited_trace, _ = taint_info
                     if isinstance(node.value, ast.Call):
                         sanitized_cwes = _get_sanitized_cwes(node.value)
                         merged = inherited_san | sanitized_cwes
@@ -1637,7 +1775,7 @@ def _rule_03(ctx: _Ctx) -> list[Finding]:
                     caller_name=fname,
                 )
                 if taint_info:
-                    label, source_desc, source_line, inherited_san, inherited_trace = taint_info
+                    label, source_desc, source_line, inherited_san, inherited_trace, _ = taint_info
                     tainted_vars[node.target.id] = (
                         f"combined with `{label}` ({source_desc})",
                         source_line,
@@ -1686,7 +1824,7 @@ def _rule_03(ctx: _Ctx) -> list[Finding]:
                         if arg_node in safe_params:
                             continue
                         
-                        vname, vsrc, vline, san_cwes, trace = hit
+                        vname, vsrc, vline, san_cwes, trace, _ = hit
                         # Skip if this CWE has been neutralised by a sanitizer
                         if cwe in san_cwes or cwe in inline_sanitized:
                             continue
@@ -3868,7 +4006,7 @@ def _rule_28(ctx: _Ctx) -> list[Finding]:
                 attr_arg = node.args[1]
                 attr_info = _find_tainted_expr_info(attr_arg, tainted_vars, func_summaries)
                 if attr_info:
-                    vname, vsrc, vline, san_cwes, trace = attr_info
+                    vname, vsrc, vline, san_cwes, trace, _ = attr_info
                     findings.append(Finding(
                         category="security", severity=Severity.HIGH,
                         title=f"CWE-470: Externally-controlled method dispatch in {fname}() at line {node.lineno}",
@@ -3891,7 +4029,7 @@ def _rule_28(ctx: _Ctx) -> list[Finding]:
             if (call_name == "__import__" and len(node.args) >= 1):
                 arg_info = _find_tainted_expr_info(node.args[0], tainted_vars, func_summaries)
                 if arg_info:
-                    vname, vsrc, vline, san_cwes, trace = arg_info
+                    vname, vsrc, vline, san_cwes, trace, _ = arg_info
                     findings.append(Finding(
                         category="security", severity=Severity.CRITICAL,
                         title=f"CWE-470: Dynamic module import from user input in {fname}() at line {node.lineno}",
@@ -3910,7 +4048,7 @@ def _rule_28(ctx: _Ctx) -> list[Finding]:
             if (call_name in ("importlib.import_module", "import_module") and len(node.args) >= 1):
                 arg_info = _find_tainted_expr_info(node.args[0], tainted_vars, func_summaries)
                 if arg_info:
-                    vname, vsrc, vline, san_cwes, trace = arg_info
+                    vname, vsrc, vline, san_cwes, trace, _ = arg_info
                     findings.append(Finding(
                         category="security", severity=Severity.CRITICAL,
                         title=f"CWE-470: Dynamic importlib.import_module from user input in {fname}() at line {node.lineno}",
@@ -4072,28 +4210,16 @@ def _detect(code: str, filename: str = "", global_graph: object = None) -> list[
     if func_summaries is None:
         func_summaries = _build_function_taint_summaries(tree, func_defs)
         _store_cached_function_summaries(code, filename or "<stdin>", func_summaries)
+    summary_dependencies = _collect_function_dependencies(func_defs, filename or "<stdin>")
 
     if global_graph is not None:
         try:
-            from ansede_static.ir.global_graph import FunctionSummary
-
-            for function_name, summary in func_summaries.items():
-                parameters = list(summary.parameters)
-                tainted_params = set(summary.tainted_params)
-                arg_indexes = tuple(
-                    idx for idx, param in enumerate(parameters)
-                    if param in tainted_params
-                )
-                global_graph.record_function_summary(FunctionSummary(
-                    file_path=filename or "<stdin>",
-                    function_name=function_name,
-                    args_to_sink=arg_indexes,
-                    args_to_return=arg_indexes,
-                    return_from_source=bool(summary.source),
-                    side_effect_symbols=(),
-                    depends_on=(),
-                ))
-            global_graph.save_summaries()
+            _record_function_summaries_in_global_graph(
+                global_graph,
+                filename=filename,
+                func_summaries=func_summaries,
+                summary_dependencies=summary_dependencies,
+            )
         except Exception:
             pass
 
