@@ -1,8 +1,8 @@
 {
   "name": "ansede-static",
   "displayName": "Ansede Static Security Scanner",
-  "description": "Zero-dependency SAST — detects IDOR, auth bypass, SQLi, command injection, and 20+ vulnerability categories inline while you code.",
-  "version": "1.1.0",
+  "description": "Offline SAST for Python/JS/TS with route-aware auth/IDOR detection, trace-backed findings, and SARIF-ready output inline while you code.",
+  "version": "1.2.0",
   "publisher": "ansede",
   "license": "MIT",
   "engines": {

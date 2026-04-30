@@ -24,9 +24,13 @@ inputs:
     required: false
     default: ''
   version:
-    description: 'Optional Git ref to install from GitHub instead of the checked-out action code (for advanced debugging only)'
+    description: 'Optional version/ref. With install-source=pypi, install ansede-static==<version>; with install-source=github, install from that git ref.'
     required: false
     default: ''
+  install-source:
+    description: 'Install source: pypi (default), github, or local'
+    required: false
+    default: 'pypi'
   upload-sarif:
     description: 'Upload SARIF results to GitHub Code Scanning (requires contents:write and security-events:write permissions)'
     required: false
@@ -51,12 +55,23 @@ runs:
       shell: bash
       env:
         INPUT_VERSION: ${{ inputs.version }}
+        INPUT_INSTALL_SOURCE: ${{ inputs.install-source }}
         ACTION_PATH: ${{ github.action_path }}
       run: |
-        if [ -n "$INPUT_VERSION" ]; then
-          pip install --quiet "ansede-static @ git+https://github.com/mattybellx/Ansede.git@$INPUT_VERSION"
-        else
+        if [ "$INPUT_INSTALL_SOURCE" = "github" ]; then
+          if [ -n "$INPUT_VERSION" ]; then
+            pip install --quiet "ansede-static @ git+https://github.com/mattybellx/Ansede.git@$INPUT_VERSION"
+          else
+            pip install --quiet "ansede-static @ git+https://github.com/mattybellx/Ansede.git"
+          fi
+        elif [ "$INPUT_INSTALL_SOURCE" = "local" ]; then
           pip install --quiet "$ACTION_PATH"
+        else
+          if [ -n "$INPUT_VERSION" ]; then
+            pip install --quiet "ansede-static==$INPUT_VERSION" || pip install --quiet "$ACTION_PATH"
+          else
+            pip install --quiet "ansede-static" || pip install --quiet "$ACTION_PATH"
+          fi
         fi
 
     - name: Run ansede-static
@@ -145,7 +160,7 @@ PY
 
     - name: Upload SARIF to Code Scanning
       if: ${{ inputs.upload-sarif == 'true' && inputs.format == 'sarif' && inputs.output != '' }}
-      uses: github/codeql-action/upload-sarif@v3
+      uses: github/codeql-action/upload-sarif@v4
       with:
         sarif_file: ${{ inputs.output }}
         category: ansede-static

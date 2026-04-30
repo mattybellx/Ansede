@@ -5,6 +5,16 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+### Added — Public Launch Readiness (2026-04-30)
+- **`BENCHMARKS.md`** — dedicated public proof page with reproducible benchmark commands and current scorecards (CVE/quality/external/web-wild), plus cross-scanner NodeGoat evidence for ansede-static vs Bandit vs Semgrep OSS.
+
+### Changed — Public Launch Readiness (2026-04-30)
+- **PyPI-first install guidance** across `README.md` and `action.yml` (while still supporting explicit GitHub/local install paths for debugging and development).
+- **GitHub Action SARIF upload** in `action.yml` upgraded to `github/codeql-action/upload-sarif@v4`.
+- **`publish.yml`** modernized for Trusted Publishing with API-token fallback, keeping one release path for both secure OIDC and legacy token workflows.
+- **Repository docs status language** updated from beta-era messaging to stable launch messaging for `--incremental`, `--apply-fixes`, `--ai-triage`, structural JS backend defaults, source-map handling, IFDS/IDE interprocedural taint, and template transpilation caveats.
+- **VS Code extension marketplace metadata** refreshed (`vscode-extension/package.json`) with updated description and version bump to `1.2.0`.
+
 ### Added — Production Finalization (2026-04-30)
 - **`final_product_scorecard.json`** — generated benchmark artifact: CVE 35/35, quality 41/41, external 19/19, noise 0.0/kLOC; `all_targets_met: true`.
 - **`benchmarks/final_scorecard.py`** — extended with `--web-wild-report` flag and `_parse_web_wild_report()` to embed real-world noise quotient from web-wild harness JSON into the scorecard.

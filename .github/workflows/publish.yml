@@ -1,15 +1,9 @@
 name: Publish to PyPI
 
-# Fires automatically when a GitHub Release is published (which the release.yml
-# workflow creates for every v* tag).  All you need is a PyPI API token stored
-# as a repository secret called PYPI_API_TOKEN.
-#
-# How to set that up (one-time):
-#   1. Go to https://pypi.org/manage/account/token/ and create a token scoped
-#      to the "ansede-static" project (or whole account for a new project).
-#   2. Go to https://github.com/mattybellx/Ansede/settings/secrets/actions
-#      and add a secret named  PYPI_API_TOKEN  with that token value.
-#   3. Push a new v* tag — this workflow will publish automatically.
+# Fires automatically when a GitHub Release is published (created by release.yml
+# for each v* tag). Supports both:
+#   1) Trusted Publishing (recommended, no long-lived token)
+#   2) API token fallback via PYPI_API_TOKEN secret
 
 on:
   release:
@@ -23,7 +17,7 @@ jobs:
   publish:
     name: Build and publish to PyPI
     runs-on: ubuntu-latest
-    environment: pypi   # optional: add a "pypi" environment in repo settings for protection
+    environment: pypi
 
     steps:
       - uses: actions/checkout@v4
@@ -41,7 +35,12 @@ jobs:
       - name: Check distribution
         run: twine check dist/*
 
-      - name: Publish to PyPI
+      - name: Publish to PyPI (Trusted Publishing)
+        if: ${{ secrets.PYPI_API_TOKEN == '' }}
+        uses: pypa/gh-action-pypi-publish@release/v1
+
+      - name: Publish to PyPI (API token fallback)
+        if: ${{ secrets.PYPI_API_TOKEN != '' }}
         env:
           TWINE_USERNAME: __token__
           TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
