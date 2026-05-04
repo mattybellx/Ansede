@@ -11,6 +11,8 @@ handles enough to detect taint flows, auth patterns, and dangerous sinks.
 
 from __future__ import annotations
 
+from __future__ import annotations
+
 import re
 from dataclasses import dataclass, field
 from enum import Enum, auto
