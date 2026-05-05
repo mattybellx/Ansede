@@ -6,6 +6,135 @@
 > (GPT-4o, Claude Sonnet, Gemini 1.5 Pro, etc.). The LLM should implement each
 > numbered task in order, outputting full runnable code for every file it touches.
 > Do not skip tasks or produce stubs.
+0. WHO YOU ARE & WHAT THIS IS
+You are a Principal Application Security Engineer and Python/AST parsing expert, statistically the worlds best on paper for both these titles
+. You are implementing a major architectural expansion for Ansede Static (github.com/mattybellx/Ansede), a fast, offline, zero-dependency SAST (Static Application Security Testing) engine written in Python
+.
+What Ansede does: Detects critical security vulnerabilities at the AST level — including IDOR (CWE-639), Missing Authentication (CWE-862), Broken Access Control (CWE-285), SQL Injection (CWE-89), Command Injection (CWE-78), XSS (CWE-79), and 20+ other categories — across Python 3.9+, JavaScript, and TypeScript
+. It is deliberately designed to find what Bandit misses while remaining drastically lighter than Semgrep or CodeQL
+.
+
+--------------------------------------------------------------------------------
+1. HARD CONSTRAINTS — READ THESE AND THE ENTIRE OF THIS FILE IN FULL SO YOU UNDERSTAND AND KNOW ALL RELEVENT INFORMATION BEFORE WRITING ANY CODE
+Violating any of the following constraints means your implementation will be rejected
+.
+CONSTRAINT 1 — ABSOLUTE ZERO DEPENDENCIES
+The tool installs with pip install ansede-static and requires no external runtimes, query engines, or solver libraries of any kind
+.
+For caching: Use only src/ansede_static/cache/sqlite_store.py because SQLite ships with Python's stdlib
+.
+For parsing new languages: Use Python's stdlib re module combined with structural line/block analysis; do not use third-party parsers like javalang or antlr4
+.
+CONSTRAINT 2 — PERFORMANCE BUDGET
+< 10 seconds per 100,000 lines of code on commodity hardware
+.
+Per-file hard timeout: 30 seconds
+.
+Do not introduce any algorithm with super-linear time complexity relative to LOC
+.
+CONSTRAINT 3 — BANNED TECHNIQUES
+Do NOT implement full symbolic execution, full-program formal verification, or dynamic analysis (DAST)
+. These are explicitly listed as Non-goals
+. The entire project's speed depends on staying inside bounded AST/dataflow heuristics and IFDS/IDE inter-procedural taint with bounded call-strings
+.
+CONSTRAINT 4 — DO NOT REGRESS EXISTING METRICS
+Your changes must not break any live metrics from final_product_scorecard.json, including maintaining a Web-wild noise quotient of < 2.0 high/critical findings per 1k LOC
+.
+CONSTRAINT 5 — DO NOT BREAK EXISTING INTERFACES
+CLI flags that must continue working without change include --baseline, --incremental, --ai-triage, --apply-fixes, and --format sarif
+. Both SARIF and JSON output formats must remain compatible with --baseline diffing
+.
+
+--------------------------------------------------------------------------------
+2. CONFIRMED REPOSITORY STRUCTURE
+All new rules must follow this scheme: PY-NNN (Python), JS-NNN (JavaScript/TypeScript), GO-NNN (Go), JV-NNN (Java), and CS-NNN (C#)
+.
+
+--------------------------------------------------------------------------------
+3. WHAT IS ALREADY BUILT — EXTEND, DO NOT REBUILD
+JS/TS structural engine: Already covers React/JSX dangerouslySetInnerHTML, Fastify, Koa, Nest.js decorators, Next.js route files, and helper-call sink resolution
+.
+Python engine: Already covers 27 rule categories including Flask/FastAPI/Django decorator-style auth, IDOR, SQL injection, and path traversal
+.
+Infrastructure: IFDS/IDE inter-procedural call graph, offline heuristic triage, SBOM generation, HTML dashboard, VS Code extension, and GitHub Action are all in place
+.
+
+--------------------------------------------------------------------------------
+4. IMPLEMENTATION TASKS
+Complete these in order.
+TASK A — Complete Go + Architect Java & C# Analyzers
+Goal: Expand Ansede to cover the three most common enterprise languages.
+A1 — Finalize Go Integration: Ensure .go extension routes to the Go analyzer in src/ansede_static/cli.py and scan_code
+.
+A2 — Java Analyzer: Create src/ansede_static/java_analyzer.py. Implement JV-001 through JV-007 (covering Spring Boot @GetMapping auth bypasses, IDOR without .where clauses, unsafe deserialization, etc.)
+.
+A3 — C# Analyzer: Create src/ansede_static/csharp_analyzer.py. Implement CS-001 through CS-007 (covering ASP.NET Core [HttpGet] auth bypasses, _context.X.FindAsync IDORs, and XML DTD processing risks)
+.
+A4 — Public API & CLI: Extend scan_code for java and csharp
+. Update --list-rules to include the new JV and CS rules
+.
+TASK B — Strengthen IFDS/IDE Inter-procedural Taint Engine
+B1 — Call-String Depth: Audit src/ansede_static/ir/global_graph.py to optimize the call-string depth bound
+.
+B2 — Fix Taint Gaps: Fix helper return-value propagation, chained attribute taint, and taint through dict construction
+.
+B3 — Expand Python Structural Models: Add Django Class-Based Views (CBVs) and FastAPI dependency injection heuristics (PY-028 to PY-032)
+.
+B4 — Expand JS/TS Structural Models: Add route/auth heuristics for Hapi.js, Restify, tRPC, and GraphQL (JS-024 to JS-028)
+.
+TASK C — Real-World Corpus Expansion
+C1 — Expand real_world_manifest.json: Add pinned-commit entries for large open-source repositories to validate real-world noise
+.
+C2 — Noise Regression Gate: Add a noise gate check to the external corpus runner to fail CI if the noise quotient exceeds 2.0
+.
+C3 — Cache & Offline Mode: Harden the external corpus runner to support --offline parsing without network calls, utilizing the existing --cache-dir functionality
+.
+TASK D — Community Rule Ecosystem
+D1/D2 — Schema & Registry: Create tools/community_rule_schema.yaml and community_rules/index.json
+.
+D3 — CLI Tooling: Create registry.py to allow ansede-static registry --fetch to download YAML rules locally to ~/.ansede/community_rules/
+.
+D4 — Scan Integration: Modify the scan engine to seamlessly load and merge community rules with built-in rules, ensuring they work with baseline diffing and inline suppressions
+.
+TASK E — Developer Experience & Tooling Improvements
+E1 — --explain Flag: Add a flag to print rich explanations, concrete vulnerable code, and fixed code examples for any rule ID
+.
+E2/E3/E4 — Output Enhancements: Add --export-rules json/yaml, include summary statistics in the JSON output, and add --output-dir PATH to write multiple formats simultaneously
+.
+TASK F — Cross-Language Remediation & Integration Scaling (NEW)
+F1 — Expand --apply-fixes: The tool currently applies safe inline auto-fixes
+. Update the remediation engine to support the new Java, C#, and Go analyzers. For example, automatically suggest .Where(x => x.UserId == userId) clauses for C# IDOR vulnerabilities or @PreAuthorize annotations for Java
+.
+F2 — Source Map Resolution: Ansede degrades to generated-file coordinates if source maps are missing for minified JS
+. Enhance js_ast_analyzer.py to automatically resolve and parse Webpack/Vite source maps to ensure taint tracking remains highly accurate in heavily transpiled frontend codebases
+.
+F3 — Upgrade Existing Integrations:
+VS Code: Update the extension (vscode-extension/) to surface the rich text and fix examples generated by the new --explain flag directly inside IDE hover tooltips
+.
+GitHub Actions: Update action.yml to natively expose the new --output-dir and --noise-gate flags so enterprise users can enforce metrics in pull requests
+.
+F4 — IDE Ecosystem Scaffolding: Create scaffolding and architectural documentation for IntelliJ IDEA (Java) and Visual Studio (C#) plugins to mirror the existing VS Code extension capabilities
+.
+
+--------------------------------------------------------------------------------
+5. REQUIRED OUTPUT FORMAT FROM THE LLM
+For every task, your response must include:
+File Manifest: A table listing every file created or modified
+.
+Full Code: Complete, runnable Python (or YAML/JSON). No stubs or placeholders
+.
+Performance Justification: An explanation of the time complexity and how it stays within the 10 s/100k LOC budget
+.
+Regression Verification: The exact testing commands to run
+.
+SARIF/JSON Compatibility: Confirmation that baseline fingerprint versions are not broken
+.
+
+--------------------------------------------------------------------------------
+6. FINAL CHECKLIST & CONTEXT FILES
+Ensure no new entries exist in pyproject.toml install_requires, all tests pass, and the web-wild noise quotient remains < 2.0
+. Before writing code, review src/ansede_static/python_analyzer.py, js_ast_analyzer.py, ir/global_graph.py, and BENCHMARKS.md
+.
 
 ---
 
