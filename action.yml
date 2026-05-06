@@ -39,6 +39,14 @@ inputs:
     description: 'Post inline review comments on the PR for each finding (requires pull-requests:write permission). Only active on pull_request events.'
     required: false
     default: 'false'
+  noise-gate:
+    description: 'Enforce a strict web-wild noise quotient ceiling (e.g., 2.0). Fails the CI if the false-positive rate exceeds this limit.'
+    required: false
+    default: ''
+  output-dir:
+    description: 'Path to a directory to output multiple formats simultaneously in a single scan pass.'
+    required: false
+    default: ''
 
 outputs:
   findings-count:
@@ -83,6 +91,8 @@ runs:
         INPUT_OUTPUT: ${{ inputs.output }}
         INPUT_EXCLUDE: ${{ inputs.exclude }}
         INPUT_FAIL_ON: ${{ inputs.fail-on }}
+        INPUT_NOISE_GATE: ${{ inputs.noise-gate }}
+        INPUT_OUTPUT_DIR: ${{ inputs.output-dir }}
       run: |
         # Build shared exclude flags once
         EXCLUDE_FLAGS=()
@@ -94,9 +104,19 @@ runs:
 
         # Primary scan: requested format, written to output file (or stdout)
         ARGS=("$INPUT_PATH" --format "$INPUT_FORMAT" --fail-on never "${EXCLUDE_FLAGS[@]}")
+        
         if [ -n "$INPUT_OUTPUT" ]; then
           ARGS+=(--output "$INPUT_OUTPUT")
         fi
+        
+        if [ -n "$INPUT_NOISE_GATE" ]; then
+          ARGS+=(--noise-gate "$INPUT_NOISE_GATE")
+        fi
+        
+        if [ -n "$INPUT_OUTPUT_DIR" ]; then
+          ARGS+=(--output-dir "$INPUT_OUTPUT_DIR")
+        fi
+
         ansede-static "${ARGS[@]}"
 
         # Derive findings count from the already-generated output rather than re-scanning.
