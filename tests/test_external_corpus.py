@@ -8,7 +8,7 @@ import subprocess
 
 import pytest
 
-from benchmarks.external_corpus import load_manifest, run_external_corpus
+from benchmarks.external_corpus import OfflineCacheMissError, load_manifest, run_external_corpus
 
 
 def _run_git(args: list[str], *, cwd: Path) -> str:
@@ -88,15 +88,25 @@ def test_load_real_world_manifest_has_curated_git_entries():
         "nodegoat-hardcoded-zap-api-key",
         "nodegoat-hardcoded-cookie-and-crypto-secrets",
         "django-gdal-raster-clone-path-traversal",
+        "webgoat-full-repo",
+        "nodegoat-full-repo",
+        "flask-login-full-repo",
+        "dvna-full-repo",
     }
     assert all(entry.source.kind == "git" for entry in manifest.entries)
     assert {entry.source.repo for entry in manifest.entries} == {
         "https://github.com/OWASP/NodeGoat.git",
         "https://github.com/django/django.git",
+        "https://github.com/WebGoat/WebGoat.git",
+        "https://github.com/maxcountryman/flask-login.git",
+        "https://github.com/appsecco/dvna.git",
     }
     assert all(len(entry.source.ref) == 40 for entry in manifest.entries)
     assert all(entry.js_backend == "structural" for entry in manifest.entries if entry.language == "javascript")
     assert any(entry.language == "python" and entry.expected_rule_ids == ("PY-023",) for entry in manifest.entries)
+    assert any(entry.case_id == "webgoat-full-repo" and entry.languages == ("java",) for entry in manifest.entries)
+    assert any(entry.case_id == "dvna-full-repo" and entry.exclude_paths == ("node_modules/", "test/") for entry in manifest.entries)
+    assert any(entry.case_id == "flask-login-full-repo" and entry.expected_findings.min == 3 and entry.expected_findings.max == 7 for entry in manifest.entries)
 
 
 @pytest.mark.skipif(shutil.which("git") is None, reason="git is required for git-backed corpus tests")
@@ -221,5 +231,61 @@ def test_external_corpus_offline_git_source_requires_existing_cache(tmp_path):
         }]
     }, indent=2), encoding="utf-8")
 
-    with pytest.raises(FileNotFoundError):
+    with pytest.raises(OfflineCacheMissError):
         run_external_corpus(manifest_path, cache_dir=tmp_path / "missing-cache", offline=True, quiet=True)
+
+
+def test_load_manifest_supports_repo_ranges_and_excludes(tmp_path):
+    manifest_path = tmp_path / "manifest.json"
+    manifest_path.write_text(json.dumps({
+        "entries": [{
+            "case_id": "repo-java-scan",
+            "name": "Example Java Repo",
+            "source": {
+                "kind": "git",
+                "repo": "https://github.com/example/repo.git",
+                "ref": "0123456789abcdef0123456789abcdef01234567",
+            },
+            "languages": ["java"],
+            "exclude_paths": ["src/test/", "*.md"],
+            "expected_findings": {"min": 5, "max": 40},
+            "notes": "Repo-level entry",
+        }]
+    }, indent=2), encoding="utf-8")
+
+    manifest = load_manifest(manifest_path)
+    entry = manifest.entries[0]
+
+    assert entry.name == "Example Java Repo"
+    assert entry.languages == ("java",)
+    assert entry.exclude_paths == ("src/test/", "*.md")
+    assert entry.expected_findings.min == 5
+    assert entry.expected_findings.max == 40
+
+
+def test_external_corpus_reports_noise_gate(tmp_path):
+    repo_dir = tmp_path / "fixture-repo"
+    head = _init_git_fixture_repo(repo_dir)
+    manifest_path = tmp_path / "manifest.json"
+    manifest_path.write_text(json.dumps({
+        "entries": [{
+            "case_id": "git-python-admin-vuln",
+            "source": {
+                "kind": "git",
+                "repo": str(repo_dir),
+                "ref": head,
+                "subdir": "sample",
+            },
+            "language": "python",
+            "expected_cwes": ["CWE-862"],
+            "expected_rule_ids": ["PY-020"],
+            "expected_findings": {"min": 1, "max": 0},
+        }]
+    }, indent=2), encoding="utf-8")
+
+    report = run_external_corpus(manifest_path, cache_dir=tmp_path / "cache", noise_gate=0.5, quiet=True)
+
+    assert report["summary"]["score_pct"] < 100.0
+    assert report["summary"]["noise_quotient"] > 0.5
+    assert report["noise_gate"]["passed"] is False
+    assert report["noise_gate"]["failures"][0]["case_id"] == "git-python-admin-vuln"

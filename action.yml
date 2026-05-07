@@ -89,10 +89,10 @@ runs:
         INPUT_PATH: ${{ inputs.path }}
         INPUT_FORMAT: ${{ inputs.format }}
         INPUT_OUTPUT: ${{ inputs.output }}
+        INPUT_OUTPUT_DIR: ${{ inputs.output-dir }}
+        INPUT_NOISE_GATE: ${{ inputs.noise-gate }}
         INPUT_EXCLUDE: ${{ inputs.exclude }}
         INPUT_FAIL_ON: ${{ inputs.fail-on }}
-        INPUT_NOISE_GATE: ${{ inputs.noise-gate }}
-        INPUT_OUTPUT_DIR: ${{ inputs.output-dir }}
       run: |
         # Build shared exclude flags once
         EXCLUDE_FLAGS=()
@@ -108,15 +108,12 @@ runs:
         if [ -n "$INPUT_OUTPUT" ]; then
           ARGS+=(--output "$INPUT_OUTPUT")
         fi
-        
-        if [ -n "$INPUT_NOISE_GATE" ]; then
-          ARGS+=(--noise-gate "$INPUT_NOISE_GATE")
-        fi
-        
         if [ -n "$INPUT_OUTPUT_DIR" ]; then
           ARGS+=(--output-dir "$INPUT_OUTPUT_DIR")
         fi
-
+        if [ -n "$INPUT_NOISE_GATE" ]; then
+          ARGS+=(--noise-gate "$INPUT_NOISE_GATE")
+        fi
         ansede-static "${ARGS[@]}"
 
         # Derive findings count from the already-generated output rather than re-scanning.
@@ -129,45 +126,52 @@ runs:
           COUNT_FILE=""
         else
           COUNT_FILE="$(mktemp)"
-          ansede-static "$INPUT_PATH" --format json --fail-on never "${EXCLUDE_FLAGS[@]}" > "$COUNT_FILE" 2>/dev/null || true
+          COUNT_ARGS=("$INPUT_PATH" --format json --fail-on never "${EXCLUDE_FLAGS[@]}")
+          if [ -n "$INPUT_OUTPUT_DIR" ]; then
+            COUNT_ARGS+=(--output-dir "$INPUT_OUTPUT_DIR")
+          fi
+          if [ -n "$INPUT_NOISE_GATE" ]; then
+            COUNT_ARGS+=(--noise-gate "$INPUT_NOISE_GATE")
+          fi
+          ansede-static "${COUNT_ARGS[@]}" > "$COUNT_FILE" 2>/dev/null || true
           REMOVE_COUNT_FILE=true
         fi
 
         FINDINGS_COUNT="$(python3 - "$INPUT_FORMAT" "${INPUT_OUTPUT:-}" "${COUNT_FILE:-}" <<'PY'
-import json, sys
+        import json, sys
 
-fmt, out_file, count_file = sys.argv[1], sys.argv[2], sys.argv[3]
+        fmt, out_file, count_file = sys.argv[1], sys.argv[2], sys.argv[3]
 
-def count_from_json(path):
-    with open(path, encoding="utf-8") as fh:
-        data = json.load(fh)
-    if isinstance(data, dict):
-        s = data.get("summary")
-        if isinstance(s, dict) and isinstance(s.get("total_findings"), int):
-            return s["total_findings"]
-        return sum(len(e.get("findings", [])) for e in data.get("results", []) if isinstance(e, dict))
-    if isinstance(data, list):
-        return sum(len(e.get("findings", [])) for e in data if isinstance(e, dict))
-    return 0
+        def count_from_json(path):
+          with open(path, encoding="utf-8") as fh:
+            data = json.load(fh)
+          if isinstance(data, dict):
+            s = data.get("summary")
+            if isinstance(s, dict) and isinstance(s.get("total_findings"), int):
+              return s["total_findings"]
+            return sum(len(e.get("findings", [])) for e in data.get("results", []) if isinstance(e, dict))
+          if isinstance(data, list):
+            return sum(len(e.get("findings", [])) for e in data if isinstance(e, dict))
+          return 0
 
-def count_from_sarif(path):
-    with open(path, encoding="utf-8") as fh:
-        data = json.load(fh)
-    total = 0
-    for run in data.get("runs", []):
-        total += len(run.get("results", []))
-    return total
+        def count_from_sarif(path):
+          with open(path, encoding="utf-8") as fh:
+            data = json.load(fh)
+          total = 0
+          for run in data.get("runs", []):
+            total += len(run.get("results", []))
+          return total
 
-try:
-    if fmt == "sarif" and out_file:
-        print(count_from_sarif(out_file))
-    elif count_file:
-        print(count_from_json(count_file))
-    else:
-        print(0)
-except Exception:
-    print(0)
-PY
+        try:
+          if fmt == "sarif" and out_file:
+            print(count_from_sarif(out_file))
+          elif count_file:
+            print(count_from_json(count_file))
+          else:
+            print(0)
+        except Exception:
+          print(0)
+        PY
         )"
 
         [ "${REMOVE_COUNT_FILE:-false}" = "true" ] && rm -f "$COUNT_FILE"
@@ -175,7 +179,14 @@ PY
 
         # Enforce fail-on threshold using exit code — no third scan needed
         if [ "$INPUT_FAIL_ON" != "never" ]; then
-          ansede-static "$INPUT_PATH" --format text --no-colour --fail-on "$INPUT_FAIL_ON" "${EXCLUDE_FLAGS[@]}" 2>&1 || exit 1
+          FAIL_ARGS=("$INPUT_PATH" --format text --no-colour --fail-on "$INPUT_FAIL_ON" "${EXCLUDE_FLAGS[@]}")
+          if [ -n "$INPUT_OUTPUT_DIR" ]; then
+            FAIL_ARGS+=(--output-dir "$INPUT_OUTPUT_DIR")
+          fi
+          if [ -n "$INPUT_NOISE_GATE" ]; then
+            FAIL_ARGS+=(--noise-gate "$INPUT_NOISE_GATE")
+          fi
+          ansede-static "${FAIL_ARGS[@]}" 2>&1 || exit 1
         fi
 
     - name: Upload SARIF to Code Scanning
@@ -195,58 +206,57 @@ PY
         REPO: ${{ github.repository }}
       run: |
         python3 - <<'PY'
-import json, os, urllib.request, urllib.error
+        import json, os, urllib.request, urllib.error
 
-sarif_file = os.environ["SARIF_FILE"]
-token = os.environ["GITHUB_TOKEN"]
-repo = os.environ["REPO"]
-pr_number = os.environ["PR_NUMBER"]
+        sarif_file = os.environ["SARIF_FILE"]
+        token = os.environ["GITHUB_TOKEN"]
+        repo = os.environ["REPO"]
+        pr_number = os.environ["PR_NUMBER"]
 
-try:
-    with open(sarif_file, encoding="utf-8") as fh:
-        data = json.load(fh)
-except Exception as exc:
-    print(f"[ansede] Cannot read SARIF: {exc}")
-    raise SystemExit(0)
+        try:
+            with open(sarif_file, encoding="utf-8") as fh:
+                data = json.load(fh)
+        except Exception as exc:
+            print(f"[ansede] Cannot read SARIF: {exc}")
+            raise SystemExit(0)
 
-comments = []
-for run in data.get("runs", []):
-    for result in run.get("results", []):
-        msg = result.get("message", {}).get("text", "Security finding")
-        level = result.get("level", "warning")
-        for loc in result.get("locations", []):
-            phys = loc.get("physicalLocation", {})
-            path = phys.get("artifactLocation", {}).get("uri", "")
-            line = phys.get("region", {}).get("startLine", 1)
-            rule_id = result.get("ruleId", "")
-            body = f"**[ansede-static]** `{rule_id}` — {msg}"
-            comments.append({"path": path, "line": line, "side": "RIGHT", "body": body})
+        comments = []
+        for run in data.get("runs", []):
+            for result in run.get("results", []):
+                msg = result.get("message", {}).get("text", "Security finding")
+                for loc in result.get("locations", []):
+                    phys = loc.get("physicalLocation", {})
+                    path = phys.get("artifactLocation", {}).get("uri", "")
+                    line = phys.get("region", {}).get("startLine", 1)
+                    rule_id = result.get("ruleId", "")
+                    body = f"**[ansede-static]** `{rule_id}` — {msg}"
+                    comments.append({"path": path, "line": line, "side": "RIGHT", "body": body})
 
-if not comments:
-    print("[ansede] No findings to post as PR comments.")
-    raise SystemExit(0)
+        if not comments:
+            print("[ansede] No findings to post as PR comments.")
+            raise SystemExit(0)
 
-url = f"https://api.github.com/repos/{repo}/pulls/{pr_number}/reviews"
-headers = {
-    "Authorization": f"Bearer {token}",
-    "Accept": "application/vnd.github+json",
-    "X-GitHub-Api-Version": "2022-11-28",
-    "Content-Type": "application/json",
-}
-payload = json.dumps({
-    "body": f"ansede-static found {len(comments)} security finding(s). See inline comments.",
-    "event": "COMMENT",
-    "comments": comments[:50],  # GitHub caps inline comments per review
-}).encode("utf-8")
+        url = f"https://api.github.com/repos/{repo}/pulls/{pr_number}/reviews"
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Accept": "application/vnd.github+json",
+            "X-GitHub-Api-Version": "2022-11-28",
+            "Content-Type": "application/json",
+        }
+        payload = json.dumps({
+            "body": f"ansede-static found {len(comments)} security finding(s). See inline comments.",
+            "event": "COMMENT",
+            "comments": comments[:50],
+        }).encode("utf-8")
 
-req = urllib.request.Request(url, data=payload, headers=headers, method="POST")
-try:
-    with urllib.request.urlopen(req) as resp:
-        print(f"[ansede] Posted {len(comments)} inline comment(s). HTTP {resp.status}")
-except urllib.error.HTTPError as exc:
-    print(f"[ansede] Failed to post PR comments: HTTP {exc.code} {exc.reason}")
-    raise SystemExit(1)
-PY
+        req = urllib.request.Request(url, data=payload, headers=headers, method="POST")
+        try:
+            with urllib.request.urlopen(req) as resp:
+                print(f"[ansede] Posted {len(comments)} inline comment(s). HTTP {resp.status}")
+        except urllib.error.HTTPError as exc:
+            print(f"[ansede] Failed to post PR comments: HTTP {exc.code} {exc.reason}")
+            raise SystemExit(1)
+        PY
 
 branding:
   icon: 'shield'

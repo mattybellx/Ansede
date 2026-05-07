@@ -190,6 +190,9 @@ This is ideal for adopting ansede-static on a large codebase incrementally.
 | `--list-rules` | Stable | Print the detector catalog and exit |
 | `--describe-rule` | Stable | Show the contract for a rule ID or CWE |
 | `--list-js-backends` | Stable | Print the available JS/TS backends and exit |
+| `--explain` | Stable | Enrich findings with offline CWE explanations in supported output formats |
+| `--export-rules` | Stable | Emit the shipped rule catalog to the selected output format and exit |
+| `--output-dir` | Stable | Write default-named artifacts like `findings.json` or `rules.sarif` into one directory |
 
 > **Note:** Auto-fixes are intentionally conservative; always review generated edits before commit.
 
@@ -206,6 +209,7 @@ Run `ansede-static --init` to generate a starter config, then customize it for y
   "exclude_paths": ["tests/fixtures", "build", "dist", ".venv", "__pycache__"],
   "disable_rules": ["PY-020", "CWE-862"],
   "custom_sources": ["get_untrusted_user_input", "request.headers.get"],
+  "custom_rules_file": "rules/community-rules.yml",
   "custom_sinks": {
     "my_vulnerable_db_execute": {
       "cwe": "CWE-89",
@@ -221,7 +225,28 @@ Run `ansede-static --init` to generate a starter config, then customize it for y
 - `disable_rules` accepts either a stable detector ID like `PY-020` / `JS-034` **or** a CWE like `CWE-862`
 - malformed `custom_sinks` entries are skipped with a warning instead of being silently half-applied
 - `custom_sinks` use an explicit object schema: `cwe`, `title`, and optional `severity`
+- `custom_rules_file` loads YAML or JSON community rule packs relative to the workspace root
 - legacy baselines remain readable; new JSON baselines also include a top-level `fingerprint_version`
+
+### Community custom rules
+
+For lightweight repo-local policy rules, point `custom_rules_file` at a YAML or JSON rule pack:
+
+```yaml
+version: "1.0"
+rules:
+  - id: "ORG-001"
+    title: "Ban legacy shell helper"
+    description: "legacy_exec() shells out with user-controlled input."
+    severity: "high"
+    cwe: "CWE-78"
+    category: "security"
+    languages: ["python", "javascript", "java", "csharp", "go"]
+    pattern: "legacy_exec\s*\("
+    suggestion: "Replace legacy_exec() with the safe wrapper."
+```
+
+These rules are pattern-only and run after the built-in analyzers. For AST-aware or taint-aware rules, see `docs/writing-rules.md`.
 
 ---
 
@@ -261,6 +286,7 @@ ansede-static --list-rules
 ansede-static --describe-rule PY-020
 ansede-static --describe-rule CWE-862
 ansede-static --list-js-backends
+ansede-static --export-rules --format json --output-dir artifacts
 ansede-static src/ --js-backend structural
 ```
 
@@ -687,4 +713,29 @@ MIT — see [LICENSE](LICENSE).
 ---
 
 *Found a real bug with ansede-static? Open a [discussion](https://github.com/mattybellx/Ansede/discussions) or tweet about it — community signal is the best way to help other developers find this tool.*
+
+---
+
+# World-Class Static Analysis Platform Monorepo (2026 UI/UX)
+
+This monorepo contains a visually stunning, Apple/Google-standard static analysis platform with:
+
+- **Frontend:** Astro, GSAP, Three.js, React Three Fiber, TailwindCSS, TypeScript, Inter/SF Pro fonts, Cloudinary/Vercel image pipeline
+- **Backend:** FastAPI (Python)
+- **Shared:** Types, models, and utilities
+- **CI/CD:** Linting, formatting, deployment scripts
+
+## Structure
+- `/webapp` — Frontend UI/UX
+- `/api` — Backend API
+- `/shared` — Shared types/utilities
+- `/.github` — Project instructions and CI
+
+## Getting Started (Monorepo UI/UX)
+1. Install dependencies in each package (`webapp`, `api`, etc.)
+2. Run the backend API
+3. Run the frontend (Astro)
+4. Enjoy a world-class, scroll-animated, 3D-enabled, high-performance static analysis experience!
+
+For full setup and contribution guidelines, see the copilot-instructions.md in `.github/`.
 

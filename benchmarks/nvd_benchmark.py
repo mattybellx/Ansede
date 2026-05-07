@@ -29,8 +29,7 @@ if hasattr(sys.stdout, "reconfigure"):
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 from benchmarks.cve_corpus import CVE_CORPUS, CVEEntry
-from ansede_static.python_analyzer import analyze_python
-from ansede_static.js_analyzer import analyze_js
+from ansede_static import scan_code
 from ansede_static._types import Finding, Severity
 
 
@@ -40,13 +39,14 @@ from ansede_static._types import Finding, Severity
 
 def _run_entry(entry: CVEEntry) -> tuple[bool, list[Finding]]:
     """Return (detected, findings) for one CVE entry."""
-    if entry.language == "python":
-        result = analyze_python(entry.snippet, filename=f"{entry.cve_id}.py")
-    elif entry.language == "go":
-        from ansede_static.go_engine.go_analyzer import run_go_analysis
-        result = run_go_analysis(entry.snippet, filename=f"{entry.cve_id}.go")
-    else:
-        result = analyze_js(entry.snippet, filename=f"{entry.cve_id}.js")
+    suffix = {
+        "python": ".py",
+        "javascript": ".js",
+        "go": ".go",
+        "java": ".java",
+        "csharp": ".cs",
+    }.get(entry.language, ".txt")
+    result = scan_code(entry.snippet, language=entry.language, filename=f"{entry.cve_id}{suffix}")
 
     pattern = re.compile(entry.expected_hit, re.IGNORECASE)
     for finding in result.findings:
@@ -134,9 +134,13 @@ def run_benchmark(
     py_entries = [e for e in entries if e.language == "python"]
     js_entries = [e for e in entries if e.language == "javascript"]
     go_entries = [e for e in entries if e.language == "go"]
+    java_entries = [e for e in entries if e.language == "java"]
+    csharp_entries = [e for e in entries if e.language == "csharp"]
     py_hits    = sum(1 for e in py_entries if e in hits)
     js_hits    = sum(1 for e in js_entries if e in hits)
     go_hits    = sum(1 for e in go_entries if e in hits)
+    java_hits  = sum(1 for e in java_entries if e in hits)
+    csharp_hits = sum(1 for e in csharp_entries if e in hits)
 
     if not quiet:
         print()
@@ -148,6 +152,18 @@ def run_benchmark(
             pct = js_hits / len(js_entries) * 100
             bar = "█" * js_hits + "░" * (len(js_entries) - js_hits)
             print(f"  JS/TS   ({len(js_entries):>2} CVEs):  [{bar}]  {js_hits}/{len(js_entries)} detected  ({pct:.0f}% recall)")
+        if go_entries:
+            pct = go_hits / len(go_entries) * 100
+            bar = "█" * go_hits + "░" * (len(go_entries) - go_hits)
+            print(f"  Go      ({len(go_entries):>2} CVEs):  [{bar}]  {go_hits}/{len(go_entries)} detected  ({pct:.0f}% recall)")
+        if java_entries:
+            pct = java_hits / len(java_entries) * 100
+            bar = "█" * java_hits + "░" * (len(java_entries) - java_hits)
+            print(f"  Java    ({len(java_entries):>2} CVEs):  [{bar}]  {java_hits}/{len(java_entries)} detected  ({pct:.0f}% recall)")
+        if csharp_entries:
+            pct = csharp_hits / len(csharp_entries) * 100
+            bar = "█" * csharp_hits + "░" * (len(csharp_entries) - csharp_hits)
+            print(f"  C#      ({len(csharp_entries):>2} CVEs):  [{bar}]  {csharp_hits}/{len(csharp_entries)} detected  ({pct:.0f}% recall)")
         print()
         print(f"  Overall: {detected}/{total} CVEs detected  ·  {recall:.1f}% recall  ·  {elapsed*1000:.1f}ms")
         print()
@@ -169,6 +185,8 @@ def run_benchmark(
         "python": {"total": len(py_entries), "detected": py_hits},
         "javascript": {"total": len(js_entries), "detected": js_hits},
         "go": {"total": len(go_entries), "detected": go_hits},
+        "java": {"total": len(java_entries), "detected": java_hits},
+        "csharp": {"total": len(csharp_entries), "detected": csharp_hits},
         "missed": [e.cve_id for e in missed],
     }
 
@@ -189,7 +207,7 @@ def main() -> None:
               python benchmarks/nvd_benchmark.py --fail-under 80
         """),
     )
-    parser.add_argument("--lang", choices=["python", "javascript", "go"], default=None,
+    parser.add_argument("--lang", choices=["python", "javascript", "go", "java", "csharp"], default=None,
                         help="Only benchmark a specific language")
     parser.add_argument("--verbose", "-v", action="store_true",
                         help="Show details for missed CVEs")

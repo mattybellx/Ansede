@@ -65,3 +65,42 @@ def do_query():
     result = analyze_python(module_b.read_text(encoding='utf-8'), filename=str(module_b), global_graph=graph)
 
     assert not any(f.cwe == 'CWE-89' for f in result.findings)
+
+
+def test_cross_file_helper_return_value_taint_reaches_sql_sink(tmp_path):
+    utils_file = tmp_path / 'utils.py'
+    views_file = tmp_path / 'views.py'
+
+    utils_file.write_text(
+        """
+from flask import request
+
+def get_user_id():
+    return request.args.get('user_id')
+""",
+        encoding='utf-8',
+    )
+    views_file.write_text(
+        """
+import sqlite3
+from utils import get_user_id
+
+def get_order():
+    uid = get_user_id()
+    db = sqlite3.connect(':memory:')
+    db.execute(f'SELECT * FROM orders WHERE id={uid}')
+""",
+        encoding='utf-8',
+    )
+
+    graph = GlobalGraph()
+    index_python_file(utils_file.read_text(encoding='utf-8'), str(utils_file), graph)
+    index_python_file(views_file.read_text(encoding='utf-8'), str(views_file), graph)
+
+    result = analyze_python(views_file.read_text(encoding='utf-8'), filename=str(views_file), global_graph=graph)
+
+    finding = next(f for f in result.findings if f.cwe == 'CWE-89')
+    labels = [frame.label for frame in finding.trace]
+
+    assert any('call `get_user_id()`' in label for label in labels)
+    assert any('summary return tainted from source' in label for label in labels)

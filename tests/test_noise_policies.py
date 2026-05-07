@@ -224,3 +224,70 @@ def dispatch(request):
     assert finding.severity == Severity.LOW
     assert finding.confidence <= 0.25
     assert "framework-internal implementation heuristic downgraded" in finding.description
+
+
+def test_python_ansede_internal_silent_except_is_downgraded():
+    code = """
+def _parse_exports():
+    try:
+        return parse_data()
+    except Exception:
+        pass
+"""
+    result = analyze_python(code, filename="C:/tmp/project/src/ansede_static/js_engine/project.py")
+    finding = next(f for f in result.findings if f.rule_id == "PY-001")
+
+    assert finding.severity == Severity.LOW
+    assert finding.confidence <= 0.25
+    assert "tool-internal implementation heuristic downgraded" in finding.description
+
+
+def test_python_ansede_internal_complexity_is_downgraded():
+    branches = "\n".join(f"    if x == {idx}:\n        return {idx}" for idx in range(30))
+    code = f"def _main_impl(x):\n{branches}\n    return -1\n"
+
+    result = analyze_python(code, filename="C:/tmp/project/src/ansede_static/cli.py")
+    finding = next(f for f in result.findings if f.rule_id == "PY-044")
+
+    assert finding.severity == Severity.LOW
+    assert finding.confidence <= 0.25
+    assert "tool-internal implementation heuristic downgraded" in finding.description
+
+
+def test_python_ansede_internal_cli_path_open_is_downgraded():
+    code = """
+from pathlib import Path
+
+def _apply_auto_fixes(output_file):
+    with open(Path(output_file), 'r', encoding='utf-8') as handle:
+        return handle.read()
+"""
+    result = analyze_python(code, filename="C:/tmp/project/src/ansede_static/cli.py")
+    finding = next(f for f in result.findings if f.rule_id == "PY-045")
+
+    assert finding.severity == Severity.LOW
+    assert finding.confidence <= 0.25
+    assert "tool-internal implementation heuristic downgraded" in finding.description
+
+
+def test_python_dangerous_default_ignores_inline_comments():
+    code = """
+def docs_only():
+    value = 1  # secure=False in docs, not executable config
+    return value
+"""
+    result = analyze_python(code, filename="app.py")
+
+    assert all(f.rule_id != "PY-011" for f in result.findings)
+
+
+def test_python_tls_disable_ignores_comments_and_example_strings():
+    code = """
+def docs_only():
+    # requests.get(url, verify=False)
+    example = "requests.get(url, verify=False)"
+    return example
+"""
+    result = analyze_python(code, filename="app.py")
+
+    assert all(f.rule_id != "PY-040" for f in result.findings)

@@ -215,6 +215,13 @@ class GlobalGraph:
 
     _SUMMARY_BUCKET = "ifds_function_summaries_v1"
     _DEPENDENCY_BUCKET = "ifds_function_dependencies_v1"
+    # 5thMay.md Task B1 audit note (2026-05-07): keep the default bounded
+    # call-string depth at k=2 until a larger-repo perf harness demonstrates
+    # that deeper contexts stay comfortably within the stated safety margin.
+    # The current smoke benchmark (`python -m benchmarks.perf_benchmark
+    # --iterations 10`) averages ~24.6s over 20 corpus cases at k=2, so the
+    # first useful B1 step is documenting and centralizing this shared bound
+    # rather than raising it blindly.
     DEFAULT_CALL_STRING_K = 2
 
     def __init__(self, cache_path: str | Path | None = None):

@@ -45,6 +45,7 @@ class GoTokenType(Enum):
     EQ = auto(); PLUS = auto(); MINUS = auto(); STAR = auto(); SLASH = auto()
     PERCENT = auto(); EQ_EQ = auto(); NOT_EQ = auto(); LT = auto(); GT = auto()
     LT_EQ = auto(); GT_EQ = auto(); BANG = auto(); AMP = auto(); PIPE = auto()
+    CARET = auto(); LT_LT = auto(); GT_GT = auto(); AMP_CARET = auto()
     PLUS_EQ = auto(); MINUS_EQ = auto(); STAR_EQ = auto(); SLASH_EQ = auto()
     AMP_AMP = auto(); PIPE_PIPE = auto(); ELLIPSIS = auto()
 
@@ -85,6 +86,7 @@ _GO_TWO_CHAR = {
     "<=": GoTokenType.LT_EQ, ">=": GoTokenType.GT_EQ, "+=": GoTokenType.PLUS_EQ,
     "-=": GoTokenType.MINUS_EQ, "*=": GoTokenType.STAR_EQ, "/=": GoTokenType.SLASH_EQ,
     "&&": GoTokenType.AMP_AMP, "||": GoTokenType.PIPE_PIPE, "->": GoTokenType.ARROW,
+    "<<": GoTokenType.LT_LT, ">>": GoTokenType.GT_GT, "&^": GoTokenType.AMP_CARET,
     "...": GoTokenType.ELLIPSIS, "<-": GoTokenType.ARROW,
 }
 _GO_SINGLE = {
@@ -95,7 +97,7 @@ _GO_SINGLE = {
     ":": GoTokenType.COLON, "=": GoTokenType.EQ, "+": GoTokenType.PLUS,
     "-": GoTokenType.MINUS, "*": GoTokenType.STAR, "/": GoTokenType.SLASH,
     "%": GoTokenType.PERCENT, "<": GoTokenType.LT, ">": GoTokenType.GT,
-    "!": GoTokenType.BANG, "&": GoTokenType.AMP, "|": GoTokenType.PIPE,
+    "!": GoTokenType.BANG, "&": GoTokenType.AMP, "|": GoTokenType.PIPE, "^": GoTokenType.CARET,
 }
 
 
@@ -301,6 +303,38 @@ class GoParser:
 
     def __init__(self, lexer: GoLexer):
         self.lexer = lexer
+
+    def _peek_type(self, offset: int = 1) -> GoTokenType:
+        index = self.lexer._idx + offset
+        if 0 <= index < len(self.lexer._tokens):
+            return self.lexer._tokens[index].type
+        return GoTokenType.EOF
+
+    def _skip_semicolon(self) -> None:
+        if self.lexer.check(GoTokenType.SEMI):
+            self.lexer.advance()
+
+    def _skip_to_semicolon(self) -> None:
+        while not self.lexer.check(GoTokenType.SEMI) and not self.lexer.check(GoTokenType.EOF) and not self.lexer.check(GoTokenType.RBRACE):
+            self.lexer.advance()
+        self._skip_semicolon()
+
+    def _next_is_param_separator(self) -> bool:
+        next_type = self._peek_type(1)
+        if next_type == GoTokenType.DOT:
+            return True
+        if next_type in {GoTokenType.RPAREN, GoTokenType.STAR, GoTokenType.LBRACKET, GoTokenType.MAP, GoTokenType.CHAN, GoTokenType.FUNC}:
+            return True
+        return False
+
+    def _is_range_expr(self) -> bool:
+        for offset in range(0, 8):
+            token_type = self._peek_type(offset)
+            if token_type == GoTokenType.RANGE:
+                return True
+            if token_type in {GoTokenType.LBRACE, GoTokenType.SEMI, GoTokenType.EOF}:
+                return False
+        return False
 
     def parse_file(self) -> GoFile:
         pkg = self.lexer.expect(GoTokenType.PACKAGE)

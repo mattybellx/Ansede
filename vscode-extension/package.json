@@ -19,6 +19,9 @@
     "python",
     "javascript",
     "typescript",
+    "java",
+    "csharp",
+    "go",
     "vulnerability",
     "cwe",
     "owasp",
@@ -43,7 +46,10 @@
     "onLanguage:javascript",
     "onLanguage:typescript",
     "onLanguage:javascriptreact",
-    "onLanguage:typescriptreact"
+    "onLanguage:typescriptreact",
+    "onLanguage:java",
+    "onLanguage:csharp",
+    "onLanguage:go"
   ],
   "main": "./out/extension.js",
   "contributes": {
@@ -105,7 +111,7 @@
       "editor/title": [
         {
           "command": "ansede.scanCurrentFile",
-          "when": "resourceLangId == python || resourceLangId == javascript || resourceLangId == typescript",
+          "when": "resourceLangId == python || resourceLangId == javascript || resourceLangId == typescript || resourceLangId == java || resourceLangId == csharp || resourceLangId == go",
           "group": "navigation"
         }
       ]

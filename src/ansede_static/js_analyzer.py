@@ -28,7 +28,7 @@ _log = logging.getLogger(__name__)
 
 
 def _filter_sanitized_xss_findings(all_findings, code: str, *, filename: str, project, global_graph: object | None = None):
-    xss_rule_ids = {"JS-001", "JS-002", "JS-027"}
+    xss_rule_ids = {"JS-001", "JS-002", "JS-059"}
     if not any(finding.rule_id in xss_rule_ids for finding in all_findings):
         return all_findings
 

@@ -89,6 +89,7 @@ def test_load_config_full(tmp_path):
         "exclude_paths": ["node_modules", ".venv"],
         "disable_rules": ["PY-017"],
         "custom_sources": ["get_user_payload"],
+        "custom_rules_file": "rules/custom.yml",
         "custom_sinks": {
             "unsafe_render": {
                 "cwe": "CWE-79",
@@ -101,6 +102,7 @@ def test_load_config_full(tmp_path):
     assert cfg.exclude_paths == ["node_modules", ".venv"]
     assert cfg.disable_rules == ["PY-017"]
     assert cfg.custom_sources == ["get_user_payload"]
+    assert cfg.custom_rules_file == "rules/custom.yml"
     assert cfg.custom_sinks["unsafe_render"] == CustomSinkSpec(
         cwe="CWE-79",
         title="Template injection sink",

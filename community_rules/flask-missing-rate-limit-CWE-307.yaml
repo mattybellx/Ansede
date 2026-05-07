@@ -1,0 +1,28 @@
+id: "community/flask-missing-rate-limit-CWE-307"
+title: "Flask route missing rate-limit middleware"
+cwe: "CWE-307"
+severity: "high"
+language: "python"
+pattern:
+  type: "ast_structural"
+  route_decorator: "@app.route"
+  missing_decorator:
+    - "@limiter.limit"
+    - "ratelimit"
+tags:
+  - "owasp:A07"
+  - "nist:AC-7"
+test:
+  positive: |
+    @app.route("/admin/export", methods=["POST"])
+    def export_users():
+        pass
+  negative: |
+    @app.route("/admin/export", methods=["POST"])
+    @limiter.limit("5 per minute")
+    def export_users():
+        pass
+author: "mattybellx"
+created: "2026-05-05"
+references:
+  - "https://owasp.org/Top10/A07_2021-Identification_and_Authentication_Failures/"

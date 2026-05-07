@@ -20,7 +20,7 @@ from typing import Any
 # Ensure we can import ansede from the src directory
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
-from ansede_static import scan_code, _PYTHON_EXTS, _JS_EXTS
+from ansede_static import scan_code, _PYTHON_EXTS, _JS_EXTS, _GO_EXTS, _JAVA_EXTS, _CSHARP_EXTS
 from benchmarks.cve_corpus import CVE_CORPUS
 
 
@@ -30,13 +30,29 @@ def _ext_to_lang(filename: str) -> str:
         return "python"
     if ext in _JS_EXTS:
         return "javascript"
+    if ext in _GO_EXTS:
+        return "go"
+    if ext in _JAVA_EXTS:
+        return "java"
+    if ext in _CSHARP_EXTS:
+        return "csharp"
     return "unknown"
+
+
+def _lang_to_ext(language: str) -> str:
+    return {
+        "python": ".py",
+        "javascript": ".js",
+        "go": ".go",
+        "java": ".java",
+        "csharp": ".cs",
+    }.get(language, ".txt")
 
 
 def run_ansede_on_snippet(cve_id: str, language: str, snippet: str) -> dict[str, Any]:
     """Run Ansede on a single snippet, return detection info."""
     # Determine filename extension
-    ext = ".py" if language == "python" else ".js"
+    ext = _lang_to_ext(language)
 
     result = scan_code(snippet, language=language, filename=f"{cve_id}{ext}")
     findings = result.findings
@@ -60,7 +76,7 @@ def run_ansede_on_snippet(cve_id: str, language: str, snippet: str) -> dict[str,
 
 def run_semgrep_on_snippet(cve_id: str, language: str, snippet: str) -> dict[str, Any]:
     """Run Semgrep OSS on a single snippet file, return detection info."""
-    ext = ".py" if language == "python" else ".js"
+    ext = _lang_to_ext(language)
     with tempfile.NamedTemporaryFile(
         mode="w", suffix=ext, prefix=f"{cve_id}_", delete=False, encoding="utf-8"
     ) as tmp:
@@ -191,7 +207,16 @@ def run_comparison() -> dict[str, Any]:
 
     print(f"\n{'='*70}")
     print(f"  Ansede vs Semgrep OSS — Head-to-Head CVE Detection")
-    print(f"  Corpus: {total} CVEs ({sum(1 for c in CVE_CORPUS if c.language == 'python')} Python, {sum(1 for c in CVE_CORPUS if c.language == 'javascript')} JavaScript)")
+    counts = {
+        language: sum(1 for c in CVE_CORPUS if c.language == language)
+        for language in ("python", "javascript", "go", "java", "csharp")
+    }
+    print(
+        "  Corpus: "
+        f"{total} CVEs ("
+        f"{counts['python']} Python, {counts['javascript']} JavaScript, {counts['go']} Go, "
+        f"{counts['java']} Java, {counts['csharp']} C#)"
+    )
     print(f"{'='*70}\n")
 
     for i, cve_entry in enumerate(CVE_CORPUS, 1):
@@ -276,8 +301,11 @@ def run_comparison() -> dict[str, Any]:
 
     return {
         "corpus_size": total,
-        "python_cves": sum(1 for c in CVE_CORPUS if c.language == "python"),
-        "javascript_cves": sum(1 for c in CVE_CORPUS if c.language == "javascript"),
+        "python_cves": counts["python"],
+        "javascript_cves": counts["javascript"],
+        "go_cves": counts["go"],
+        "java_cves": counts["java"],
+        "csharp_cves": counts["csharp"],
         "ansede": {
             "hits": ansede_hits,
             "misses": ansede_misses,

@@ -114,6 +114,44 @@ _FASTIFY_REGISTER_RE = re.compile(
     r'(?P<instance>[A-Za-z_$][\w$]*)\.register\s*\(\s*(?:async\s*)?(?:function\s*\([^)]*\)|\((?P<params>[^)]*)\)\s*=>)\s*\{',
     re.MULTILINE,
 )
+_RESTIFY_ROUTE_RE = re.compile(
+    r'\bserver\.(?P<method>get|post|put|patch|delete|del)\s*\(\s*[\'"](?P<path>/[^\'"]*)[\'"]',
+    re.IGNORECASE,
+)
+_RESTIFY_AUTH_PLUGIN_RE = re.compile(
+    r'\bserver\.use\s*\(\s*(?:restify\.)?(?:authorizationParser|jwtParser|authenticate|passport|requireAuth)',
+    re.IGNORECASE,
+)
+_TRPC_PUBLIC_MUTATION_RE = re.compile(
+    r'(?:(?:const|export\s+const)\s+(?P<decl>[A-Za-z_$][\w$]*)\s*=\s*publicProcedure\s*\.\s*mutation\b|'
+    r'(?P<prop>[A-Za-z_$][\w$]*)\s*:\s*publicProcedure\s*\.\s*mutation\b)',
+    re.IGNORECASE,
+)
+_TRPC_MUTATION_NAME_RE = re.compile(
+    r'create|update|delete|remove|set|change|reset|invite|grant|revoke|save|edit',
+    re.IGNORECASE,
+)
+_GRAPHQL_ENV_RE = re.compile(r'ApolloServer|graphqlHTTP|typeDefs|resolvers\s*=|new\s+GraphQLSchema', re.IGNORECASE)
+_GRAPHQL_RESOLVER_RE = re.compile(
+    r'(?P<name>[A-Za-z_$][\w$]*)\s*:\s*(?:async\s*)?\((?P<params>[^)]*)\)\s*=>\s*\{(?P<body>.*?)\n\s*\}',
+    re.DOTALL,
+)
+_GRAPHQL_DATA_ACCESS_RE = re.compile(
+    r'findById|findOne|findAll|findUnique|findFirst|prisma\.|db\.|repository\.|model\.',
+    re.IGNORECASE,
+)
+_GRAPHQL_AUTH_RE = re.compile(
+    r'(?:context|ctx)\.user|isAuthenticated|requireAuth|ensureAuth|assertAuth|mustBeAuthenticated',
+    re.IGNORECASE,
+)
+_GRAPHQL_ID_LOOKUP_RE = re.compile(
+    r'findById\s*\(\s*(?:args|input)\.\w*id\w*\s*\)|\bid\s*:\s*(?:args|input)\.\w*id\w*',
+    re.IGNORECASE,
+)
+_GRAPHQL_OWNERSHIP_RE = re.compile(
+    r'(?:context|ctx)\.user\.[A-Za-z_$][\w$]*|ownerId|userId|tenantId|createdBy|accountId',
+    re.IGNORECASE,
+)
 
 
 @dataclass(frozen=True)
@@ -1037,6 +1075,154 @@ def _make_route_finding(
     )
 
 
+def _line_number_for_offset(text: str, offset: int) -> int:
+    return text.count('\n', 0, offset) + 1
+
+
+def _check_hapi_missing_auth(code: str, *, agent: str, analysis_kind: str, filename: str = '', project=None) -> list[Finding]:
+    findings: list[Finding] = []
+    for block in _build_route_blocks(code, filename=filename):
+        if block.source_kind != 'object-route' or _is_public_route(block.path):
+            continue
+        invocation_text = _route_invocation_text(block)
+        if 'handler' not in invocation_text:
+            continue
+        if _route_auth_labels(block, filename=filename, project=project):
+            continue
+        trace = _route_base_trace(block, set(), ())
+        findings.append(_make_route_finding(
+            severity=Severity.HIGH,
+            title='Hapi route missing authentication',
+            description=f"Hapi-style route `{block.path}` does not enable `options.auth` or any equivalent authentication guard.",
+            line=block.start_line,
+            suggestion='Configure `options.auth` or attach equivalent authentication middleware before the handler runs.',
+            cwe='CWE-862',
+            rule_id='JS-024',
+            confidence=0.92,
+            trace=trace,
+            agent=agent,
+            analysis_kind=analysis_kind,
+        ))
+    return findings
+
+
+def _check_restify_missing_auth_plugin(code: str, *, agent: str, analysis_kind: str, filename: str = '', project=None) -> list[Finding]:
+    if _RESTIFY_AUTH_PLUGIN_RE.search(code):
+        return []
+    findings: list[Finding] = []
+    for match in _RESTIFY_ROUTE_RE.finditer(code):
+        path = match.group('path')
+        if _is_public_route(path):
+            continue
+        line = _line_number_for_offset(code, match.start())
+        trace = (
+            TraceFrame(kind='source', label=f"restify route `{path}` method `{match.group('method').upper()}`", line=line),
+        )
+        findings.append(_make_route_finding(
+            severity=Severity.HIGH,
+            title='Restify route missing authorization plugin',
+            description=f"Restify-style route `{path}` is defined without any file-scope `server.use(restify.authorizationParser())` or equivalent auth plugin.",
+            line=line,
+            suggestion='Register `restify.authorizationParser()` or another verified auth middleware before defining sensitive routes.',
+            cwe='CWE-862',
+            rule_id='JS-025',
+            confidence=0.93,
+            trace=trace,
+            agent=agent,
+            analysis_kind=analysis_kind,
+        ))
+    return findings
+
+
+def _check_trpc_public_mutation(code: str, *, agent: str, analysis_kind: str, filename: str = '', project=None) -> list[Finding]:
+    findings: list[Finding] = []
+    for match in _TRPC_PUBLIC_MUTATION_RE.finditer(code):
+        name = match.group('decl') or match.group('prop') or 'mutation'
+        if not _TRPC_MUTATION_NAME_RE.search(name):
+            continue
+        line = _line_number_for_offset(code, match.start())
+        trace = (
+            TraceFrame(kind='source', label=f"tRPC mutation `{name}` uses `publicProcedure`", line=line),
+        )
+        findings.append(_make_route_finding(
+            severity=Severity.HIGH,
+            title='tRPC public mutation missing protection',
+            description=f"tRPC mutation `{name}` uses `publicProcedure.mutation(...)` even though its name suggests a protected state change.",
+            line=line,
+            suggestion='Use `protectedProcedure` or add explicit authorization checks before executing the mutation.',
+            cwe='CWE-285',
+            rule_id='JS-026',
+            confidence=0.9,
+            trace=trace,
+            agent=agent,
+            analysis_kind=analysis_kind,
+        ))
+    return findings
+
+
+def _graphql_resolver_entries(code: str) -> list[tuple[str, str, int]]:
+    if not _GRAPHQL_ENV_RE.search(code):
+        return []
+    entries: list[tuple[str, str, int]] = []
+    for match in _GRAPHQL_RESOLVER_RE.finditer(code):
+        entries.append((match.group('name'), match.group('body'), _line_number_for_offset(code, match.start())))
+    return entries
+
+
+def _check_graphql_missing_auth(code: str, *, agent: str, analysis_kind: str, filename: str = '', project=None) -> list[Finding]:
+    findings: list[Finding] = []
+    for name, body, line in _graphql_resolver_entries(code):
+        if not _GRAPHQL_DATA_ACCESS_RE.search(body):
+            continue
+        if _GRAPHQL_AUTH_RE.search(body):
+            continue
+        trace = (
+            TraceFrame(kind='source', label=f"GraphQL resolver `{name}`", line=line),
+            TraceFrame(kind='sink', label='resolver accesses application data without auth context', line=line),
+        )
+        findings.append(_make_route_finding(
+            severity=Severity.HIGH,
+            title='GraphQL resolver missing authentication',
+            description=f"GraphQL resolver `{name}` accesses application data without checking `context.user`, `ctx.user`, or another clear auth signal.",
+            line=line,
+            suggestion='Require an authenticated principal in resolver context before loading or returning protected data.',
+            cwe='CWE-862',
+            rule_id='JS-027',
+            confidence=0.88,
+            trace=trace,
+            agent=agent,
+            analysis_kind=analysis_kind,
+        ))
+    return findings
+
+
+def _check_graphql_idor(code: str, *, agent: str, analysis_kind: str, filename: str = '', project=None) -> list[Finding]:
+    findings: list[Finding] = []
+    for name, body, line in _graphql_resolver_entries(code):
+        if not _GRAPHQL_ID_LOOKUP_RE.search(body):
+            continue
+        if _GRAPHQL_OWNERSHIP_RE.search(body):
+            continue
+        trace = (
+            TraceFrame(kind='source', label=f"GraphQL resolver `{name}` reads `args.id`", line=line),
+            TraceFrame(kind='sink', label='resource lookup by resolver-controlled id', line=line),
+        )
+        findings.append(_make_route_finding(
+            severity=Severity.HIGH,
+            title='GraphQL resolver IDOR via args.id',
+            description=f"GraphQL resolver `{name}` looks up a resource by `args.id` without an ownership or tenant comparison.",
+            line=line,
+            suggestion='Scope the lookup by the current user or tenant, or compare ownership before returning the resource.',
+            cwe='CWE-639',
+            rule_id='JS-028',
+            confidence=0.89,
+            trace=trace,
+            agent=agent,
+            analysis_kind=analysis_kind,
+        ))
+    return findings
+
+
 
 def _check_route_idor(code: str, *, agent: str, analysis_kind: str, filename: str = '', project=None) -> list[Finding]:
     findings: list[Finding] = []
@@ -1448,6 +1634,11 @@ def run_route_checks(
     active_project = project or (build_js_project_index(filename, code) if filename else None)
     findings: list[Finding] = []
     for checker in (
+        _check_hapi_missing_auth,
+        _check_restify_missing_auth_plugin,
+        _check_trpc_public_mutation,
+        _check_graphql_missing_auth,
+        _check_graphql_idor,
         _check_route_missing_auth,
         _check_admin_broken_access_control,
         _check_route_auth_bypass,

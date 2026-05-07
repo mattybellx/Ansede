@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from ansede_static.ir.global_graph import (
     FunctionSummary,
     GlobalGraph,
@@ -89,3 +91,70 @@ def test_propagate_call_facts_records_return_lattice_fact():
     assert fact.sources == ("arg[0]",)
     assert fact.call_string[0] == "ctx0"
     assert fact.call_string[-1].endswith("caller.js::route@9->helper")
+
+
+def test_resolve_taint_with_access_path_prefers_field_specific_fact():
+    graph = GlobalGraph()
+    graph.set_taint_with_access_path(
+        file_path="app.py",
+        function_name="handler",
+        value_label="payload",
+        level=IDETaintLevel.TAINTED,
+        sources=("arg[0]",),
+        access_path=("user", "email"),
+        call_string=("ctx",),
+        call_string_k=2,
+    )
+
+    level, sources, sanitizers = graph.resolve_taint_with_access_path(
+        file_path="app.py",
+        function_name="handler",
+        value_label="payload",
+        access_path=("user", "email", "domain"),
+        call_string=("ctx",),
+        call_string_k=2,
+    )
+
+    assert level == IDETaintLevel.TAINTED
+    assert sources == ("arg[0]",)
+    assert sanitizers == ()
+
+
+def test_adjust_confidence_from_ide_boosts_and_suppresses():
+    graph = GlobalGraph()
+    graph.set_ide_fact(
+        file_path="flow.py",
+        function_name="sink",
+        value_label="$ret",
+        fact=IDETaintFact(level=IDETaintLevel.TAINTED, sources=("arg[0]",), call_string=("ctx",)),
+        join=True,
+        call_string_k=2,
+    )
+    boosted = graph.adjust_confidence_from_ide(
+        file_path="flow.py",
+        function_name="sink",
+        value_label="$ret",
+        base_confidence=0.6,
+        call_string=("ctx",),
+        call_string_k=2,
+    )
+
+    graph.set_ide_fact(
+        file_path="flow.py",
+        function_name="cleaner",
+        value_label="$ret",
+        fact=IDETaintFact(level=IDETaintLevel.CLEAN, sources=("clean-return",), call_string=("ctx",)),
+        join=False,
+        call_string_k=2,
+    )
+    suppressed = graph.adjust_confidence_from_ide(
+        file_path="flow.py",
+        function_name="cleaner",
+        value_label="$ret",
+        base_confidence=0.6,
+        call_string=("ctx",),
+        call_string_k=2,
+    )
+
+    assert boosted == pytest.approx(0.75)
+    assert suppressed == pytest.approx(0.2)

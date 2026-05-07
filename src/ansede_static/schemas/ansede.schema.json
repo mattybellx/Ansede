@@ -145,7 +145,7 @@
         "language": {
           "type": "string",
           "description": "Language this sink applies to. Omit to apply to all languages.",
-          "enum": ["python", "javascript", "typescript"]
+          "enum": ["python", "javascript", "typescript", "go", "java", "csharp"]
         }
       }
     },
@@ -166,7 +166,7 @@
         },
         "language": {
           "type": "string",
-          "enum": ["python", "javascript", "typescript"]
+          "enum": ["python", "javascript", "typescript", "go", "java", "csharp"]
         }
       }
     },

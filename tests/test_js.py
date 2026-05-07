@@ -1017,6 +1017,88 @@ export async function GET(request) {
         assert labels[-1] == "admin route reachable after auth only"
 
 
+class TestB4FrameworkRouteHeuristics:
+    def test_hapi_route_missing_auth_detected(self):
+        code = """
+const server = Hapi.server();
+
+server.route({
+    method: 'GET',
+    path: '/admin/users',
+    handler: async (request, h) => User.findAll(),
+});
+"""
+        result = analyze_js(code)
+
+        finding = next(f for f in result.findings if f.rule_id == "JS-024")
+        assert finding.cwe == "CWE-862"
+        assert finding.title == "Hapi route missing authentication"
+
+    def test_restify_route_without_auth_plugin_detected(self):
+        code = """
+const server = restify.createServer();
+
+server.get('/accounts/:id', (req, res, next) => {
+    res.send(Account.findByPk(req.params.id));
+    return next();
+});
+"""
+        result = analyze_js(code)
+
+        finding = next(f for f in result.findings if f.rule_id == "JS-025")
+        assert finding.cwe == "CWE-862"
+        assert "authorization plugin" in finding.title.lower()
+
+    def test_trpc_public_mutation_detected(self):
+        code = """
+export const appRouter = router({
+    updateUser: publicProcedure.mutation(async ({ input, ctx }) => {
+        return ctx.db.user.update({ where: { id: input.id }, data: input });
+    }),
+});
+"""
+        result = analyze_js(code)
+
+        finding = next(f for f in result.findings if f.rule_id == "JS-026")
+        assert finding.cwe == "CWE-285"
+        assert "publicProcedure" in finding.description
+
+    def test_graphql_resolver_missing_auth_detected(self):
+        code = """
+const typeDefs = gql`type Query { user(id: ID!): User }`;
+const resolvers = {
+    Query: {
+        user: async (_parent, args, context) => {
+            return db.user.findUnique({ where: { id: args.id } });
+        }
+    }
+};
+"""
+        result = analyze_js(code)
+
+        finding = next(f for f in result.findings if f.rule_id == "JS-027")
+        assert finding.cwe == "CWE-862"
+        assert "context.user" in finding.description
+
+    def test_graphql_resolver_idor_detected(self):
+        code = """
+const resolvers = {
+    Query: {
+        invoice: async (_parent, args, context) => {
+            if (!context.user) throw new Error('auth required');
+            return prisma.invoice.findUnique({ where: { id: args.id } });
+        }
+    }
+};
+const server = new ApolloServer({ resolvers });
+"""
+        result = analyze_js(code)
+
+        finding = next(f for f in result.findings if f.rule_id == "JS-028")
+        assert finding.cwe == "CWE-639"
+        assert "args.id" in finding.description
+
+
 class TestDeeperJsResolution:
     def test_reexported_redirect_alias_detected(self, tmp_path):
         redirect_file = tmp_path / "redirect.js"
@@ -1273,10 +1355,10 @@ const re = new RegExp(req.body.pattern, 'gi');
         assert _has_cwe(code, "CWE-1333")
 
     def test_regexp_from_literal_safe(self):
-        # JS-024 fires on any new RegExp(...); test that JS-047 specifically
+        # JS-057 fires on any new RegExp(...); test that JS-047 specifically
         # does not fire (no req.* input) by using a regex literal instead.
         code = "const valid = /^[a-z]+$/i.test(input);"
-        # Neither JS-047 nor JS-024 should fire on a regex literal
+        # Neither JS-047 nor JS-057 should fire on a regex literal
         result = analyze_js(code)
         js047_findings = [f for f in result.findings if f.rule_id == "JS-047"]
         assert not js047_findings

@@ -6,6 +6,18 @@ import { AnsedeFileResult, AnsedeFinding, countFindings } from './protocol';
 import { runAnsedeScan } from './runner';
 
 
+const SUPPORTED_LANGUAGE_SELECTORS: vscode.DocumentFilter[] = [
+    { scheme: 'file', language: 'python' },
+    { scheme: 'file', language: 'javascript' },
+    { scheme: 'file', language: 'javascriptreact' },
+    { scheme: 'file', language: 'typescript' },
+    { scheme: 'file', language: 'typescriptreact' },
+    { scheme: 'file', language: 'java' },
+    { scheme: 'file', language: 'csharp' },
+    { scheme: 'file', language: 'go' },
+];
+
+
 const SEVERITY_ORDER: Record<string, number> = {
     critical: 0,
     high: 1,
@@ -37,6 +49,12 @@ function getLanguage(document: vscode.TextDocument): string | null {
         case 'typescript':
         case 'typescriptreact':
             return 'javascript';
+        case 'java':
+            return 'java';
+        case 'csharp':
+            return 'csharp';
+        case 'go':
+            return 'go';
         default:
             return null;
     }
@@ -99,6 +117,56 @@ class AnsedeDiagnostic extends vscode.Diagnostic {
     constructor(range: vscode.Range, message: string, severity: vscode.DiagnosticSeverity, finding: AnsedeFinding) {
         super(range, message, severity);
         this.finding = finding;
+    }
+}
+
+
+function buildHoverMarkdown(finding: AnsedeFinding): vscode.MarkdownString {
+    const markdown = new vscode.MarkdownString(undefined, true);
+    markdown.isTrusted = false;
+    markdown.appendMarkdown(`**${finding.title}**\n\n`);
+    if (finding.rule_id || finding.cwe) {
+        const tokens = [finding.rule_id, finding.cwe].filter(Boolean).join(' · ');
+        markdown.appendMarkdown(`$(shield) \`${tokens}\`\n\n`);
+    }
+    markdown.appendMarkdown(`**Severity:** ${finding.severity}`);
+    if (finding.analysis_kind) {
+        markdown.appendMarkdown(`  \n**Analysis:** ${finding.analysis_kind}`);
+    }
+    if (typeof finding.confidence === 'number') {
+        markdown.appendMarkdown(`  \n**Confidence:** ${finding.confidence.toFixed(2)}`);
+    }
+    if (finding.description) {
+        markdown.appendMarkdown(`\n\n${finding.description}`);
+    }
+    if (finding.explanation) {
+        markdown.appendMarkdown(`\n\n---\n\n${finding.explanation}`);
+    }
+    if (finding.suggestion) {
+        markdown.appendMarkdown(`\n\n**Suggested fix**  \n${finding.suggestion}`);
+    }
+    if (finding.auto_fix) {
+        markdown.appendMarkdown('\n\n**Auto-fix snippet**\n');
+        markdown.appendCodeblock(finding.auto_fix, 'text');
+    }
+    return markdown;
+}
+
+
+class AnsedeHoverProvider implements vscode.HoverProvider {
+    constructor(private readonly collection: vscode.DiagnosticCollection) {}
+
+    provideHover(document: vscode.TextDocument, position: vscode.Position): vscode.ProviderResult<vscode.Hover> {
+        const diagnostics = this.collection.get(document.uri) ?? [];
+        const matching = diagnostics.filter(diagnostic =>
+            diagnostic.source === 'ansede-static'
+            && diagnostic.range.contains(position)
+            && (diagnostic as AnsedeDiagnostic).finding,
+        ) as AnsedeDiagnostic[];
+        if (matching.length === 0) {
+            return null;
+        }
+        return new vscode.Hover(matching.map(diagnostic => buildHoverMarkdown(diagnostic.finding)));
     }
 }
 
@@ -360,15 +428,13 @@ export function activate(context: vscode.ExtensionContext): void {
         collection,
         statusItem,
         vscode.languages.registerCodeActionsProvider(
-            [
-                { scheme: 'file', language: 'python' },
-                { scheme: 'file', language: 'javascript' },
-                { scheme: 'file', language: 'javascriptreact' },
-                { scheme: 'file', language: 'typescript' },
-                { scheme: 'file', language: 'typescriptreact' },
-            ],
+            SUPPORTED_LANGUAGE_SELECTORS,
             new AnsedeCodeActionProvider(),
             { providedCodeActionKinds: [vscode.CodeActionKind.QuickFix] }
+        ),
+        vscode.languages.registerHoverProvider(
+            SUPPORTED_LANGUAGE_SELECTORS,
+            new AnsedeHoverProvider(collection),
         ),
         vscode.workspace.onDidOpenTextDocument(document => {
             void scan(document, document.version);
@@ -399,7 +465,7 @@ export function activate(context: vscode.ExtensionContext): void {
             }
             for (const folder of folders) {
                 const discoveredUris: vscode.Uri[] = [];
-                for (const pattern of ['**/*.py', '**/*.js', '**/*.jsx', '**/*.ts', '**/*.tsx']) {
+                for (const pattern of ['**/*.py', '**/*.js', '**/*.jsx', '**/*.ts', '**/*.tsx', '**/*.java', '**/*.cs', '**/*.go']) {
                     const files = await vscode.workspace.findFiles(
                         new vscode.RelativePattern(folder, pattern),
                         '**/{node_modules,.venv,dist,build,__pycache__}/**',

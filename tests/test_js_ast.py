@@ -172,7 +172,7 @@ document.getElementById('greeting').innerHTML =
         finding = next(
             finding
             for finding in result.findings
-            if finding.rule_id == "JS-027" and finding.agent == "js-ast-analyzer"
+            if finding.rule_id == "JS-059" and finding.agent == "js-ast-analyzer"
         )
 
         assert finding.cwe == "CWE-79"
@@ -445,6 +445,46 @@ export async function GET(request, { params }) {
         assert labels[0] == "route `/api/accounts/:accountId` method `GET`"
         assert "resource parameter `accountId`" in labels
 
+    def test_hapi_route_missing_auth_detected_structurally(self):
+        code = """
+const server = Hapi.server();
+
+server.route({
+  method: 'GET',
+  path: '/admin/users',
+  handler: async (request, h) => User.findAll(),
+});
+"""
+        result = analyze_js_ast(code)
+        finding = next(
+            finding
+            for finding in result.findings
+            if finding.rule_id == "JS-024" and finding.agent == "js-ast-analyzer"
+        )
+
+        assert finding.cwe == "CWE-862"
+
+    def test_graphql_idor_detected_structurally(self):
+        code = """
+const resolvers = {
+  Query: {
+    account: async (_parent, args, context) => {
+      if (!context.user) throw new Error('auth required');
+      return db.account.findUnique({ where: { id: args.id } });
+    }
+  }
+};
+const server = new ApolloServer({ resolvers });
+"""
+        result = analyze_js_ast(code)
+        finding = next(
+            finding
+            for finding in result.findings
+            if finding.rule_id == "JS-028" and finding.agent == "js-ast-analyzer"
+        )
+
+        assert finding.cwe == "CWE-639"
+
     def test_reexported_redirect_alias_detected_structurally(self, tmp_path):
         redirect_file = tmp_path / "redirect.js"
         barrel_file = tmp_path / "index.ts"
@@ -507,7 +547,7 @@ element.innerHTML = safe;
         app_file.write_text(app_code, encoding="utf-8")
 
         result = analyze_js_ast(app_code, filename=str(app_file))
-        assert not any(f.rule_id in {"JS-001", "JS-027"} for f in result.findings)
+        assert not any(f.rule_id in {"JS-001", "JS-059"} for f in result.findings)
 
     def test_nest_controller_service_call_chain_idor_detected_structurally(self, tmp_path):
         service_file = tmp_path / "accounts.service.ts"

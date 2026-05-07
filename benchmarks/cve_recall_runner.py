@@ -224,7 +224,14 @@ def _score_case(
     js_backend: str = "auto",
     suppression_config: Path | None = None,
 ) -> tuple[CaseScore, dict[str, Any]]:
-    filename = f"{entry.cve_id}.{ 'py' if entry.language == 'python' else 'js' }"
+    extension = {
+        "python": "py",
+        "javascript": "js",
+        "go": "go",
+        "java": "java",
+        "csharp": "cs",
+    }.get(entry.language, "txt")
+    filename = f"{entry.cve_id}.{extension}"
     result = scan_code(
         entry.snippet,
         language=entry.language,

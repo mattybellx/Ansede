@@ -26,6 +26,18 @@ venv/
 *.swp
 *~
 
+# Editor integration build artifacts
+intellij-plugin/.gradle/
+intellij-plugin/.intellijPlatform/
+intellij-plugin/build/
+intellij-plugin/bin/
+visualstudio-extension/bin/
+visualstudio-extension/obj/
+vscode-extension/node_modules/
+vscode-extension/out/
+vscode-extension/*.vsix
+.tmp-cli-artifacts/
+
 # OS
 .DS_Store
 Thumbs.db

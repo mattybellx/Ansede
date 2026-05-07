@@ -6,15 +6,23 @@ from pathlib import Path
 from ansede_static._types import AnalysisResult, Finding, Severity
 from ansede_static.cli import (
     _apply_auto_fixes,
+    _artifact_suffix,
     _collect_files,
     _collect_entropy_files,
+    _default_output_filename,
     _is_safe_inline_auto_fix,
     _load_baseline,
     _matches_exclude_pattern,
     _parse_auto_fix_block,
+    _render_export_rule_catalog,
     _render_js_backend_catalog,
     _render_rule_catalog,
     _render_rule_description,
+    _rule_catalog_output_path,
+    _resolve_output_path,
+    _resolve_workspace_relative_path,
+    _write_output_artifact,
+    build_parser,
 )
 from ansede_static.reporters import format_json
 
@@ -106,6 +114,8 @@ def test_render_rule_catalog_in_json_contains_curated_rule():
     payload = json.loads(_render_rule_catalog(as_json=True))
 
     assert any(rule["rule_id"] == "PY-020" for rule in payload["rules"])
+    assert any(rule["rule_id"] == "GO-862" for rule in payload["rules"])
+    assert any(rule["rule_id"] == "JV-001" for rule in payload["rules"])
 
 
 def test_render_rule_description_for_cwe_uses_contract():
@@ -121,6 +131,133 @@ def test_render_js_backend_catalog_lists_structural_backend():
 
     assert "structural" in text
     assert "classic" in text
+
+
+def test_build_parser_accepts_explain_export_rules_and_output_dir():
+    args = build_parser().parse_args(["--explain", "--export-rules", "yaml", "--output-dir", "artifacts"])
+
+    assert args.explain is True
+    assert args.export_rules == "yaml"
+    assert args.output_dir == Path("artifacts")
+
+
+def test_build_parser_defaults_export_rules_to_json_when_no_value_is_given():
+    args = build_parser().parse_args(["--export-rules"])
+
+    assert args.export_rules == "json"
+
+
+def test_render_export_rule_catalog_json_has_expected_shape():
+    payload = json.loads(_render_export_rule_catalog("json"))
+
+    assert payload["schema_version"] == "1.0"
+    assert "generated" in payload
+    assert any(rule["id"] == "GO-862" for rule in payload["rules"])
+    assert any(rule["id"] == "JV-001" for rule in payload["rules"])
+    assert any(rule["analysis_kind"] in {"pattern", "route_heuristic", "decorator_heuristic", "taint_flow"} for rule in payload["rules"])
+
+
+def test_render_rule_description_for_go_rule_uses_curated_contract():
+    text = _render_rule_description("GO-862", as_json=False)
+
+    assert text is not None
+    assert "missing authentication" in text.lower()
+    assert "Languages         : go" in text
+
+
+def test_render_export_rule_catalog_includes_cached_community_rules(tmp_path, monkeypatch):
+    rule_dir = tmp_path / "community_rules"
+    rule_dir.mkdir()
+    (rule_dir / "rate_limit.yaml").write_text(
+        'id: "community/flask-missing-rate-limit-CWE-307"\n'
+        'title: "Flask route missing rate-limit middleware"\n'
+        'cwe: "CWE-307"\n'
+        'severity: "high"\n'
+        'language: "python"\n'
+        'pattern:\n'
+        '  type: "ast_structural"\n'
+        '  route_decorator: "@app.route"\n'
+        '  missing_decorator:\n'
+        '    - "@limiter.limit"\n'
+        'test:\n'
+        '  positive: |\n'
+        '    @app.route("/admin/export")\n'
+        '    def export_users():\n'
+        '        pass\n'
+        '  negative: |\n'
+        '    @app.route("/admin/export")\n'
+        '    @limiter.limit("5/min")\n'
+        '    def export_users():\n'
+        '        pass\n',
+        encoding="utf-8",
+    )
+    monkeypatch.setattr("ansede_static.yaml_rules.default_community_rules_dir", lambda: rule_dir)
+
+    payload = json.loads(_render_export_rule_catalog("json"))
+
+    assert any(rule["id"] == "community/flask-missing-rate-limit-CWE-307" for rule in payload["rules"])
+
+
+def test_render_export_rule_catalog_yaml_emits_yaml_keys():
+    rendered = _render_export_rule_catalog("yaml")
+
+    assert rendered.startswith("schema_version:")
+    assert "rules:" in rendered
+
+
+def test_rule_catalog_output_path_uses_export_format_suffix(tmp_path):
+    output_dir = tmp_path / "artifacts"
+
+    resolved = _rule_catalog_output_path(output=None, output_dir=output_dir, export_format="yaml")
+
+    assert resolved == output_dir / "rules.yaml"
+
+
+def test_artifact_suffix_and_default_filename_cover_supported_formats():
+    assert _artifact_suffix("json") == ".json"
+    assert _artifact_suffix("sarif") == ".sarif"
+    assert _default_output_filename("text") == "findings.txt"
+    assert _default_output_filename("json", stem="rules") == "rules.json"
+
+
+def test_resolve_output_path_prefers_explicit_output_over_output_dir(tmp_path):
+    explicit = tmp_path / "explicit.json"
+    output_dir = tmp_path / "artifacts"
+
+    resolved = _resolve_output_path(
+        output=explicit,
+        output_dir=output_dir,
+        output_format="json",
+    )
+
+    assert resolved == explicit
+
+
+def test_resolve_output_path_builds_default_name_from_output_dir(tmp_path):
+    output_dir = tmp_path / "artifacts"
+
+    resolved = _resolve_output_path(
+        output=None,
+        output_dir=output_dir,
+        output_format="sarif",
+        stem="rules",
+    )
+
+    assert resolved == output_dir / "rules.sarif"
+
+
+def test_resolve_workspace_relative_path_anchors_to_workspace_root(tmp_path):
+    resolved = _resolve_workspace_relative_path("config/custom-rules.yml", tmp_path)
+
+    assert resolved == tmp_path / "config" / "custom-rules.yml"
+
+
+def test_write_output_artifact_creates_parent_directories(tmp_path):
+    target = tmp_path / "nested" / "findings.json"
+
+    _write_output_artifact(target, '{"ok": true}')
+
+    assert target.read_text(encoding="utf-8") == '{"ok": true}'
 
 
 def test_matches_exclude_pattern_uses_real_path_segments():
@@ -151,6 +288,20 @@ def test_collect_files_excludes_real_static_directory(tmp_path):
     collected = _collect_files([tmp_path / "src"], ["static"])
 
     assert asset not in collected
+
+
+def test_collect_files_includes_java_and_csharp_sources(tmp_path):
+    src = tmp_path / "src"
+    src.mkdir()
+    java_file = src / "AdminController.java"
+    cs_file = src / "AdminController.cs"
+    java_file.write_text("class AdminController {}\n", encoding="utf-8")
+    cs_file.write_text("class AdminController {}\n", encoding="utf-8")
+
+    collected = _collect_files([src], [])
+
+    assert java_file in collected
+    assert cs_file in collected
 
 
 def test_collect_entropy_files_includes_markdown_and_env(tmp_path):

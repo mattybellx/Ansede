@@ -53,6 +53,15 @@ def q(cursor):
 """
         assert _has_cwe(code, "CWE-89")
 
+    def test_percent_format_with_dict_value(self):
+        code = """
+from flask import request
+def q(cursor):
+    user_id = request.args.get('id')
+    cursor.execute("SELECT * FROM users WHERE id = '%(id)s'" % {"id": user_id})
+"""
+        assert _has_cwe(code, "CWE-89")
+
     def test_parameterized_query_safe(self):
         code = """
 import sqlite3
@@ -531,6 +540,28 @@ def get_post(post_id):
         assert "auth decorator `@login_required`" in labels
         assert "no ownership guard detected" in labels
         assert labels[-1] == "resource lookup `Post.query.get(post_id)`"
+
+    def test_form_sourced_sqlalchemy_filter_by_id_detected(self):
+        code = """
+from flask import Flask, request
+app = Flask(__name__)
+def login_required(f): return f
+
+@app.route('/orders', methods=['POST'])
+@login_required
+def get_order():
+    user_id = request.form.get('id')
+    order = db.session.query(Order).filter_by(id=user_id).first()
+    return str(order)
+"""
+        result = analyze_python(code)
+        finding = next(f for f in result.findings if f.cwe == "CWE-639")
+        labels = [frame.label for frame in finding.trace]
+
+        assert finding.rule_id == "PY-024"
+        assert "auth decorator `@login_required`" in labels
+        assert "no ownership guard detected" in labels
+        assert labels[-1] == "resource lookup `db.session.query(Order).filter_by(id=user_id).first()`"
 
 
 class TestOwnershipMutation:
@@ -1564,7 +1595,143 @@ class AdminUsersAPIView:
 
 # ── CWE-78: subprocess.getoutput injection (expanded sinks) ──────────────────
 
+class TestB3DjangoCbvAndFastApiHeuristics:
+    def test_django_cbv_missing_auth_mixin_detected(self):
+        code = """
+from django.views import View
+
+class AdminUsersView(View):
+    def get(self, request):
+        return {"users": []}
+"""
+        result = analyze_python(code)
+        assert any(f.rule_id == "PY-028" for f in result.findings)
+
+    def test_django_cbv_with_login_required_mixin_no_py028(self):
+        code = """
+from django.views import View
+from django.contrib.auth.mixins import LoginRequiredMixin
+
+class AdminUsersView(LoginRequiredMixin, View):
+    def get(self, request):
+        return {"users": []}
+"""
+        result = analyze_python(code)
+        assert not any(f.rule_id == "PY-028" for f in result.findings)
+
+    def test_django_detail_view_without_get_queryset_detected(self):
+        code = """
+from django.views.generic import DetailView
+
+class OrderDetailView(DetailView):
+    model = Order
+"""
+        result = analyze_python(code)
+        assert any(f.rule_id == "PY-029" for f in result.findings)
+
+    def test_django_detail_view_with_user_scoped_queryset_no_py029(self):
+        code = """
+from django.views.generic import DetailView
+
+class OrderDetailView(DetailView):
+    model = Order
+
+    def get_queryset(self):
+        return Order.objects.filter(owner=self.request.user)
+"""
+        result = analyze_python(code)
+        assert not any(f.rule_id == "PY-029" for f in result.findings)
+
+    def test_django_update_view_queryset_without_owner_filter_detected(self):
+        code = """
+from django.views.generic import UpdateView
+
+class OrderUpdateView(UpdateView):
+    model = Order
+
+    def get_queryset(self):
+        return Order.objects.all()
+"""
+        result = analyze_python(code)
+        assert any(f.rule_id == "PY-030" for f in result.findings)
+
+    def test_django_update_view_with_owner_filter_no_py030(self):
+        code = """
+from django.views.generic import UpdateView
+
+class OrderUpdateView(UpdateView):
+    model = Order
+
+    def get_queryset(self):
+        return Order.objects.filter(owner=self.request.user)
+"""
+        result = analyze_python(code)
+        assert not any(f.rule_id == "PY-030" for f in result.findings)
+
+    def test_fastapi_depends_without_auth_signal_detected(self):
+        code = """
+from fastapi import FastAPI, Depends
+
+app = FastAPI()
+
+def load_context():
+    return {"tenant": "demo"}
+
+@app.get('/admin/users')
+async def list_users(ctx=Depends(load_context)):
+    return {'users': []}
+"""
+        result = analyze_python(code)
+        assert any(f.rule_id == "PY-031" for f in result.findings)
+
+    def test_fastapi_depends_with_get_current_user_no_py031(self):
+        code = """
+from fastapi import FastAPI, Depends
+
+app = FastAPI()
+
+def get_current_user():
+    return {'id': 1}
+
+@app.get('/admin/users')
+async def list_users(current_user=Depends(get_current_user)):
+    return {'users': []}
+"""
+        result = analyze_python(code)
+        assert not any(f.rule_id == "PY-031" for f in result.findings)
+
+    def test_fastapi_delete_without_depends_detected(self):
+        code = """
+from fastapi import FastAPI
+
+app = FastAPI()
+
+@app.delete('/orders/{order_id}')
+async def delete_order(order_id: int):
+    return {'deleted': order_id}
+"""
+        result = analyze_python(code)
+        assert any(f.rule_id == "PY-032" for f in result.findings)
+
+    def test_fastapi_delete_with_depends_no_py032(self):
+        code = """
+from fastapi import FastAPI, Depends
+
+app = FastAPI()
+
+def get_current_user():
+    return {'id': 1}
+
+@app.delete('/orders/{order_id}')
+async def delete_order(order_id: int, current_user=Depends(get_current_user)):
+    return {'deleted': order_id}
+"""
+        result = analyze_python(code)
+        assert not any(f.rule_id == "PY-032" for f in result.findings)
+
+
 class TestSubprocessGetoutput:
+
     def test_subprocess_getoutput_tainted(self):
         code = """
 import subprocess

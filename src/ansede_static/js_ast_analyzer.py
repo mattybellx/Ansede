@@ -291,7 +291,7 @@ def _check_property_xss(
                 ),
                 suggestion="Encode or sanitize HTML before inserting it, or switch to `textContent` for plain text.",
                 severity=Severity.HIGH,
-                rule_id="JS-027",
+                rule_id="JS-059",
                 cwe="CWE-79",
                 trace=trace,
             ))

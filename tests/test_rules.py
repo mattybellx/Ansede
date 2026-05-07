@@ -30,6 +30,8 @@ def test_list_rule_contracts_contains_known_ids():
 
     assert "PY-004" in rule_ids
     assert "JS-040" in rule_ids
+    assert "JV-001" in rule_ids
+    assert "CS-001" in rule_ids
 
 
 def test_all_shipped_rule_contracts_are_curated():
@@ -102,8 +104,19 @@ def test_py_and_js_rules_both_present():
     contracts = list_rule_contracts()
     py_rules = [c for c in contracts if c.rule_id.startswith("PY-")]
     js_rules = [c for c in contracts if c.rule_id.startswith("JS-")]
+    java_rules = [c for c in contracts if c.rule_id.startswith("JV-")]
+    csharp_rules = [c for c in contracts if c.rule_id.startswith("CS-")]
     assert len(py_rules) >= 30, f"Only {len(py_rules)} PY rules"
     assert len(js_rules) >= 35, f"Only {len(js_rules)} JS rules"
+    assert len(java_rules) >= 7, f"Only {len(java_rules)} JV rules"
+    assert len(csharp_rules) >= 7, f"Only {len(csharp_rules)} CS rules"
+
+
+def test_java_and_csharp_rule_contracts_are_curated():
+    for rule_id, expected_cwe in (("JV-001", "CWE-862"), ("CS-004", "CWE-89")):
+        contract = get_rule_contract(rule_id)
+        assert "Undocumented" not in contract.title
+        assert contract.cwe == expected_cwe
 
 
 def test_new_rule_contracts_present():

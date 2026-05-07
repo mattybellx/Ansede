@@ -6,7 +6,7 @@ curated to test ansede-static recall rates.
 
 Each entry maps:
   cve_id        → real NVD CVE identifier
-  language      → "python" | "javascript"  
+    language      → "python" | "javascript" | "go" | "java" | "csharp"
   description   → what the CVE is about
   cwe           → expected CWE the scanner must flag
   snippet       → minimal code that reproduces the vulnerability pattern
@@ -24,7 +24,7 @@ from dataclasses import dataclass, field
 @dataclass
 class CVEEntry:
     cve_id: str
-    language: str              # "python" | "javascript"
+    language: str              # "python" | "javascript" | "go" | "java" | "csharp"
     description: str
     cwe: str                   # expected CWE, e.g. "CWE-78"
     snippet: str               # minimal reproducing code
@@ -296,6 +296,151 @@ def admin_users():
     return jsonify({\"users\": []})
 """,
         expected_hit=r"CWE-287|[Aa]uth.*[Bb]ypass|presence",
+    ),
+
+    CVEEntry(
+        cve_id="CVE-2024-PY-HELPER-RETURN-SQLI",
+        language="python",
+        cwe="CWE-89",
+        description=(
+            "Helper return-value taint reaches a SQL sink through an intermediate "
+            "function call chain."
+        ),
+        snippet="""
+import sqlite3
+from flask import request
+
+def get_user_id():
+    return request.args.get('user_id')
+
+def get_order():
+    uid = get_user_id()
+    db = sqlite3.connect(':memory:')
+    db.execute(f"SELECT * FROM orders WHERE id={uid}")
+""",
+        expected_hit=r"CWE-89|[Ss][Qq][Ll] [Ii]njection|get_user_id",
+    ),
+
+    CVEEntry(
+        cve_id="CVE-2024-PY-FORM-IDOR",
+        language="python",
+        cwe="CWE-639",
+        description=(
+            "Authenticated ORM lookup by form-sourced id without an ownership filter."
+        ),
+        snippet="""
+from flask import Flask, request
+app = Flask(__name__)
+
+def login_required(f):
+    return f
+
+@app.route('/orders', methods=['POST'])
+@login_required
+def get_order():
+    user_id = request.form.get('id')
+    order = db.session.query(Order).filter_by(id=user_id).first()
+    return str(order)
+""",
+        expected_hit=r"CWE-639|IDOR|ownership|filter_by\(id=user_id\)",
+    ),
+
+    CVEEntry(
+        cve_id="CVE-2024-PY-DICT-FORMAT-SQLI",
+        language="python",
+        cwe="CWE-89",
+        description="Percent-format SQL injection using a dict-built interpolation payload.",
+        snippet="""
+from flask import request
+
+def q(cursor):
+    user_id = request.args.get('id')
+    cursor.execute("SELECT * FROM users WHERE id = '%(id)s'" % {"id": user_id})
+""",
+        expected_hit=r"CWE-89|[Ss][Qq][Ll] [Ii]njection|%\s*\{",
+    ),
+
+    CVEEntry(
+        cve_id="CVE-2024-PY-CBV-MISSING-AUTH",
+        language="python",
+        cwe="CWE-862",
+        description="Django class-based view with get() but no LoginRequiredMixin or auth method decorator.",
+        snippet="""
+from django.views import View
+
+class AdminUsersView(View):
+    def get(self, request):
+        return {"users": []}
+""",
+        expected_hit=r"CWE-862|CBV|class-based view|auth mixin",
+    ),
+
+    CVEEntry(
+        cve_id="CVE-2024-PY-CBV-IDOR",
+        language="python",
+        cwe="CWE-639",
+        description="Django DetailView without a user-scoped get_queryset() override.",
+        snippet="""
+from django.views.generic import DetailView
+
+class OrderDetailView(DetailView):
+    model = Order
+""",
+        expected_hit=r"CWE-639|get_queryset|user-scoped|DetailView",
+    ),
+
+    CVEEntry(
+        cve_id="CVE-2024-PY-CBV-OWNERSHIP",
+        language="python",
+        cwe="CWE-285",
+        description="Django UpdateView get_queryset() override lacks ownership scoping.",
+        snippet="""
+from django.views.generic import UpdateView
+
+class OrderUpdateView(UpdateView):
+    model = Order
+
+    def get_queryset(self):
+        return Order.objects.all()
+""",
+        expected_hit=r"CWE-285|ownership|get_queryset|UpdateView",
+    ),
+
+    CVEEntry(
+        cve_id="CVE-2024-PY-FASTAPI-DEPENDS-BYPASS",
+        language="python",
+        cwe="CWE-287",
+        description="FastAPI route uses Depends() but the dependency does not perform authentication.",
+        snippet="""
+from fastapi import FastAPI, Depends
+
+app = FastAPI()
+
+def load_context():
+    return {"tenant": "demo"}
+
+@app.get('/admin/users')
+async def list_users(ctx=Depends(load_context)):
+    return {'users': []}
+""",
+        expected_hit=r"CWE-287|Depends|auth verification|FastAPI",
+    ),
+
+    CVEEntry(
+        cve_id="CVE-2024-PY-FASTAPI-MUTATION-NO-DEPENDS",
+        language="python",
+        cwe="CWE-862",
+        description="FastAPI DELETE route with no Depends/Security auth dependency.",
+        snippet="""
+from fastapi import FastAPI
+
+app = FastAPI()
+
+@app.delete('/orders/{order_id}')
+async def delete_order(order_id: int):
+    return {'deleted': order_id}
+""",
+        expected_hit=r"CWE-862|DELETE route|auth dependency|FastAPI",
     ),
 
     CVEEntry(
@@ -732,6 +877,93 @@ app.get('/download', (req, res) => {
         expected_hit=r"CWE-22|[Pp]ath [Tt]raversal|sendFile",
     ),
 
+        CVEEntry(
+                cve_id="CVE-2024-JS-HAPI-MISSING-AUTH",
+                language="javascript",
+                cwe="CWE-862",
+                description="Hapi route exposes an admin handler with no `options.auth` protection.",
+                snippet="""
+const Hapi = require('@hapi/hapi');
+const server = Hapi.server();
+
+server.route({
+    method: 'GET',
+    path: '/admin/users',
+    handler: async (request, h) => User.findAll(),
+});
+""",
+                expected_hit=r"JS-024|CWE-862|Hapi route missing authentication",
+        ),
+
+        CVEEntry(
+                cve_id="CVE-2024-JS-RESTIFY-NO-AUTH",
+                language="javascript",
+                cwe="CWE-862",
+                description="Restify route is defined without any file-scope authorization parser or auth plugin.",
+                snippet="""
+const restify = require('restify');
+const server = restify.createServer();
+
+server.get('/accounts/:id', (req, res, next) => {
+    res.send(Account.findByPk(req.params.id));
+    return next();
+});
+""",
+                expected_hit=r"JS-025|CWE-862|Restify route missing authorization plugin",
+        ),
+
+        CVEEntry(
+                cve_id="CVE-2024-JS-TRPC-PUBLIC-MUTATION",
+                language="javascript",
+                cwe="CWE-285",
+                description="tRPC mutation uses `publicProcedure` even though it performs a protected state change.",
+                snippet="""
+export const appRouter = router({
+    updateUser: publicProcedure.mutation(async ({ input, ctx }) => {
+        return ctx.db.user.update({ where: { id: input.id }, data: input });
+    }),
+});
+""",
+                expected_hit=r"JS-026|CWE-285|tRPC public mutation missing protection",
+        ),
+
+        CVEEntry(
+                cve_id="CVE-2024-JS-GRAPHQL-NO-AUTH",
+                language="javascript",
+                cwe="CWE-862",
+                description="GraphQL resolver returns protected user data without checking `context.user`.",
+                snippet="""
+const typeDefs = gql`type Query { user(id: ID!): User }`;
+const resolvers = {
+    Query: {
+        user: async (_parent, args, context) => {
+            return db.user.findUnique({ where: { id: args.id } });
+        }
+    }
+};
+""",
+                expected_hit=r"JS-027|CWE-862|GraphQL resolver missing authentication",
+        ),
+
+        CVEEntry(
+                cve_id="CVE-2024-JS-GRAPHQL-IDOR",
+                language="javascript",
+                cwe="CWE-639",
+                description="GraphQL resolver uses `args.id` for a resource lookup without ownership scoping.",
+                snippet="""
+const resolvers = {
+    Query: {
+        invoice: async (_parent, args, context) => {
+            if (!context.user) throw new Error('auth required');
+            return prisma.invoice.findUnique({ where: { id: args.id } });
+        }
+    }
+};
+const server = new ApolloServer({ resolvers });
+""",
+                expected_hit=r"JS-028|CWE-639|GraphQL resolver IDOR via args.id",
+        ),
+
     CVEEntry(
         cve_id="CVE-2023-PY-RATE-LIMIT",
         language="python",
@@ -1129,5 +1361,92 @@ func main() {
 }
 """,
         expected_hit=r"CWE-862|missing.auth|admin",
+    ),
+
+    CVEEntry(
+        cve_id="CVE-2024-JAVA-SPRING-MISSING-AUTH",
+        language="java",
+        cwe="CWE-862",
+        description="Spring Boot admin endpoint returns data without @PreAuthorize, @Secured, or an authenticated principal check.",
+        snippet="""
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RestController;
+
+@RestController
+public class AdminController {
+    @GetMapping("/admin/users")
+    public String listUsers() {
+        return "[]";
+    }
+}
+""",
+        expected_hit=r"CWE-862|missing authentication|Spring route",
+    ),
+
+    CVEEntry(
+        cve_id="CVE-2024-JAVA-SQLI",
+        language="java",
+        cwe="CWE-89",
+        description="JDBC query string is built with attacker-controlled input using string concatenation.",
+        snippet="""
+import java.sql.Connection;
+import java.sql.Statement;
+import javax.servlet.http.HttpServletRequest;
+
+public class UserController {
+    public void search(HttpServletRequest request, Connection conn) throws Exception {
+        String name = request.getParameter("name");
+        Statement stmt = conn.createStatement();
+        stmt.executeQuery("SELECT * FROM users WHERE name = '" + name + "'");
+    }
+}
+""",
+        expected_hit=r"CWE-89|Dynamic SQL|SQL",
+    ),
+
+    CVEEntry(
+        cve_id="CVE-2024-CSHARP-MISSING-AUTH",
+        language="csharp",
+        cwe="CWE-862",
+        description="ASP.NET Core controller exposes an administrative route without [Authorize].",
+        snippet="""
+using Microsoft.AspNetCore.Mvc;
+
+[ApiController]
+[Route("admin")]
+public class AdminController : ControllerBase
+{
+    [HttpGet("users")]
+    public IActionResult Users()
+    {
+        return Ok(new[] { "alice" });
+    }
+}
+""",
+        expected_hit=r"CWE-862|missing \[Authorize\]|ASP.NET action",
+    ),
+
+    CVEEntry(
+        cve_id="CVE-2024-CSHARP-SQLI",
+        language="csharp",
+        cwe="CWE-89",
+        description="SqlCommand text uses interpolation with request-derived input instead of parameters.",
+        snippet="""
+using Microsoft.AspNetCore.Mvc;
+using System.Data.SqlClient;
+
+[ApiController]
+[Route("users")]
+public class UsersController : ControllerBase
+{
+    [HttpGet("search")]
+    public IActionResult Search(string id)
+    {
+        var cmd = new SqlCommand($"SELECT * FROM Users WHERE Id = '{id}'");
+        return Ok();
+    }
+}
+""",
+        expected_hit=r"CWE-89|Dynamic SQL|SqlCommand",
     ),
 ]

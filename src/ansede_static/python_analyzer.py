@@ -48,6 +48,7 @@ from typing import Any, Union
 
 from ansede_static.cache.sqlite_store import SQLiteStore, stable_hash
 from ansede_static.hardening import TemplateEngineDetector
+from ansede_static.ir.global_graph import GlobalGraph
 from ansede_static.template_transpiler import template_taint_nodes
 
 
@@ -60,7 +61,9 @@ from ansede_static._types import Finding, Severity, AnalysisResult, TraceFrame
 
 _TaintInfo = tuple[str, int, set[str], tuple[TraceFrame, ...]]
 _ExprTaintInfo = tuple[str, str, int, set[str], tuple[TraceFrame, ...], tuple[str, ...]]
-DEFAULT_IFDS_CALL_STRING_K = 2
+# Keep the Python front-end bound sourced from the workspace-global IFDS graph
+# so Task B1 tuning cannot silently diverge between modules.
+DEFAULT_IFDS_CALL_STRING_K = GlobalGraph.DEFAULT_CALL_STRING_K
 IFDS_RETURN_VALUE_LABEL = "$ret"
 
 
@@ -429,6 +432,34 @@ _FASTAPI_SECURITY_CLASS_RE: re.Pattern[str] = re.compile(
     re.IGNORECASE,
 )
 
+_DJANGO_CBV_BASES: frozenset[str] = frozenset({
+    "View", "TemplateView", "FormView", "ListView", "DetailView",
+    "CreateView", "UpdateView", "DeleteView",
+})
+
+_DJANGO_IDOR_CBV_BASES: frozenset[str] = frozenset({
+    "DetailView", "UpdateView", "DeleteView",
+})
+
+_DJANGO_MUTATING_CBVS: frozenset[str] = frozenset({
+    "UpdateView", "DeleteView",
+})
+
+_FASTAPI_DEPENDENCY_CALLEES: frozenset[str] = frozenset({"Depends", "Security"})
+_FASTAPI_MUTATING_METHODS: frozenset[str] = frozenset({"put", "delete"})
+
+_AUTH_DECORATOR_SKIP_NAMES: frozenset[str] = frozenset({
+    "Depends", "Security", "api_view", "permission_classes", "require_http_methods",
+})
+
+_CBV_USER_SCOPE_RE: re.Pattern[str] = re.compile(
+    r'self\.request\.user|request\.user|current_user|g\.user(?:_id)?|'
+    r'self\.kwargs\[["\']user(?:_id)?["\']\]|self\.kwargs\.get\(["\']user(?:_id)?["\']\)',
+    re.IGNORECASE,
+)
+
+_CBV_FILTER_CALL_RE: re.Pattern[str] = re.compile(r'\bfilter(?:_by)?\s*\(', re.IGNORECASE)
+
 
 def _class_has_auth_mixin(
     cls: ast.ClassDef,
@@ -455,6 +486,50 @@ def _class_has_auth_mixin(
         if class_defs and name in class_defs:
             if _class_has_auth_mixin(class_defs[name], class_defs, visited):
                 return True
+    return False
+
+
+def _class_inherits_any_base(
+    cls: ast.ClassDef,
+    class_defs: dict[str, ast.ClassDef] | None,
+    candidate_names: set[str] | frozenset[str],
+    visited: set[str] | None = None,
+) -> bool:
+    """Return True when a class inherits from any candidate base directly or transitively."""
+    if visited is None:
+        visited = set()
+    if cls.name in visited:
+        return False
+    visited.add(cls.name)
+
+    for base in cls.bases:
+        name = (
+            base.id if isinstance(base, ast.Name)
+            else base.attr if isinstance(base, ast.Attribute)
+            else None
+        )
+        if not name:
+            continue
+        if name in candidate_names:
+            return True
+        if class_defs and name in class_defs:
+            if _class_inherits_any_base(class_defs[name], class_defs, candidate_names, visited):
+                return True
+    return False
+
+
+def _node_has_auth_decorator_signal(node: ast.AST) -> bool:
+    """Return True when a class or function has an auth-like decorator signal."""
+    decorator_list = getattr(node, "decorator_list", ())
+    for deco in decorator_list:
+        name = _decorator_name(deco)
+        if name and name in _AUTH_DECORATORS and name not in _AUTH_DECORATOR_SKIP_NAMES:
+            return True
+        text = _safe_unparse(deco)
+        if "method_decorator" in text:
+            for auth_name in (_AUTH_DECORATORS - _AUTH_DECORATOR_SKIP_NAMES):
+                if re.search(rf'\b{re.escape(auth_name)}\b', text):
+                    return True
     return False
 
 
@@ -634,6 +709,40 @@ def _class_has_drf_auth_permission(cls: ast.ClassDef) -> bool:
         if _DJANGO_PERMISSION_CLASS_RE.search(value_text):
             return True
     return False
+
+
+def _class_method_named(
+    cls: ast.ClassDef,
+    method_name: str,
+) -> ast.FunctionDef | ast.AsyncFunctionDef | None:
+    """Return a method by name from a class body, if present."""
+    for item in cls.body:
+        if isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef)) and item.name == method_name:
+            return item
+    return None
+
+
+def _cbv_http_method_names(cls: ast.ClassDef) -> set[str]:
+    """Return HTTP-style method names implemented by a class-based view."""
+    return {
+        item.name
+        for item in cls.body
+        if isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef))
+        and item.name in {"get", "post", "put", "patch", "delete"}
+    }
+
+
+def _cbv_get_queryset_method(cls: ast.ClassDef) -> ast.FunctionDef | ast.AsyncFunctionDef | None:
+    """Return the `get_queryset` method for a class-based view, if present."""
+    return _class_method_named(cls, "get_queryset")
+
+
+def _queryset_method_has_user_scope(fnode: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
+    """Return True when a queryset-building method scopes results to the current user."""
+    text = _safe_unparse(fnode)
+    if not text:
+        return False
+    return bool(_CBV_FILTER_CALL_RE.search(text) and _CBV_USER_SCOPE_RE.search(text))
 
 _FLASK_ROUTE_ATTRS: frozenset[str] = frozenset({
     "route", "get", "post", "put", "patch", "delete", "options",
@@ -1258,6 +1367,18 @@ def _resolve_callee_file_for_global_graph(
         except Exception:
             pass
 
+    imports = getattr(global_graph, "imports", None)
+    normalize_path = getattr(global_graph, "_normalize_path", None)
+    if isinstance(imports, dict) and callable(normalize_path):
+        try:
+            caller_key = (normalize_path(caller_file or "<stdin>"), callee_name)
+            targets = imports.get(caller_key, ())
+            for target_file, target_symbol in targets:
+                if target_symbol == callee_name:
+                    return str(target_file)
+        except Exception:
+            pass
+
     return caller_file or "<stdin>"
 
 
@@ -1724,6 +1845,36 @@ def _code_sans_strings(code: str) -> list[str]:
     return ["".join(chars) for chars in rows]
 
 
+def _code_sans_strings_and_comments(code: str) -> list[str]:
+    """
+    Return a copy of *code* split into lines with string and comment tokens
+    replaced by spaces, preserving line/column positions.
+
+    Used by regex-based heuristic rules that should reason about executable code
+    only, not examples, comments, or metadata embedded in the analyzer source.
+    """
+    rows: list[list[str]] = [list(line) for line in code.splitlines()]
+    try:
+        for tok in _tokenize.generate_tokens(io.StringIO(code).readline):
+            if tok.type not in {_tokenize.STRING, _tokenize.COMMENT}:
+                continue
+            sr, sc = tok.start
+            er, ec = tok.end
+            if sr == er:
+                for col in range(sc, min(ec, len(rows[sr - 1]))):
+                    rows[sr - 1][col] = " "
+            else:
+                for col in range(sc, len(rows[sr - 1])):
+                    rows[sr - 1][col] = " "
+                for row in range(sr, er - 1):
+                    rows[row] = [" "] * len(rows[row])
+                for col in range(0, min(ec, len(rows[er - 1]))):
+                    rows[er - 1][col] = " "
+    except _tokenize.TokenError:
+        pass
+    return ["".join(chars) for chars in rows]
+
+
 # ──────────────────────────────────────────────────────────────────────────────
 # Main detection engine — all 28 rule categories
 # ──────────────────────────────────────────────────────────────────────────────
@@ -1734,6 +1885,7 @@ class _Ctx:
     """Shared context passed to every detection-rule function."""
     lines: list[str]
     sans: list[str]
+    sans_comments: list[str]
     func_defs: dict[str, ast.FunctionDef | ast.AsyncFunctionDef]
     func_summaries: dict[str, _FunctionTaintSummary]
     _tree: ast.Module = None  # type: ignore[assignment]
@@ -1818,10 +1970,40 @@ _FRAMEWORK_INTERNAL_PY_RULE_DOWNGRADE_PATHS: dict[str, tuple[str, ...]] = {
     ),
 }
 
+_ANSEDE_INTERNAL_PY_MARKERS: tuple[str, ...] = (
+    "src/ansede_static/",
+    "/src/ansede_static/",
+    "site-packages/ansede_static/",
+    "/site-packages/ansede_static/",
+)
+
+_ANSEDE_INTERNAL_PY_NOISE_RULES: frozenset[str] = frozenset({
+    "PY-001",  # deliberate broad-catch containment in scanner/engine internals
+    "PY-011",  # rule metadata / examples can mention insecure defaults inline
+    "PY-040",  # remediation/examples can mention verify=False inline
+    "PY-044",  # analyzer/CLI orchestrators are intentionally branch-heavy
+})
+
+_ANSEDE_INTERNAL_PY_RULE_DOWNGRADE_PATHS: dict[str, tuple[str, ...]] = {
+    # CLI file operations work on local user-selected artifact paths rather than
+    # request-controlled web inputs; keep the heuristic from blocking self-scan.
+    "PY-045": (
+        "src/ansede_static/cli.py",
+        "/src/ansede_static/cli.py",
+        "site-packages/ansede_static/cli.py",
+        "/site-packages/ansede_static/cli.py",
+    ),
+}
+
 
 def _is_framework_internal_python_path(filename: str) -> bool:
     path_norm = filename.replace("\\", "/").lower()
     return any(marker in path_norm for marker in _FRAMEWORK_INTERNAL_PY_MARKERS)
+
+
+def _is_ansede_internal_python_path(filename: str) -> bool:
+    path_norm = filename.replace("\\", "/").lower()
+    return any(marker in path_norm for marker in _ANSEDE_INTERNAL_PY_MARKERS)
 
 
 def _is_framework_internal_python_noise_exempt(rule_id: str, filename: str) -> bool:
@@ -1834,18 +2016,33 @@ def _is_framework_internal_python_noise_path(rule_id: str, filename: str) -> boo
     return any(fragment in path_norm for fragment in _FRAMEWORK_INTERNAL_PY_RULE_DOWNGRADE_PATHS.get(rule_id, ()))
 
 
+def _is_ansede_internal_python_noise_path(rule_id: str, filename: str) -> bool:
+    path_norm = filename.replace("\\", "/").lower()
+    return any(fragment in path_norm for fragment in _ANSEDE_INTERNAL_PY_RULE_DOWNGRADE_PATHS.get(rule_id, ()))
+
+
 def _apply_python_noise_policy(findings: list[Finding], filename: str) -> list[Finding]:
-    if not filename or not _is_framework_internal_python_path(filename):
+    if not filename:
+        return findings
+    is_framework_internal = _is_framework_internal_python_path(filename)
+    is_ansede_internal = _is_ansede_internal_python_path(filename)
+    if not is_framework_internal and not is_ansede_internal:
         return findings
     for finding in findings:
-        if finding.rule_id not in _FRAMEWORK_INTERNAL_PY_NOISE_RULES and not _is_framework_internal_python_noise_path(finding.rule_id, filename):
-            continue
-        if _is_framework_internal_python_noise_exempt(finding.rule_id, filename):
+        reason = ""
+        if is_framework_internal:
+            if finding.rule_id in _FRAMEWORK_INTERNAL_PY_NOISE_RULES or _is_framework_internal_python_noise_path(finding.rule_id, filename):
+                if _is_framework_internal_python_noise_exempt(finding.rule_id, filename):
+                    continue
+                reason = "framework-internal implementation heuristic downgraded"
+        if not reason and is_ansede_internal:
+            if finding.rule_id in _ANSEDE_INTERNAL_PY_NOISE_RULES or _is_ansede_internal_python_noise_path(finding.rule_id, filename):
+                reason = "tool-internal implementation heuristic downgraded"
+        if not reason:
             continue
         if finding.severity.sort_key < Severity.LOW.sort_key:
             finding.severity = Severity.LOW
         finding.confidence = min(finding.confidence, 0.25)
-        reason = "framework-internal implementation heuristic downgraded"
         if reason not in finding.description:
             finding.description = f"{finding.description} ({reason})"
     return findings
@@ -2345,7 +2542,7 @@ def _rule_04(ctx: _Ctx) -> list[Finding]:
 
 def _rule_05(ctx: _Ctx) -> list[Finding]:
     findings: list[Finding] = []
-    sans = ctx.sans
+    sans = ctx.sans_comments
     # ── Rule 5: Dangerous defaults ───────────────────────────────────────
     for lineno, line_text in enumerate(sans, 1):  # use string-blanked lines
         if line_text.strip().startswith("#"):
@@ -2700,6 +2897,53 @@ def _route_resource_names(fnode: ast.FunctionDef | ast.AsyncFunctionDef) -> set[
     return names
 
 
+def _idor_resource_names(
+    fnode: ast.FunctionDef | ast.AsyncFunctionDef,
+    func_summaries: dict[str, _FunctionTaintSummary] | None = None,
+) -> set[str]:
+    """Return ID-like names that can identify a resource in IDOR-style lookups."""
+    names = set(_route_resource_names(fnode))
+    summaries = func_summaries or {}
+    source_vars: dict[str, str] = {}
+    ordered_assignments: list[ast.Assign | ast.AnnAssign] = []
+
+    for node in ast.walk(fnode):
+        if isinstance(node, ast.Assign) and node.value is not None:
+            ordered_assignments.append(node)
+        elif isinstance(node, ast.AnnAssign) and node.value is not None:
+            ordered_assignments.append(node)
+
+    ordered_assignments.sort(key=lambda node: getattr(node, "lineno", 0))
+
+    for node in ordered_assignments:
+        if isinstance(node, ast.Assign):
+            targets = [target for target in node.targets if isinstance(target, ast.Name)]
+            value = node.value
+        else:
+            targets = [node.target] if isinstance(node.target, ast.Name) else []
+            value = node.value
+
+        if value is None or not targets:
+            continue
+
+        src = _get_taint_source(value) or _expr_has_direct_source(value, source_vars, summaries)
+        if src is None and isinstance(value, ast.Call):
+            callee = _get_local_callee_name(value)
+            summary = summaries.get(callee)
+            if summary is not None and summary.source:
+                src = summary.source
+
+        if src is None:
+            continue
+
+        for target in targets:
+            source_vars[target.id] = src
+            if _ID_LIKE_NAME_RE.search(target.id):
+                names.add(target.id)
+
+    return names
+
+
 def _decorator_name(node: ast.AST) -> str | None:
     """Return the terminal decorator name for a decorator expression."""
     if isinstance(node, ast.Name):
@@ -2806,6 +3050,129 @@ def _resource_parameter_trace_frames(
     for name in sorted(resource_names):
         trace = _append_trace(trace, "source", f"resource parameter `{name}`", line=line)
     return trace
+
+
+def _fastapi_route_methods(fnode: ast.FunctionDef | ast.AsyncFunctionDef) -> set[str]:
+    """Return the declared HTTP methods for a FastAPI-style route function."""
+    methods: set[str] = set()
+    for deco in _iter_route_decorators(fnode):
+        if isinstance(deco.func, ast.Attribute) and deco.func.attr != "route":
+            methods.add(deco.func.attr.lower())
+        for kw in deco.keywords:
+            if kw.arg == "methods" and isinstance(kw.value, (ast.List, ast.Tuple, ast.Set)):
+                for elt in kw.value.elts:
+                    if isinstance(elt, ast.Constant) and isinstance(elt.value, str):
+                        methods.add(elt.value.lower())
+    return methods
+
+
+def _fastapi_route_receivers(fnode: ast.FunctionDef | ast.AsyncFunctionDef) -> set[str]:
+    """Return the receiver names used by route decorators (e.g. `app`, `router`)."""
+    receivers: set[str] = set()
+    for deco in _iter_route_decorators(fnode):
+        func = deco.func
+        if not isinstance(func, ast.Attribute):
+            continue
+        receiver = func.value
+        if isinstance(receiver, ast.Name):
+            receivers.add(receiver.id)
+        elif isinstance(receiver, ast.Attribute):
+            receivers.add(receiver.attr)
+    return receivers
+
+
+def _fastapi_route_is_receiver_guarded(
+    fnode: ast.FunctionDef | ast.AsyncFunctionDef,
+    guarded_receivers: set[str],
+) -> bool:
+    """Return True when the route receiver is configured with auth dependencies."""
+    return bool(_fastapi_route_receivers(fnode) & guarded_receivers)
+
+
+def _iter_fastapi_dependency_calls(
+    fnode: ast.FunctionDef | ast.AsyncFunctionDef,
+) -> tuple[ast.Call, ...]:
+    """Return Depends/Security calls attached to a FastAPI-style route."""
+    dep_calls: list[ast.Call] = []
+    for default in [*fnode.args.defaults, *fnode.args.kw_defaults]:
+        if isinstance(default, ast.Call) and _decorator_name(default.func) in _FASTAPI_DEPENDENCY_CALLEES:
+            dep_calls.append(default)
+    for deco in _iter_route_decorators(fnode):
+        for kw in deco.keywords:
+            if kw.arg != "dependencies" or not isinstance(kw.value, (ast.List, ast.Tuple, ast.Set)):
+                continue
+            for dep in kw.value.elts:
+                if isinstance(dep, ast.Call) and _decorator_name(dep.func) in _FASTAPI_DEPENDENCY_CALLEES:
+                    dep_calls.append(dep)
+    return tuple(dep_calls)
+
+
+def _fastapi_dependency_callback_labels(dep_call: ast.Call) -> tuple[str, ...]:
+    """Return human-readable callback labels referenced by a Depends/Security call."""
+    labels: list[str] = []
+    for value in [*dep_call.args, *(kw.value for kw in dep_call.keywords)]:
+        text = _safe_unparse(value)
+        if text and text not in labels:
+            labels.append(text)
+    return tuple(labels)
+
+
+def _fastapi_dependency_call_has_auth_provider(
+    dep_call: ast.Call,
+    func_defs: dict[str, ast.FunctionDef | ast.AsyncFunctionDef],
+    auth_aliases: set[str],
+) -> bool:
+    """Return True when a Depends/Security call ultimately resolves to an auth provider."""
+    if _fastapi_dep_call_has_auth_signal(dep_call, auth_aliases):
+        return True
+
+    for label in _fastapi_dependency_callback_labels(dep_call):
+        short = label.rsplit('.', 1)[-1]
+        if short in auth_aliases or _FASTAPI_AUTH_DEPENDS_RE.search(short):
+            return True
+        provider = func_defs.get(short)
+        if provider is None:
+            continue
+        if _FASTAPI_AUTH_DEPENDS_RE.search(_safe_unparse(provider)):
+            return True
+        for child in ast.walk(provider):
+            if isinstance(child, ast.Call):
+                if _fastapi_dep_call_has_auth_signal(child, auth_aliases):
+                    return True
+                if _FASTAPI_AUTH_DEPENDS_RE.search(_safe_unparse(child)):
+                    return True
+    return False
+
+
+def _fastapi_route_has_only_non_auth_dependencies(
+    fnode: ast.FunctionDef | ast.AsyncFunctionDef,
+    func_defs: dict[str, ast.FunctionDef | ast.AsyncFunctionDef],
+    auth_aliases: set[str],
+    guarded_receivers: set[str],
+) -> bool:
+    """Return True when a FastAPI route uses Depends/Security but none of them look auth-related."""
+    if _fastapi_route_is_receiver_guarded(fnode, guarded_receivers):
+        return False
+    dep_calls = _iter_fastapi_dependency_calls(fnode)
+    if not dep_calls:
+        return False
+    return not any(
+        _fastapi_dependency_call_has_auth_provider(dep, func_defs, auth_aliases)
+        for dep in dep_calls
+    )
+
+
+def _fastapi_mutating_route_missing_dependencies(
+    fnode: ast.FunctionDef | ast.AsyncFunctionDef,
+    guarded_receivers: set[str],
+) -> bool:
+    """Return True when a FastAPI PUT/DELETE route has no Depends/Security hooks at all."""
+    if _fastapi_route_is_receiver_guarded(fnode, guarded_receivers):
+        return False
+    methods = _fastapi_route_methods(fnode)
+    if not methods.intersection(_FASTAPI_MUTATING_METHODS):
+        return False
+    return not _iter_fastapi_dependency_calls(fnode)
 
 
 def _presence_only_checked_names(test: ast.AST) -> set[str]:
@@ -3062,7 +3429,7 @@ def _rule_12(ctx: _Ctx) -> list[Finding]:
     for fname, fnode in func_defs.items():
         has_route = is_admin = is_public = has_auth = False
         has_resource_id = False
-        resource_names = _route_resource_names(fnode)
+        resource_names = _idor_resource_names(fnode, ctx.func_summaries)
         route_methods: set[str] = set()
         route_path = ""
         for deco in fnode.decorator_list:
@@ -3495,7 +3862,7 @@ def _rule_16(ctx: _Ctx) -> list[Finding]:
         if not (is_authed and has_route_deco):
             continue
         principal_aliases = _principal_aliases(fnode)
-        resource_names = _route_resource_names(fnode)
+        resource_names = _idor_resource_names(fnode, ctx.func_summaries)
         has_guard = _body_has_explicit_ownership_guard(fnode, principal_aliases)
         base_trace = _merge_traces(
             _route_trace_frames(fnode),
@@ -3868,7 +4235,7 @@ def _rule_20(ctx: _Ctx) -> list[Finding]:
                 agent="python-analyzer",
             ))
 
-    return _assign_rule_ids(findings, "PY-028")
+    return _assign_rule_ids(findings, "PY-044")
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -3998,7 +4365,7 @@ def _rule_21(ctx: _Ctx) -> list[Finding]:
                 ))
                 break
 
-    return _assign_rule_ids(findings, "PY-029")
+    return _assign_rule_ids(findings, "PY-045")
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -4079,7 +4446,7 @@ def _rule_22(ctx: _Ctx) -> list[Finding]:
                 cwe="CWE-601", agent="python-analyzer",
             ))
 
-    return _assign_rule_ids(findings, "PY-030")
+    return _assign_rule_ids(findings, "PY-046")
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -4187,7 +4554,7 @@ def _rule_23(ctx: _Ctx) -> list[Finding]:
                 ))
                 break
 
-    return _assign_rule_ids(findings, "PY-031")
+    return _assign_rule_ids(findings, "PY-047")
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -4262,7 +4629,7 @@ def _rule_24(ctx: _Ctx) -> list[Finding]:
                 cwe="CWE-798", agent="python-analyzer",
             ))
 
-    return _assign_rule_ids(findings, "PY-032")
+    return _assign_rule_ids(findings, "PY-048")
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -4561,6 +4928,212 @@ def _rule_27(ctx: _Ctx) -> list[Finding]:
     return _assign_rule_ids(findings, "PY-035")
 
 
+def _rule_36(ctx: _Ctx) -> list[Finding]:
+    """CWE-862: Django CBV get/post methods without auth-enforcing mixins or decorators."""
+    findings: list[Finding] = []
+
+    for cls in (ctx.class_defs or {}).values():
+        if not _class_inherits_any_base(cls, ctx.class_defs, _DJANGO_CBV_BASES):
+            continue
+        if _class_inherits_any_base(cls, ctx.class_defs, _DJANGO_IDOR_CBV_BASES):
+            continue
+        method_names = _cbv_http_method_names(cls) & {"get", "post"}
+        if not method_names:
+            continue
+        if (
+            _class_has_auth_mixin(cls, ctx.class_defs)
+            or _class_has_drf_auth_permission(cls)
+            or _node_has_auth_decorator_signal(cls)
+        ):
+            continue
+        if any(
+            method is not None and _node_has_auth_decorator_signal(method)
+            for method in (_class_method_named(cls, name) for name in method_names)
+        ):
+            continue
+
+        method_list = ", ".join(sorted(method_names))
+        trace: tuple[TraceFrame, ...] = ()
+        trace = _append_trace(trace, "source", f"class-based view `{cls.name}`", line=cls.lineno)
+        trace = _append_trace(trace, "gap", "no LoginRequiredMixin/PermissionRequiredMixin or auth method_decorator", line=cls.lineno)
+        trace = _append_trace(trace, "sink", f"CBV methods `{method_list}` exposed without auth", line=cls.lineno)
+        findings.append(Finding(
+            category="security", severity=Severity.HIGH,
+            title=f"CWE-862: Django CBV `{cls.name}` exposes {method_list} with no auth mixin",
+            description=(
+                f"`{cls.name}` implements `{method_list}` but does not inherit an auth-enforcing mixin "
+                f"and has no `@method_decorator(login_required)` / permission decorator. "
+                f"Class-based view methods can be reached without authentication."
+            ),
+            line=cls.lineno,
+            suggestion=(
+                "Add `LoginRequiredMixin` / `PermissionRequiredMixin`, or protect dispatch/methods with "
+                "`@method_decorator(login_required, name='dispatch')`."
+            ),
+            cwe="CWE-862", agent="python-analyzer",
+            confidence=0.91,
+            analysis_kind="decorator-heuristic",
+            trace=trace,
+        ))
+
+    return _assign_rule_ids(findings, "PY-028")
+
+
+def _rule_37(ctx: _Ctx) -> list[Finding]:
+    """CWE-639: Django Detail/Update/Delete CBVs missing user-scoped get_queryset()."""
+    findings: list[Finding] = []
+
+    for cls in (ctx.class_defs or {}).values():
+        if not _class_inherits_any_base(cls, ctx.class_defs, _DJANGO_IDOR_CBV_BASES):
+            continue
+        queryset_method = _cbv_get_queryset_method(cls)
+        if queryset_method is not None:
+            continue
+
+        trace: tuple[TraceFrame, ...] = ()
+        trace = _append_trace(trace, "source", f"class-based view `{cls.name}`", line=cls.lineno)
+        trace = _append_trace(trace, "gap", "no get_queryset override detected", line=cls.lineno)
+        trace = _append_trace(trace, "sink", "CBV resolves objects without visible user scoping", line=cls.lineno)
+        findings.append(Finding(
+            category="security", severity=Severity.HIGH,
+            title=f"CWE-639: Django CBV `{cls.name}` has no user-scoped get_queryset()",
+            description=(
+                f"`{cls.name}` inherits from a detail/update/delete class-based view but does not override "
+                f"`get_queryset()` to scope objects to `self.request.user`. This can expose other users' records."
+            ),
+            line=cls.lineno,
+            suggestion=(
+                "Override `get_queryset()` and filter by the current user, for example: "
+                "`return Order.objects.filter(owner=self.request.user)`."
+            ),
+            cwe="CWE-639", agent="python-analyzer",
+            confidence=0.9,
+            analysis_kind="route-heuristic",
+            trace=trace,
+        ))
+
+    return _assign_rule_ids(findings, "PY-029")
+
+
+def _rule_38(ctx: _Ctx) -> list[Finding]:
+    """CWE-285: Django Update/Delete CBVs whose get_queryset() lacks ownership scope."""
+    findings: list[Finding] = []
+
+    for cls in (ctx.class_defs or {}).values():
+        if not _class_inherits_any_base(cls, ctx.class_defs, _DJANGO_MUTATING_CBVS):
+            continue
+        queryset_method = _cbv_get_queryset_method(cls)
+        if queryset_method is None or _queryset_method_has_user_scope(queryset_method):
+            continue
+
+        trace: tuple[TraceFrame, ...] = ()
+        trace = _append_trace(trace, "source", f"class-based view `{cls.name}`", line=cls.lineno)
+        trace = _append_trace(trace, "check", "custom get_queryset override detected", line=queryset_method.lineno)
+        trace = _append_trace(trace, "gap", "get_queryset lacks owner/user scope", line=queryset_method.lineno)
+        trace = _append_trace(trace, "sink", "update/delete view can act on another user's object", line=cls.lineno)
+        findings.append(Finding(
+            category="security", severity=Severity.HIGH,
+            title=f"CWE-285: Django CBV `{cls.name}` get_queryset() lacks ownership filter",
+            description=(
+                f"`{cls.name}` overrides `get_queryset()` but the queryset body never scopes results to "
+                f"`self.request.user` or another current-user identity. Update/delete actions may operate on "
+                f"another user's object."
+            ),
+            line=queryset_method.lineno,
+            suggestion=(
+                "Scope the queryset to the current user, for example: "
+                "`return Post.objects.filter(owner=self.request.user)`."
+            ),
+            cwe="CWE-285", agent="python-analyzer",
+            confidence=0.9,
+            analysis_kind="route-heuristic",
+            trace=trace,
+        ))
+
+    return _assign_rule_ids(findings, "PY-030")
+
+
+def _rule_39(ctx: _Ctx) -> list[Finding]:
+    """CWE-287: FastAPI routes with Depends/Security hooks that do not perform auth."""
+    findings: list[Finding] = []
+    auth_aliases = ctx.fastapi_auth_aliases or set()
+    guarded_receivers = ctx.fastapi_guarded_receivers or set()
+
+    for fname, fnode in ctx.func_defs.items():
+        if _node_has_auth_decorator_signal(fnode):
+            continue
+        dep_calls = _iter_fastapi_dependency_calls(fnode)
+        if not dep_calls:
+            continue
+        if _fastapi_route_is_receiver_guarded(fnode, guarded_receivers):
+            continue
+        if any(_fastapi_dependency_call_has_auth_provider(dep, ctx.func_defs, auth_aliases) for dep in dep_calls):
+            continue
+
+        dep_labels = sorted({label for dep in dep_calls for label in _fastapi_dependency_callback_labels(dep)})
+        dep_display = ", ".join(f"`{label}`" for label in dep_labels) or "`Depends(...)`"
+        trace = _route_trace_frames(fnode)
+        trace = _append_trace(trace, "gap", f"dependency hooks {dep_display} have no auth signal", line=fnode.lineno)
+        trace = _append_trace(trace, "sink", f"FastAPI route `{fname}()` trusts non-auth dependency injection", line=fnode.lineno)
+        findings.append(Finding(
+            category="security", severity=Severity.CRITICAL,
+            title=f"CWE-287: FastAPI route `{fname}()` uses Depends without auth verification",
+            description=(
+                f"`{fname}()` uses FastAPI dependency injection via {dep_display}, but none of those providers "
+                f"call `get_current_user`, `verify_token`, `oauth2_scheme`, or another known auth dependency. "
+                f"The route may look protected while still allowing an auth bypass."
+            ),
+            line=fnode.lineno,
+            suggestion=(
+                "Use an auth dependency such as `Depends(get_current_user)` / `Security(oauth2_scheme)`, or "
+                "call token verification inside the dependency provider before returning."
+            ),
+            cwe="CWE-287", agent="python-analyzer",
+            confidence=0.89,
+            analysis_kind="decorator-heuristic",
+            trace=trace,
+        ))
+
+    return _assign_rule_ids(findings, "PY-031")
+
+
+def _rule_40(ctx: _Ctx) -> list[Finding]:
+    """CWE-862: FastAPI PUT/DELETE routes with no dependency-based auth at all."""
+    findings: list[Finding] = []
+    guarded_receivers = ctx.fastapi_guarded_receivers or set()
+
+    for fname, fnode in ctx.func_defs.items():
+        if _node_has_auth_decorator_signal(fnode):
+            continue
+        if not _fastapi_mutating_route_missing_dependencies(fnode, guarded_receivers):
+            continue
+
+        methods = sorted(_fastapi_route_methods(fnode).intersection(_FASTAPI_MUTATING_METHODS))
+        method_display = "/".join(m.upper() for m in methods) if methods else "PUT/DELETE"
+        trace = _route_trace_frames(fnode)
+        trace = _append_trace(trace, "gap", "no Depends/Security auth dependency detected", line=fnode.lineno)
+        trace = _append_trace(trace, "sink", f"mutating FastAPI route `{fname}()` reachable without auth dependency", line=fnode.lineno)
+        findings.append(Finding(
+            category="security", severity=Severity.HIGH,
+            title=f"CWE-862: FastAPI {method_display} route `{fname}()` has no auth dependency",
+            description=(
+                f"`{fname}()` is a FastAPI {method_display} endpoint but declares no `Depends()` / `Security()` "
+                f"authentication dependency. Mutating routes should require an authenticated principal."
+            ),
+            line=fnode.lineno,
+            suggestion=(
+                "Add an auth dependency such as `current_user=Depends(get_current_user)` or configure "
+                "router-level authenticated dependencies for the endpoint."
+            ),
+            cwe="CWE-862", agent="python-analyzer",
+            confidence=0.9,
+            analysis_kind="decorator-heuristic",
+            trace=trace,
+        ))
+
+    return _assign_rule_ids(findings, "PY-032")
+
+
 def _rule_28(ctx: _Ctx) -> list[Finding]:
     """CWE-470: Use of externally-controlled input to select classes or methods (getattr dispatch)."""
     findings: list[Finding] = []
@@ -4854,7 +5427,7 @@ def _rule_32(ctx: _Ctx) -> list[Finding]:
         r'aiohttp\.(?:ClientSession|request)|urllib\.request\.urlopen)\s*\(',
         re.IGNORECASE,
     )
-    lines = ctx.lines
+    lines = ctx.sans_comments
     for lineno, line in enumerate(lines, 1):
         stripped = line.strip()
         if stripped.startswith("#"):
@@ -4986,6 +5559,7 @@ def _detect(code: str, filename: str = "", global_graph: object = None) -> list[
 
     lines = code.splitlines()
     sans = _code_sans_strings(code)
+    sans_comments = _code_sans_strings_and_comments(code)
     func_defs: dict[str, ast.FunctionDef | ast.AsyncFunctionDef] = {}
     for node in ast.walk(tree):
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
@@ -5019,7 +5593,7 @@ def _detect(code: str, filename: str = "", global_graph: object = None) -> list[
                 if isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef)):
                     func_to_class[id(item)] = node
     ctx = _Ctx(
-        lines=lines, sans=sans, func_defs=func_defs, func_summaries=func_summaries,
+        lines=lines, sans=sans, sans_comments=sans_comments, func_defs=func_defs, func_summaries=func_summaries,
         _tree=tree, filename=filename, global_graph=global_graph,
         class_defs=class_defs, func_to_class=func_to_class,
         fastapi_guarded_receivers=fastapi_guarded_receivers,
@@ -5034,6 +5608,7 @@ def _detect(code: str, filename: str = "", global_graph: object = None) -> list[
         _rule_21, _rule_22, _rule_23, _rule_24, _rule_25,
         _rule_26, _rule_27, _rule_28, _rule_29, _rule_30,
         _rule_31, _rule_32, _rule_33, _rule_34, _rule_35,
+        _rule_36, _rule_37, _rule_38, _rule_39, _rule_40,
     ):
         findings.extend(rule_fn(ctx))
 
@@ -5111,6 +5686,24 @@ def index_python_file(code: str, filename: str, global_graph):
         tree = ast.parse(code, filename=filename)
     except SyntaxError:
         return
+
+    func_defs: dict[str, ast.FunctionDef | ast.AsyncFunctionDef] = {}
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            func_defs[node.name] = node
+
+    if func_defs:
+        try:
+            func_summaries = _build_function_taint_summaries(tree, func_defs)
+            summary_dependencies = _collect_function_dependencies(func_defs, filename or "<stdin>")
+            _record_function_summaries_in_global_graph(
+                global_graph,
+                filename=filename,
+                func_summaries=func_summaries,
+                summary_dependencies=summary_dependencies,
+            )
+        except Exception:
+            pass
         
     def _resolve_import_target(module_name: str, current_file: str, level: int) -> str:
         module_path = Path(*module_name.split('.')) if module_name else Path()

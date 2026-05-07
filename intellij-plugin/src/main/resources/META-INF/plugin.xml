@@ -1,0 +1,23 @@
+<idea-plugin>
+  <id>com.ansede.intellij</id>
+  <name>Ansede Static</name>
+  <vendor email="support@ansede.dev">Ansede</vendor>
+  <description><![CDATA[
+    Offline SAST diagnostics for Python, JavaScript/TypeScript, Java, C#, and Go powered by the ansede-static CLI.
+  ]]></description>
+
+  <depends>com.intellij.modules.platform</depends>
+  <depends>com.intellij.java</depends>
+
+  <extensions defaultExtensionNs="com.intellij">
+    <applicationService serviceImplementation="com.ansede.intellij.AnsedeCliService" />
+    <toolWindow id="Ansede" factoryClass="com.ansede.intellij.AnsedeToolWindowFactory" anchor="right" />
+  </extensions>
+
+  <actions>
+    <action id="Ansede.ScanCurrentFile"
+            class="com.ansede.intellij.ScanCurrentFileAction"
+            text="Scan Current File with Ansede"
+            description="Run ansede-static against the active editor buffer" />
+  </actions>
+</idea-plugin>

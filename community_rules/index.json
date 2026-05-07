@@ -1,0 +1,17 @@
+{
+  "schema_version": "1.0",
+  "updated": "2026-05-07",
+  "rules": [
+    {
+      "id": "community/flask-missing-rate-limit-CWE-307",
+      "title": "Flask route missing rate-limit middleware",
+      "cwe": "CWE-307",
+      "severity": "high",
+      "language": "python",
+      "url": "https://raw.githubusercontent.com/mattybellx/Ansede/master/community_rules/flask-missing-rate-limit-CWE-307.yaml",
+      "tags": [
+        "owasp:A07"
+      ]
+    }
+  ]
+}

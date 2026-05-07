@@ -17,7 +17,7 @@ export function runAnsedeScan(options: RunScanOptions): Promise<AnsedeReportEnve
     return new Promise((resolve, reject) => {
         const child = spawn(
             options.executable,
-            ['--stdin', '--lang', options.language, '--format', 'json', '--fail-on', 'never'],
+            ['--stdin', '--lang', options.language, '--format', 'json', '--fail-on', 'never', '--explain'],
             { windowsHide: true },
         );
 

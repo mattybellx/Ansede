@@ -13,6 +13,7 @@ Zero external dependencies — pure stdlib only.
 from __future__ import annotations
 
 import argparse
+from datetime import datetime, timezone
 import gc
 import json
 import sys
@@ -32,7 +33,7 @@ from ansede_static.js_engine.backends import (
 from ansede_static.reporters import format_text_multi, format_json, format_sarif, format_ciso_report, format_html
 from ansede_static.rules import describe_rule, list_rule_contracts
 from ansede_static.schema import FINGERPRINT_VERSION
-from ansede_static import _PYTHON_EXTS, _JS_EXTS
+from ansede_static import _PYTHON_EXTS, _JS_EXTS, _GO_EXTS, _JAVA_EXTS, _CSHARP_EXTS
 
 from ansede_static.ir.global_graph import GlobalGraph
 from ansede_static.engine.triage import run_ai_triage
@@ -53,6 +54,12 @@ def _detect_language(path: Path) -> str | None:
         return "python"
     if ext in _JS_EXTS:
         return "javascript"
+    if ext in _GO_EXTS:
+        return "go"
+    if ext in _JAVA_EXTS:
+        return "java"
+    if ext in _CSHARP_EXTS:
+        return "csharp"
     return None
 
 
@@ -210,6 +217,15 @@ def _analyze_file(
             experimental_js_ast=experimental_js_ast,
             global_graph=global_graph,
         )
+    elif lang == "go":
+        from ansede_static.go_engine.go_analyzer import run_go_analysis
+        result = run_go_analysis(code, filename=str(path))
+    elif lang == "java":
+        from ansede_static.java_analyzer import analyze_java
+        result = analyze_java(code, filename=str(path))
+    elif lang == "csharp":
+        from ansede_static.csharp_analyzer import analyze_csharp
+        result = analyze_csharp(code, filename=str(path))
     else:
         result = AnalysisResult(file_path=str(path), language="unknown")
 
@@ -235,6 +251,141 @@ def _render_rule_catalog(as_json: bool) -> str:
             f"{rule['rule_id']:<8} {rule['default_severity']:<8} {rule['maturity']:<8} {rule['title']}{cwe}"
         )
     return "\n".join(lines)
+
+
+_RULE_CATALOG_SCHEMA_VERSION = "1.0"
+
+
+def _normalize_analysis_kind(kind: str) -> str:
+    normalized = kind.strip().lower().replace("-", "_")
+    allowed = {"pattern", "route_heuristic", "decorator_heuristic", "taint_flow"}
+    return normalized if normalized in allowed else "pattern"
+
+
+def _infer_contract_analysis_kind(contract: object) -> str:
+    title = str(getattr(contract, "title", ""))
+    summary = str(getattr(contract, "summary", ""))
+    tags = getattr(contract, "tags", ())
+    text = " ".join([title, summary, *(str(tag) for tag in tags)]).lower()
+    if any(token in text for token in ("decorator", "annotation", "mixin", "preauthorize", "rolesallowed", "secured")):
+        return "decorator_heuristic"
+    if any(token in text for token in ("route", "resolver", "controller", "endpoint", "mapping", "view", "ownership", "missing authentication", "broken access")):
+        return "route_heuristic"
+    if any(token in text for token in ("taint", "flow", "sink", "sql injection", "command injection", "path traversal", "ssrf", "deserial", "xss", "injection")):
+        return "taint_flow"
+    return "pattern"
+
+
+def _community_rule_analysis_kind(rule: object) -> str:
+    pattern_type = str(getattr(rule, "pattern_type", "regex")).strip().lower()
+    if pattern_type == "ast_structural":
+        return "route_heuristic"
+    if pattern_type == "taint_sink":
+        return "taint_flow"
+    return "pattern"
+
+
+def _rule_catalog_records() -> list[dict[str, str | list[str]]]:
+    records: list[dict[str, str | list[str]]] = []
+    for contract in list_rule_contracts():
+        languages = contract.languages or ("",)
+        analysis_kind = _infer_contract_analysis_kind(contract)
+        for language in languages:
+            records.append(
+                {
+                    "id": contract.rule_id or contract.cwe,
+                    "cwe": contract.cwe,
+                    "title": contract.title,
+                    "severity": contract.default_severity,
+                    "language": language,
+                    "analysis_kind": analysis_kind,
+                    "tags": list(contract.tags),
+                }
+            )
+
+    try:
+        from ansede_static.yaml_rules import load_community_rules
+
+        for rule in load_community_rules():
+            languages = getattr(rule, "languages", ()) or ("",)
+            analysis_kind = _community_rule_analysis_kind(rule)
+            for language in languages:
+                records.append(
+                    {
+                        "id": getattr(rule, "rule_id", ""),
+                        "cwe": getattr(rule, "cwe", ""),
+                        "title": getattr(rule, "title", ""),
+                        "severity": getattr(getattr(rule, "severity", ""), "value", str(getattr(rule, "severity", ""))),
+                        "language": language,
+                        "analysis_kind": analysis_kind,
+                        "tags": list(getattr(rule, "tags", ())),
+                    }
+                )
+    except Exception:
+        pass
+
+    deduped: dict[tuple[str, str], dict[str, str | list[str]]] = {}
+    for record in records:
+        deduped[(str(record["id"]), str(record["language"]))] = record
+    return sorted(deduped.values(), key=lambda item: (str(item["id"]), str(item["language"])))
+
+
+def _yaml_scalar(value: object) -> str:
+    if value is None:
+        return "null"
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, (int, float)):
+        return str(value)
+    return json.dumps(str(value))
+
+
+def _render_yaml_value(value: object, *, indent: int = 0) -> list[str]:
+    prefix = " " * indent
+    if isinstance(value, dict):
+        lines: list[str] = []
+        for key, item in value.items():
+            if isinstance(item, (dict, list)):
+                lines.append(f"{prefix}{key}:")
+                lines.extend(_render_yaml_value(item, indent=indent + 2))
+            else:
+                lines.append(f"{prefix}{key}: {_yaml_scalar(item)}")
+        return lines
+    if isinstance(value, list):
+        lines = []
+        for item in value:
+            if isinstance(item, (dict, list)):
+                lines.append(f"{prefix}-")
+                lines.extend(_render_yaml_value(item, indent=indent + 2))
+            else:
+                lines.append(f"{prefix}- {_yaml_scalar(item)}")
+        return lines
+    return [f"{prefix}{_yaml_scalar(value)}"]
+
+
+def _render_export_rule_catalog(export_format: str) -> str:
+    payload = {
+        "schema_version": _RULE_CATALOG_SCHEMA_VERSION,
+        "generated": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+        "rules": _rule_catalog_records(),
+    }
+    if export_format == "yaml":
+        return "\n".join(_render_yaml_value(payload)) + "\n"
+    return json.dumps(payload, indent=2)
+
+
+def _rule_catalog_output_path(
+    *,
+    output: Path | None,
+    output_dir: Path | None,
+    export_format: str,
+) -> Path | None:
+    if output is not None:
+        return output
+    if output_dir is None:
+        return None
+    suffix = ".yaml" if export_format == "yaml" else ".json"
+    return output_dir / f"rules{suffix}"
 
 
 def _render_rule_description(token: str, as_json: bool) -> str | None:
@@ -275,6 +426,46 @@ def _render_js_backend_catalog(as_json: bool) -> str:
         )
         lines.append(f"    {backend['description']}")
     return "\n".join(lines)
+
+
+def _artifact_suffix(output_format: str) -> str:
+    return {
+        "text": ".txt",
+        "json": ".json",
+        "sarif": ".sarif",
+        "ciso": ".txt",
+        "html": ".html",
+    }.get(output_format, ".txt")
+
+
+def _default_output_filename(output_format: str, *, stem: str = "findings") -> str:
+    return f"{stem}{_artifact_suffix(output_format)}"
+
+
+def _resolve_output_path(
+    *,
+    output: Path | None,
+    output_dir: Path | None,
+    output_format: str,
+    stem: str = "findings",
+) -> Path | None:
+    if output is not None:
+        return output
+    if output_dir is None:
+        return None
+    return output_dir / _default_output_filename(output_format, stem=stem)
+
+
+def _resolve_workspace_relative_path(path_value: str, workspace_root: Path) -> Path:
+    candidate = Path(path_value)
+    if candidate.is_absolute():
+        return candidate
+    return (workspace_root / candidate).resolve()
+
+
+def _write_output_artifact(path: Path, content: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(content, encoding="utf-8")
 
 
 def _should_fail(results: list[AnalysisResult], fail_on: str) -> bool:
@@ -487,7 +678,7 @@ def _apply_baseline(results: list[AnalysisResult], baseline: set[str]) -> list[A
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="ansede-static",
-        description="Zero-dependency SAST scanner for Python and JavaScript",
+        description="Zero-dependency SAST scanner for Python, JavaScript, Go, Java, and C#",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=textwrap.dedent("""\
             Examples:
@@ -519,6 +710,10 @@ def build_parser() -> argparse.ArgumentParser:
         help="Print the detector catalog and exit.",
     )
     parser.add_argument(
+        "--export-rules", nargs="?", const="json", choices=["json", "yaml"],
+        help="Write the detector catalog in json or yaml format to --output/--output-dir (or stdout) and exit.",
+    )
+    parser.add_argument(
         "--describe-rule", metavar="TOKEN",
         help="Show the contract for a stable rule ID like PY-020 or a CWE like CWE-862.",
     )
@@ -531,7 +726,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="Initialize a new ansede.json configuration file in the current directory.",
     )
     parser.add_argument(
-        "--lang", choices=["python", "javascript"],
+        "--lang", choices=["python", "javascript", "go", "java", "csharp"],
         help="Force language detection (useful with --stdin).",
     )
     parser.add_argument(
@@ -555,6 +750,10 @@ def build_parser() -> argparse.ArgumentParser:
         help="Write output to FILE instead of stdout.",
     )
     parser.add_argument(
+        "--output-dir", type=Path, default=None, metavar="DIR",
+        help="Write output artifacts into DIR using default filenames like findings.json or rules.json.",
+    )
+    parser.add_argument(
         "--fail-on", default="high", metavar="SEVERITY",
         choices=["critical", "high", "medium", "low", "info", "never"],
         help="Exit with code 1 if any finding is at or above this severity (default: high).",
@@ -570,6 +769,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--verbose", "-v", action="store_true",
         help="Show finding descriptions and fix suggestions in text output.",
+    )
+    parser.add_argument(
+        "--explain", action="store_true",
+        help="Include vulnerability explanations in text output (implies verbose).",
     )
     parser.add_argument(
         "--no-colour", "--no-color", dest="colour", action="store_false", default=True,
@@ -909,8 +1112,42 @@ def _main_impl() -> None:
         _handle_feedback(fb_args)
         sys.exit(0)
 
+    if len(sys.argv) >= 2 and sys.argv[1] == "registry":
+        from ansede_static.registry import handle_registry_command
+        sys.exit(handle_registry_command(sys.argv[2:], workspace_root=Path.cwd()))
+
     args = parser.parse_args()
-    from pathlib import Path
+
+    if args.output and args.output_dir:
+        parser.error("--output and --output-dir are mutually exclusive")
+
+    if args.output_dir:
+        args.output_dir.mkdir(parents=True, exist_ok=True)
+
+    if getattr(args, "explain", False):
+        args.verbose = True
+
+    primary_output_path = _resolve_output_path(
+        output=args.output,
+        output_dir=args.output_dir,
+        output_format=args.format,
+        stem="findings",
+    )
+
+    if getattr(args, "export_rules", False):
+        export_format = str(args.export_rules or "json")
+        rendered = _render_export_rule_catalog(export_format)
+        rules_output_path = _rule_catalog_output_path(
+            output=args.output,
+            output_dir=args.output_dir,
+            export_format=export_format,
+        )
+        if rules_output_path:
+            _write_output_artifact(rules_output_path, rendered)
+            print(f"ansede-static: rule catalog written to {rules_output_path}")
+        else:
+            print(rendered)
+        sys.exit(0)
 
     if getattr(args, "list_rules", False):
         print(_render_rule_catalog(args.format == "json"))
@@ -982,7 +1219,6 @@ def _main_impl() -> None:
 
     # ── Load Enterprise Configuration ───────────────────────────────────────
     import subprocess
-    from pathlib import Path
     workspace_root = Path.cwd()
     if args.paths:
         workspace_root = Path(args.paths[0]).resolve()
@@ -992,6 +1228,16 @@ def _main_impl() -> None:
     if config.warnings:
         _print_config_warnings(config.warnings)
 
+    runtime_rules = []
+    _yaml_rules = None
+    try:
+        from ansede_static import yaml_rules as _yaml_rules
+        runtime_rules = _yaml_rules.load_runtime_rules(config=config, workspace_root=workspace_root)
+    except Exception as exc:
+        print(f"ansede-static: warning: custom/community rules error: {exc}", file=sys.stderr)
+
+    stdin_source: str | None = None
+
     # ── Inject Configured Sinks and Sources ─────────────────────────────────
     with temporary_analyzer_config(config):
         # ── stdin mode ─────────────────────────────────────────────────────────
@@ -999,9 +1245,10 @@ def _main_impl() -> None:
             if not args.lang:
                 parser.error("--stdin requires --lang")
             code = sys.stdin.read()
+            stdin_source = code
             if args.lang == "python":
                 results.append(analyze_python(code, filename="<stdin>"))
-            else:
+            elif args.lang == "javascript":
                 result, _ = run_js_analysis(
                     code,
                     filename="<stdin>",
@@ -1009,6 +1256,15 @@ def _main_impl() -> None:
                     experimental_js_ast=args.experimental_js_ast,
                 )
                 results.append(result)
+            elif args.lang == "go":
+                from ansede_static.go_engine.go_analyzer import run_go_analysis
+                results.append(run_go_analysis(code, filename="<stdin>"))
+            elif args.lang == "java":
+                from ansede_static.java_analyzer import analyze_java
+                results.append(analyze_java(code, filename="<stdin>"))
+            else:
+                from ansede_static.csharp_analyzer import analyze_csharp
+                results.append(analyze_csharp(code, filename="<stdin>"))
 
         # ── file/directory mode ────────────────────────────────────────────────
         files: list[Path] = []
@@ -1059,7 +1315,7 @@ def _main_impl() -> None:
                 for f in set(changed_files):
                     p = (workspace_root / f).resolve()
                     if p.exists() and (
-                        p.suffix in (".py", ".js", ".jsx", ".ts", ".tsx")
+                        p.suffix in (".py", ".js", ".jsx", ".ts", ".tsx", ".go", ".java", ".cs")
                         or (getattr(args, "entropy", False) and _is_entropy_text_candidate(p))
                     ):
                         # Check exclusions
@@ -1092,9 +1348,14 @@ def _main_impl() -> None:
                 entropy_files = _collect_entropy_files(args.paths, exclude_extra)
             if not files and not entropy_files:
                 if console:
-                    console.print(f"[bold red]ansede-static: no Python or JavaScript files found in: {', '.join(str(p) for p in args.paths)}[/bold red]")
+                    console.print(
+                        f"[bold red]ansede-static: no supported source files found in: {', '.join(str(p) for p in args.paths)}[/bold red]"
+                    )
                 else:
-                    print(f"ansede-static: no Python or JavaScript files found in: {', '.join(str(p) for p in args.paths)}", file=sys.stderr)
+                    print(
+                        f"ansede-static: no supported source files found in: {', '.join(str(p) for p in args.paths)}",
+                        file=sys.stderr,
+                    )
                 sys.exit(2)
 
             # ── SHA-256 incremental cache: skip unchanged files ────────────────
@@ -1247,6 +1508,25 @@ def _main_impl() -> None:
             parser.print_help()
             sys.exit(0)
 
+    if runtime_rules and _yaml_rules is not None:
+        for r in results:
+            if not r.language:
+                continue
+            code_text = ""
+            if r.file_path == "<stdin>":
+                code_text = stdin_source or ""
+            elif r.file_path:
+                try:
+                    code_text = Path(r.file_path).read_text(encoding="utf-8", errors="replace")
+                except OSError:
+                    code_text = ""
+            if not code_text:
+                continue
+            try:
+                r.findings.extend(_yaml_rules.apply_custom_rules(code_text, r.file_path, r.language, runtime_rules))
+            except Exception as exc:
+                print(f"ansede-static: warning: custom rules error: {exc}", file=sys.stderr)
+
     results = apply_config_to_results(results, config)
 
     # ── Context-aware triage: downgrade confidence for test/mock/generated files ─
@@ -1282,28 +1562,6 @@ def _main_impl() -> None:
             _r.findings = _new_findings
     except Exception:
         pass
-
-    # ── Apply custom YAML rules (if configured) ───────────────────────────
-    if config.custom_rules_file:
-        try:
-            from ansede_static import yaml_rules as _yaml_rules
-            custom_rules = _yaml_rules.load_custom_rules(
-                Path(config.custom_rules_file) if not Path(config.custom_rules_file).is_absolute()
-                else Path(config.custom_rules_file)
-            )
-            if custom_rules:
-                for r in results:
-                    if r.file_path and r.language:
-                        try:
-                            code_text = Path(r.file_path).read_text(encoding="utf-8", errors="replace")
-                        except OSError:
-                            continue
-                        extra = _yaml_rules.apply_custom_rules(
-                            code_text, r.file_path, r.language, custom_rules
-                        )
-                        r.findings.extend(extra)
-        except Exception as exc:
-            print(f"ansede-static: warning: custom rules error: {exc}", file=sys.stderr)
 
     # ── Confidence filter ───────────────────────────────────────────────
     min_conf: float = getattr(args, "min_confidence", 0.0)
@@ -1380,7 +1638,7 @@ def _main_impl() -> None:
 
     # ── Format output ───────────────────────────────────────────────────────
     if args.format == "text":
-        output = format_text_multi(results, colour=colour, verbose=args.verbose)
+        output = format_text_multi(results, colour=colour and primary_output_path is None, verbose=args.verbose)
     elif args.format == "json":
         output = format_json(results, execution=execution)
     elif args.format == "sarif":
@@ -1393,18 +1651,18 @@ def _main_impl() -> None:
         output = format_text_multi(results, colour=colour, verbose=args.verbose)
 
     # ── Write output ────────────────────────────────────────────────────────
-    if args.output:
+    if primary_output_path:
         try:
-            args.output.write_text(output, encoding="utf-8")
+            _write_output_artifact(primary_output_path, output)
             if args.format == "text":
                 total = sum(len(r.findings) for r in results)
-                msg = f"ansede-static: {total} findings written to {args.output}"
+                msg = f"ansede-static: {total} findings written to {primary_output_path}"
                 if console:
                     console.print(f"[bold green]✓[/bold green] {msg}")
                 else:
                     print(msg)
         except OSError as exc:
-            msg = f"ansede-static: cannot write to {args.output}: {exc}"
+            msg = f"ansede-static: cannot write to {primary_output_path}: {exc}"
             if console:
                 console.print(f"[bold red]{msg}[/bold red]")
             else:
@@ -1425,8 +1683,8 @@ def _main_impl() -> None:
         try:
             from ansede_static import sbom as _sbom
             sbom_text = _sbom.generate_sbom(workspace_root, fmt=args.sbom)
-            sbom_out: Path = getattr(args, "sbom_output", None) or Path("sbom.json")
-            sbom_out.write_text(sbom_text, encoding="utf-8")
+            sbom_out: Path = getattr(args, "sbom_output", None) or (args.output_dir / "sbom.json" if args.output_dir else Path("sbom.json"))
+            _write_output_artifact(sbom_out, sbom_text)
             msg = f"SBOM ({args.sbom}) written to {sbom_out}"
             if console:
                 console.print(f"[bold green]OK[/bold green] {msg}")

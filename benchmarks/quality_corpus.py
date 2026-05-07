@@ -138,7 +138,7 @@ function render(req) {
 }
 """,
         forbidden_cwes=("CWE-79",),
-        forbidden_rule_ids=("JS-001", "JS-027"),
+        forbidden_rule_ids=("JS-001", "JS-059"),
         notes="Known sanitizer should suppress HTML findings.",
     ),
     QualityCase(

@@ -14,6 +14,7 @@ Zero dependencies — pure Python 3.9+ stdlib, parsing via go_engine.go_parser.
 from __future__ import annotations
 
 from collections import defaultdict
+import re
 from typing import Any, Dict, List, Optional, Set, Tuple
 
 from ansede_static._types import AnalysisResult, Finding, Severity, TraceFrame
@@ -96,6 +97,14 @@ _GO_AUTH_MIDDLEWARE_PATTERNS: List[str] = [
 
 _GO_HTTP_METHODS: Set[str] = {"GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"}
 
+_GO_CWE_SUGGESTIONS: Dict[str, str] = {
+    "CWE-78": "Use exec.Command with fixed arguments and validate user-controlled command parts against an allowlist.",
+    "CWE-22": "Clean the path with filepath.Clean and ensure the resolved target stays under a trusted base directory.",
+    "CWE-89": "Keep SQL text static and pass user values as query arguments instead of formatting them into the query string.",
+    "CWE-918": "Validate outbound URLs against a strict host allowlist and reject private or loopback destinations.",
+    "CWE-862": "Wrap the handler in auth middleware such as RequireAuth before registering the route.",
+}
+
 
 def _resolve_expr_name(expr: GoExpr) -> Optional[str]:
     """Resolve expression to a dotted name string."""
@@ -148,6 +157,43 @@ def _is_auth_pattern(name: str) -> bool:
     return False
 
 
+def _generate_go_auto_fix(finding: Finding, lines: List[str]) -> str:
+    if not finding.line or not (1 <= finding.line <= len(lines)):
+        return ""
+    original = lines[finding.line - 1]
+    stripped = original.strip()
+    indent = original[: len(original) - len(original.lstrip())]
+    if not stripped or finding.rule_id != "GO-862":
+        return ""
+
+    handle_match = re.search(r"((?:[A-Za-z_][\w]*\.)?HandleFunc\s*\(\s*[^,]+,\s*)([A-Za-z_][\w]*)(\s*\))", stripped)
+    if handle_match:
+        updated = f"{handle_match.group(1)}RequireAuth({handle_match.group(2)}){handle_match.group(3)}"
+        return f"BEFORE: {stripped}\nAFTER:  {indent}{updated}"
+
+    route_match = re.search(r"(\.(?:GET|POST|PUT|DELETE|PATCH|Handle)\s*\(\s*[^,]+,\s*)([A-Za-z_][\w]*)(\s*\))", stripped)
+    if route_match:
+        updated = f"{route_match.group(1)}RequireAuth({route_match.group(2)}){route_match.group(3)}"
+        return f"BEFORE: {stripped}\nAFTER:  {indent}{updated}"
+
+    return ""
+
+
+def _locate_handler_registration_line(finding: Finding, lines: List[str]) -> int | None:
+    path_match = re.search(r"(/[^\s]+)", finding.title)
+    handler_match = re.search(r"HTTP handler\s+([A-Za-z_][\w]*)\s+for", finding.description)
+    path = path_match.group(1) if path_match else ""
+    handler = handler_match.group(1) if handler_match else ""
+    for index, line in enumerate(lines, start=1):
+        if path and path not in line:
+            continue
+        if handler and handler not in line:
+            continue
+        if "HandleFunc(" in line or re.search(r"\.(?:GET|POST|PUT|DELETE|PATCH|Handle)\s*\(", line):
+            return index
+    return None
+
+
 # ── AST walker ────────────────────────────────────────────────────────────
 
 class GoSecurityWalker:
@@ -160,7 +206,7 @@ class GoSecurityWalker:
         self._current_func: Optional[str] = None
         self._struct_methods: Dict[str, Dict[str, GoFuncDecl]] = defaultdict(dict)
         # Track HTTP handler registrations
-        self._handlers: List[Tuple[str, str, str, bool]] = []  # (method, path, handler, hasAuth)
+        self._handlers: List[Tuple[str, str, str, bool, int]] = []  # (method, path, handler, hasAuth, line)
         # Taint tracking
         self._var_initializers: Dict[str, GoExpr] = {}
         self._tainted_vars: Set[str] = set()
@@ -231,7 +277,7 @@ class GoSecurityWalker:
             path = _resolve_expr_name(call.args[0]) or "/"
             handler_name = _resolve_expr_name(call.args[1]) or "unknown"
             has_auth = _is_auth_pattern(handler_name)
-            self._handlers.append(("ANY", path, handler_name, has_auth))
+            self._handlers.append(("ANY", path, handler_name, has_auth, call.loc[0]))
             return
 
         # Detect mux.Handle, router.GET, etc.
@@ -242,7 +288,7 @@ class GoSecurityWalker:
                 path = _resolve_expr_name(call.args[0]) or "/"
                 handler_name = _resolve_expr_name(call.args[1]) or "unknown"
                 has_auth = _is_auth_pattern(handler_name)
-                self._handlers.append((method, path, handler_name, has_auth))
+                self._handlers.append((method, path, handler_name, has_auth, call.loc[0]))
                 return
 
         # Check for dangerous sink with tainted args
@@ -378,7 +424,7 @@ class GoSecurityWalker:
     def _check_missing_auth(self) -> None:
         """Flag HTTP handlers without auth on sensitive paths."""
         sensitive_prefixes = ("/admin", "/api/admin", "/manage", "/dashboard", "/config", "/secret", "/users", "/internal")
-        for method, path, handler, has_auth in self._handlers:
+        for method, path, handler, has_auth, line in self._handlers:
             if has_auth:
                 continue
             path_lower = path.lower().strip('"')
@@ -391,7 +437,8 @@ class GoSecurityWalker:
                 severity=Severity.HIGH,
                 title=f"Missing authentication on {method} {path}",
                 description=f"HTTP handler {handler} for {method} {path} does not appear to enforce authentication",
-                line=0,
+                line=line,
+                suggestion=_GO_CWE_SUGGESTIONS["CWE-862"],
                 rule_id="GO-862",
                 cwe="CWE-862",
                 confidence=0.78,
@@ -426,5 +473,17 @@ def run_go_analysis(
         result.findings = walker.walk(gofile)
     except Exception as exc:
         result.parse_error = f"Go analysis error: {exc}"
+
+    if not result.parse_error:
+        lines = code.splitlines()
+        for finding in result.findings:
+            if finding.rule_id == "GO-862" and not finding.line:
+                resolved_line = _locate_handler_registration_line(finding, lines)
+                if resolved_line is not None:
+                    finding.line = resolved_line
+            if not finding.suggestion and finding.cwe:
+                finding.suggestion = _GO_CWE_SUGGESTIONS.get(finding.cwe, "")
+            if not finding.auto_fix:
+                finding.auto_fix = _generate_go_auto_fix(finding, lines)
 
     return result

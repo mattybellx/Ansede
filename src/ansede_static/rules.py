@@ -773,15 +773,20 @@ _CWE_CONTRACTS: dict[str, RuleContract] = {
 _KNOWN_RULE_IDS: tuple[str, ...] = (
     "JS-001", "JS-002", "JS-003", "JS-004", "JS-005", "JS-006", "JS-007", "JS-008", "JS-009", "JS-010",
     "JS-011", "JS-012", "JS-013", "JS-014", "JS-015", "JS-016", "JS-017", "JS-018", "JS-019", "JS-020",
-    "JS-021", "JS-022", "JS-023", "JS-024", "JS-026", "JS-027", "JS-028", "JS-029", "JS-030", "JS-031",
+    "JS-021", "JS-022", "JS-023", "JS-024", "JS-025", "JS-026", "JS-027", "JS-028", "JS-029", "JS-030", "JS-031",
     "JS-032", "JS-033", "JS-034", "JS-035", "JS-036", "JS-037", "JS-038", "JS-039", "JS-040",
     "JS-043", "JS-044", "JS-045", "JS-046", "JS-047", "JS-048", "JS-049",
-    "JS-050", "JS-051", "JS-052", "JS-053", "JS-054", "JS-055", "JS-056",
+    "JS-050", "JS-051", "JS-052", "JS-053", "JS-054", "JS-055", "JS-056", "JS-057", "JS-058", "JS-059", "JS-060",
+    "GO-22", "GO-78", "GO-79", "GO-89", "GO-327", "GO-330", "GO-400", "GO-470", "GO-502", "GO-532",
+    "GO-601", "GO-823", "GO-862", "GO-918",
     "PY-001", "PY-002", "PY-003", "PY-004", "PY-005", "PY-006", "PY-007", "PY-008", "PY-009", "PY-010",
     "PY-011", "PY-012", "PY-013", "PY-014", "PY-015", "PY-016", "PY-017", "PY-018", "PY-019", "PY-020",
     "PY-021", "PY-022", "PY-023", "PY-024", "PY-025", "PY-026", "PY-027", "PY-028", "PY-029", "PY-030",
     "PY-031", "PY-032", "PY-033", "PY-034", "PY-035", "PY-036", "PY-037", "PY-038",
-    "PY-039", "PY-040", "PY-041", "PY-042", "PY-043",
+    "PY-039", "PY-040", "PY-041", "PY-042", "PY-043", "PY-044", "PY-045", "PY-046",
+    "PY-047", "PY-048",
+    "JV-001", "JV-002", "JV-003", "JV-004", "JV-005", "JV-006", "JV-007",
+    "CS-001", "CS-002", "CS-003", "CS-004", "CS-005", "CS-006", "CS-007",
 )
 
 
@@ -1100,62 +1105,60 @@ _PY_RULE_CONTRACTS: dict[str, RuleContract] = {
         remediation="Add a role decorator or explicit admin/permission check before privileged logic.",
         tags=("python", "admin", "access-control"),
     ),
-    "PY-028": _contract(
-        rule_id="PY-028",
-        title="Cyclomatic complexity hotspot",
-        category="architecture",
-        default_severity="medium",
+    "PY-028": _apply_cwe_base(
+        "PY-028",
+        cwe="CWE-862",
+        title="Django class-based view missing auth mixin",
+        category="security",
+        default_severity="high",
         languages=("python",),
-        precision="high",
-        summary="Flags overly branchy functions that are statistically harder to review, test, and secure.",
-        remediation="Split complex control flow into smaller helpers with single responsibilities.",
-        docs_url=_QUALITY_DOC,
-        tags=("quality", "complexity", "maintainability"),
+        summary="Flags Django class-based views implementing get/post without LoginRequiredMixin, PermissionRequiredMixin, or an equivalent auth decorator.",
+        remediation="Add LoginRequiredMixin / PermissionRequiredMixin or protect dispatch with method_decorator(login_required).",
+        tags=("python", "django", "cbv", "auth"),
     ),
     "PY-029": _apply_cwe_base(
         "PY-029",
-        cwe="CWE-22",
-        title="Python file open with tainted path",
+        cwe="CWE-639",
+        title="Django detail/update/delete CBV missing user-scoped queryset",
         category="security",
         default_severity="high",
         languages=("python",),
-        summary="Flags `open()` or `Path.*` file operations that use user-controlled paths without confinement.",
-        remediation="Secure filenames and verify the resolved path remains under the expected base directory.",
-        tags=("python", "filesystem", "open"),
+        summary="Flags DetailView, UpdateView, or DeleteView subclasses that do not override get_queryset() to scope objects to the current user.",
+        remediation="Override get_queryset() and filter results by self.request.user or another verified owner identity.",
+        tags=("python", "django", "cbv", "idor"),
     ),
     "PY-030": _apply_cwe_base(
         "PY-030",
-        cwe="CWE-601",
-        title="Python open redirect via redirect()",
+        cwe="CWE-285",
+        title="Django mutating CBV queryset lacks ownership filter",
         category="security",
         default_severity="high",
         languages=("python",),
-        summary="Flags `redirect()` calls that forward user-controlled URLs without allowlist validation.",
-        remediation="Use `url_for()` for internal redirects or allowlist external destinations explicitly.",
-        tags=("python", "redirect", "phishing"),
+        summary="Flags UpdateView and DeleteView get_queryset() overrides that do not visibly scope results to the current user.",
+        remediation="Filter the queryset by owner or tenant before allowing update or delete operations.",
+        tags=("python", "django", "cbv", "ownership"),
     ),
     "PY-031": _apply_cwe_base(
         "PY-031",
         cwe="CWE-287",
-        title="Python two-line auth bypass via token presence check",
+        title="FastAPI Depends hook without auth verification",
         category="security",
         default_severity="critical",
         languages=("python",),
-        summary="Flags request-derived tokens assigned to a variable and then used in bare truthiness auth gates.",
-        remediation="Verify token authenticity and claims rather than trusting a non-empty header or cookie value.",
-        tags=("python", "auth", "token"),
+        summary="Flags FastAPI routes whose Depends/Security providers do not call a known auth dependency such as get_current_user or verify_token.",
+        remediation="Use an authenticated Depends/Security provider or perform token verification inside the dependency function.",
+        tags=("python", "fastapi", "depends", "auth"),
     ),
     "PY-032": _apply_cwe_base(
         "PY-032",
-        cwe="CWE-798",
-        title="Python hardcoded JWT signing secret",
+        cwe="CWE-862",
+        title="FastAPI mutating route missing auth dependency",
         category="security",
-        default_severity="critical",
+        default_severity="high",
         languages=("python",),
-        precision="high",
-        summary="Flags JWT signing flows that use hardcoded secrets instead of externalized key material.",
-        remediation="Load signing keys from environment variables or a secrets manager, and rotate exposed secrets.",
-        tags=("python", "jwt", "secrets"),
+        summary="Flags FastAPI PUT and DELETE endpoints that declare no Depends/Security auth dependency at all.",
+        remediation="Add a Depends(get_current_user) or equivalent router-level authenticated dependency before mutating state.",
+        tags=("python", "fastapi", "depends", "routes"),
     ),
     "PY-033": _apply_cwe_base(
         "PY-033",
@@ -1295,6 +1298,63 @@ _PY_RULE_CONTRACTS: dict[str, RuleContract] = {
         remediation="Always set `secure=True` on authentication cookies; use `SESSION_COOKIE_SECURE=True` in Django/Flask config.",
         tags=("python", "cookies", "session", "secure-flag"),
     ),
+    "PY-044": _contract(
+        rule_id="PY-044",
+        title="Cyclomatic complexity hotspot",
+        category="architecture",
+        default_severity="medium",
+        languages=("python",),
+        precision="high",
+        summary="Flags overly branchy functions that are statistically harder to review, test, and secure.",
+        remediation="Split complex control flow into smaller helpers with single responsibilities.",
+        docs_url=_QUALITY_DOC,
+        tags=("quality", "complexity", "maintainability"),
+    ),
+    "PY-045": _apply_cwe_base(
+        "PY-045",
+        cwe="CWE-22",
+        title="Python file open with tainted path",
+        category="security",
+        default_severity="high",
+        languages=("python",),
+        summary="Flags `open()` or `Path.*` file operations that use user-controlled paths without confinement.",
+        remediation="Secure filenames and verify the resolved path remains under the expected base directory.",
+        tags=("python", "filesystem", "open"),
+    ),
+    "PY-046": _apply_cwe_base(
+        "PY-046",
+        cwe="CWE-601",
+        title="Python open redirect via redirect()",
+        category="security",
+        default_severity="high",
+        languages=("python",),
+        summary="Flags `redirect()` calls that forward user-controlled URLs without allowlist validation.",
+        remediation="Use `url_for()` for internal redirects or allowlist external destinations explicitly.",
+        tags=("python", "redirect", "phishing"),
+    ),
+    "PY-047": _apply_cwe_base(
+        "PY-047",
+        cwe="CWE-287",
+        title="Python two-line auth bypass via token presence check",
+        category="security",
+        default_severity="critical",
+        languages=("python",),
+        summary="Flags request-derived tokens assigned to a variable and then used in bare truthiness auth gates.",
+        remediation="Verify token authenticity and claims rather than trusting a non-empty header or cookie value.",
+        tags=("python", "auth", "token"),
+    ),
+    "PY-048": _apply_cwe_base(
+        "PY-048",
+        cwe="CWE-798",
+        title="Python hardcoded JWT signing secret",
+        category="security",
+        default_severity="critical",
+        languages=("python",),
+        precision="high",
+        summary="Flags JWT signing flows that use hardcoded secrets instead of externalized key material.",
+        remediation="Load signing keys from environment variables or a secrets manager, and rotate exposed secrets.",
+        tags=("python", "jwt", "secrets"),
+    ),
 }
 
 
@@ -1317,7 +1377,7 @@ def _pattern_summary(desc_tmpl: str) -> str:
 def _js_pattern_precision(rule_id: str, severity: str, cwe: str) -> str:
     if cwe in {"CWE-798", "CWE-345", "CWE-95", "CWE-78", "CWE-89"}:
         return "high"
-    if rule_id in {"JS-021", "JS-024", "JS-028"}:
+    if rule_id in {"JS-021", "JS-057", "JS-060"}:
         return "medium"
     return "high" if severity in {"critical", "high"} else "medium"
 
@@ -1350,6 +1410,66 @@ def _build_js_pattern_contracts() -> dict[str, RuleContract]:
 
 
 _JS_HEURISTIC_RULE_CONTRACTS: dict[str, RuleContract] = {
+    "JS-024": _apply_cwe_base(
+        "JS-024",
+        cwe="CWE-862",
+        title="Hapi route missing authentication",
+        category="security",
+        default_severity="high",
+        languages=("javascript", "typescript"),
+        precision="medium",
+        summary="Flags Hapi-style `server.route({...})` handlers where `options.auth` is missing or explicitly disabled on sensitive routes.",
+        remediation="Enable route authentication in `options.auth` and keep sensitive handlers behind verified credentials.",
+        tags=("javascript", "hapi", "auth", "routes"),
+    ),
+    "JS-025": _apply_cwe_base(
+        "JS-025",
+        cwe="CWE-862",
+        title="Restify route missing authorization plugin",
+        category="security",
+        default_severity="high",
+        languages=("javascript", "typescript"),
+        precision="medium",
+        summary="Flags Restify-style `server.get/post/...` routes when no file-scope auth parser or guard plugin is attached.",
+        remediation="Register the appropriate Restify auth middleware, such as `restify.authorizationParser()`, before defining sensitive routes.",
+        tags=("javascript", "restify", "auth", "middleware"),
+    ),
+    "JS-026": _apply_cwe_base(
+        "JS-026",
+        cwe="CWE-285",
+        title="tRPC public mutation missing protection",
+        category="security",
+        default_severity="high",
+        languages=("javascript", "typescript"),
+        precision="medium",
+        summary="Flags `publicProcedure.mutation(...)` handlers whose names indicate account or resource mutation that should be protected.",
+        remediation="Use `protectedProcedure` or add an explicit auth/role guard before allowing the mutation.",
+        tags=("javascript", "trpc", "authorization", "mutation"),
+    ),
+    "JS-027": _apply_cwe_base(
+        "JS-027",
+        cwe="CWE-862",
+        title="GraphQL resolver missing authentication",
+        category="security",
+        default_severity="high",
+        languages=("javascript", "typescript"),
+        precision="medium",
+        summary="Flags GraphQL resolvers that access application data without checking `context.user`, `ctx.user`, or another clear auth signal.",
+        remediation="Require an authenticated user in resolver context before loading or returning protected data.",
+        tags=("javascript", "graphql", "auth", "resolver"),
+    ),
+    "JS-028": _apply_cwe_base(
+        "JS-028",
+        cwe="CWE-639",
+        title="GraphQL resolver IDOR via args.id",
+        category="security",
+        default_severity="high",
+        languages=("javascript", "typescript"),
+        precision="medium",
+        summary="Flags GraphQL resolvers that load resources by `args.id` without an ownership or tenant comparison.",
+        remediation="Scope the lookup by both resolver arguments and the current principal, or verify ownership before returning the record.",
+        tags=("javascript", "graphql", "idor", "ownership"),
+    ),
     "JS-029": _apply_cwe_base(
         "JS-029",
         cwe="CWE-307",
@@ -1489,22 +1609,412 @@ _JS_HEURISTIC_RULE_CONTRACTS: dict[str, RuleContract] = {
 }
 
 
+_GO_RULE_CONTRACTS: dict[str, RuleContract] = {
+    "GO-22": _apply_cwe_base(
+        "GO-22",
+        cwe="CWE-22",
+        title="Go filesystem access with untrusted path",
+        category="security",
+        default_severity="high",
+        languages=("go",),
+        precision="medium",
+        summary="Flags Go file operations such as os.Open or os.ReadFile that consume request-controlled paths without confinement.",
+        remediation="Clean the path, resolve it under a trusted base directory, and reject any path that escapes that base.",
+        tags=("go", "filesystem", "path", "taint"),
+    ),
+    "GO-78": _apply_cwe_base(
+        "GO-78",
+        cwe="CWE-78",
+        title="Go command execution with attacker-controlled input",
+        category="security",
+        default_severity="critical",
+        languages=("go",),
+        maturity="stable",
+        precision="high",
+        summary="Flags exec.Command, syscall.Exec, or related process-launch APIs reached by user-controlled values.",
+        remediation="Keep command names and arguments fixed or validated against an explicit allowlist before execution.",
+        tags=("go", "command", "exec", "taint"),
+    ),
+    "GO-79": _apply_cwe_base(
+        "GO-79",
+        cwe="CWE-79",
+        title="Go HTTP response writes tainted content",
+        category="security",
+        default_severity="high",
+        languages=("go",),
+        precision="medium",
+        summary="Flags tainted data written to HTTP responses or templates without clear escaping or sanitization.",
+        remediation="Escape untrusted output before writing it to templates or response bodies.",
+        tags=("go", "xss", "http", "templates"),
+    ),
+    "GO-89": _apply_cwe_base(
+        "GO-89",
+        cwe="CWE-89",
+        title="Go dynamic SQL construction",
+        category="security",
+        default_severity="critical",
+        languages=("go",),
+        maturity="stable",
+        precision="high",
+        summary="Flags SQL query execution paths that accept tainted values or dynamically formatted SQL text in Go database calls.",
+        remediation="Keep SQL text static and pass user values as bound query parameters instead of formatting them into query strings.",
+        tags=("go", "sqli", "database", "taint"),
+    ),
+    "GO-327": _apply_cwe_base(
+        "GO-327",
+        cwe="CWE-327",
+        title="Go weak cryptographic primitive",
+        category="security",
+        default_severity="high",
+        languages=("go",),
+        precision="high",
+        summary="Flags weak cryptographic primitives such as MD5, SHA-1, DES, or RC4 in Go security-sensitive code.",
+        remediation="Replace deprecated or weak primitives with modern cryptography such as SHA-256, AES-GCM, or stronger password hashing.",
+        tags=("go", "crypto", "hashing", "encryption"),
+    ),
+    "GO-330": _contract(
+        rule_id="GO-330",
+        title="Go insufficient entropy source",
+        category="security",
+        default_severity="medium",
+        languages=("go",),
+        cwe="CWE-330",
+        precision="medium",
+        summary="Flags use of predictable randomness sources such as math/rand in security-sensitive code paths.",
+        remediation="Use crypto/rand for tokens, secrets, nonces, and other security-sensitive random values.",
+        docs_url=_MITRE.format(id="330"),
+        tags=("go", "randomness", "tokens", "crypto"),
+    ),
+    "GO-400": _apply_cwe_base(
+        "GO-400",
+        cwe="CWE-400",
+        title="Go unbounded network or resource exposure",
+        category="security",
+        default_severity="low",
+        languages=("go",),
+        precision="low",
+        summary="Flags server or resource patterns that may expose Go services to unbounded work without visible limits.",
+        remediation="Apply timeouts, request limits, and resource caps to externally reachable Go services.",
+        tags=("go", "dos", "network", "limits"),
+    ),
+    "GO-470": _apply_cwe_base(
+        "GO-470",
+        cwe="CWE-470",
+        title="Go externally controlled reflection dispatch",
+        category="security",
+        default_severity="medium",
+        languages=("go",),
+        precision="medium",
+        summary="Flags reflection-based dispatch that may allow attacker-controlled method or type selection in Go.",
+        remediation="Validate reflected type or method names against a strict allowlist before dispatch.",
+        tags=("go", "reflection", "dispatch"),
+    ),
+    "GO-502": _apply_cwe_base(
+        "GO-502",
+        cwe="CWE-502",
+        title="Go unsafe deserialization or decoder usage",
+        category="security",
+        default_severity="high",
+        languages=("go",),
+        precision="medium",
+        summary="Flags Go decoder or unmarshal APIs that may consume untrusted serialized data without defensive validation.",
+        remediation="Prefer strict formats, validate decoded structure, and avoid unsafe decoders for attacker-controlled content.",
+        tags=("go", "deserialization", "xml", "gob"),
+    ),
+    "GO-532": _apply_cwe_base(
+        "GO-532",
+        cwe="CWE-532",
+        title="Go sensitive data written to logs",
+        category="security",
+        default_severity="low",
+        languages=("go",),
+        precision="medium",
+        summary="Flags log sinks that may receive sensitive or credential-like values in Go applications.",
+        remediation="Redact credentials and secrets before logging, and avoid logging raw sensitive values altogether.",
+        tags=("go", "logging", "secrets"),
+    ),
+    "GO-601": _apply_cwe_base(
+        "GO-601",
+        cwe="CWE-601",
+        title="Go open redirect via unvalidated target",
+        category="security",
+        default_severity="medium",
+        languages=("go",),
+        precision="medium",
+        summary="Flags http.Redirect-style flows where user input controls the redirect destination.",
+        remediation="Allow only relative paths or an explicit allowlist of trusted redirect hosts.",
+        tags=("go", "redirect", "http", "phishing"),
+    ),
+    "GO-823": _contract(
+        rule_id="GO-823",
+        title="Go unsafe pointer usage",
+        category="security",
+        default_severity="medium",
+        languages=("go",),
+        cwe="CWE-823",
+        precision="medium",
+        summary="Flags unsafe.Pointer usage that can bypass Go memory-safety guarantees in risky contexts.",
+        remediation="Avoid unsafe.Pointer where possible, and strictly contain any unavoidable unsafe conversions.",
+        docs_url=_MITRE.format(id="823"),
+        tags=("go", "unsafe", "memory"),
+    ),
+    "GO-862": _apply_cwe_base(
+        "GO-862",
+        cwe="CWE-862",
+        title="Go sensitive route missing authentication",
+        category="security",
+        default_severity="high",
+        languages=("go",),
+        precision="medium",
+        summary="Flags sensitive Go HTTP handler registrations whose route path appears privileged but no auth middleware is visible.",
+        remediation="Wrap the handler with RequireAuth or equivalent middleware before registering the route.",
+        tags=("go", "auth", "routes", "http"),
+    ),
+    "GO-918": _apply_cwe_base(
+        "GO-918",
+        cwe="CWE-918",
+        title="Go outbound request with untrusted URL",
+        category="security",
+        default_severity="high",
+        languages=("go",),
+        precision="medium",
+        summary="Flags Go HTTP client calls where the destination URL is derived from untrusted input.",
+        remediation="Validate outbound URLs against a strict host allowlist and block private, loopback, or internal destinations.",
+        tags=("go", "ssrf", "http", "taint"),
+    ),
+}
+
+
+_JAVA_RULE_CONTRACTS: dict[str, RuleContract] = {
+    "JV-001": _apply_cwe_base(
+        "JV-001",
+        cwe="CWE-862",
+        title="Spring route missing authentication",
+        category="security",
+        default_severity="high",
+        languages=("java",),
+        precision="medium",
+        summary="Flags Spring MVC controller methods mapped to sensitive routes without auth annotations or principal checks.",
+        remediation="Add @PreAuthorize/@Secured/@RolesAllowed or verify the authenticated principal before returning sensitive data.",
+        tags=("java", "spring", "auth", "routes"),
+    ),
+    "JV-002": _apply_cwe_base(
+        "JV-002",
+        cwe="CWE-639",
+        title="Spring resource lookup by id without ownership scope",
+        category="security",
+        default_severity="critical",
+        languages=("java",),
+        precision="medium",
+        summary="Flags path/id-driven Spring handlers that load entities by id without visible owner or tenant scoping.",
+        remediation="Scope repository lookups by both resource id and current user or tenant identity.",
+        tags=("java", "spring", "idor", "ownership"),
+    ),
+    "JV-003": _apply_cwe_base(
+        "JV-003",
+        cwe="CWE-285",
+        title="Spring mutating route missing authorization",
+        category="security",
+        default_severity="high",
+        languages=("java",),
+        precision="medium",
+        summary="Flags POST/PUT/DELETE Spring routes that save or delete entities without visible permission or ownership checks.",
+        remediation="Enforce role/permission checks or verify ownership before mutating the entity.",
+        tags=("java", "spring", "authorization", "mutation"),
+    ),
+    "JV-004": _apply_cwe_base(
+        "JV-004",
+        cwe="CWE-89",
+        title="Java dynamic SQL construction",
+        category="security",
+        default_severity="critical",
+        languages=("java",),
+        maturity="stable",
+        precision="high",
+        summary="Flags String.format or concatenated SQL executed through JDBC or JPA query APIs.",
+        remediation="Use prepared statements, named parameters, or ORM bind variables instead of interpolated SQL text.",
+        tags=("java", "sqli", "jdbc"),
+    ),
+    "JV-005": _apply_cwe_base(
+        "JV-005",
+        cwe="CWE-502",
+        title="Java native deserialization from untrusted input",
+        category="security",
+        default_severity="critical",
+        languages=("java",),
+        maturity="stable",
+        precision="high",
+        summary="Flags ObjectInputStream.readObject() usage that can deserialize attacker-controlled objects.",
+        remediation="Avoid Java native serialization for untrusted data and prefer safe DTO formats like JSON.",
+        tags=("java", "deserialization", "serialization"),
+    ),
+    "JV-006": _apply_cwe_base(
+        "JV-006",
+        cwe="CWE-798",
+        title="Java hardcoded credential",
+        category="security",
+        default_severity="high",
+        languages=("java",),
+        maturity="stable",
+        precision="high",
+        summary="Flags inline password, apiKey, or secret assignments committed directly to Java source.",
+        remediation="Move secrets to environment-backed configuration or a secrets manager and rotate exposed values.",
+        tags=("java", "secrets", "credentials"),
+    ),
+    "JV-007": _apply_cwe_base(
+        "JV-007",
+        cwe="CWE-22",
+        title="Java file API reached by request-controlled path",
+        category="security",
+        default_severity="high",
+        languages=("java",),
+        precision="medium",
+        summary="Flags request-derived path values passed into File or Paths APIs without visible confinement.",
+        remediation="Normalize against a trusted base directory and reject any path that escapes it.",
+        tags=("java", "path", "filesystem", "taint"),
+    ),
+}
+
+
+_CSHARP_RULE_CONTRACTS: dict[str, RuleContract] = {
+    "CS-001": _apply_cwe_base(
+        "CS-001",
+        cwe="CWE-862",
+        title="ASP.NET action missing authentication",
+        category="security",
+        default_severity="high",
+        languages=("csharp",),
+        precision="medium",
+        summary="Flags ASP.NET controller actions with route attributes but no [Authorize] or equivalent auth check.",
+        remediation="Add [Authorize] or enforce authentication via endpoint policy configuration before sensitive handler logic.",
+        tags=("csharp", "aspnet", "auth", "routes"),
+    ),
+    "CS-002": _apply_cwe_base(
+        "CS-002",
+        cwe="CWE-639",
+        title="ASP.NET entity lookup by route id without ownership scope",
+        category="security",
+        default_severity="critical",
+        languages=("csharp",),
+        precision="medium",
+        summary="Flags FindAsync/FirstOrDefault entity lookups keyed by route id without visible user or tenant scoping.",
+        remediation="Filter the entity query by current user or tenant before returning the result.",
+        tags=("csharp", "aspnet", "idor", "ownership"),
+    ),
+    "CS-003": _apply_cwe_base(
+        "CS-003",
+        cwe="CWE-285",
+        title="ASP.NET mutating action missing authorization",
+        category="security",
+        default_severity="high",
+        languages=("csharp",),
+        precision="medium",
+        summary="Flags PUT or DELETE actions that persist changes without visible permission or ownership checks.",
+        remediation="Verify owner or role permissions before SaveChanges/SaveChangesAsync persists the mutation.",
+        tags=("csharp", "aspnet", "authorization", "mutation"),
+    ),
+    "CS-004": _apply_cwe_base(
+        "CS-004",
+        cwe="CWE-89",
+        title="C# dynamic SQL command text",
+        category="security",
+        default_severity="critical",
+        languages=("csharp",),
+        maturity="stable",
+        precision="high",
+        summary="Flags SqlCommand text built via interpolation or concatenation rather than parameterized queries.",
+        remediation="Use SqlParameter bindings instead of interpolating attacker-controlled values into SQL text.",
+        tags=("csharp", "sqli", "sqlcommand"),
+    ),
+    "CS-005": _apply_cwe_base(
+        "CS-005",
+        cwe="CWE-502",
+        title="Dangerous .NET native deserialization",
+        category="security",
+        default_severity="critical",
+        languages=("csharp",),
+        maturity="stable",
+        precision="high",
+        summary="Flags BinaryFormatter or NetDataContractSerializer deserialization that can execute gadget chains.",
+        remediation="Use safe serializers such as System.Text.Json and never deserialize untrusted data with BinaryFormatter.",
+        tags=("csharp", "deserialization", "binaryformatter"),
+    ),
+    "CS-006": _apply_cwe_base(
+        "CS-006",
+        cwe="CWE-798",
+        title="C# hardcoded credential or connection secret",
+        category="security",
+        default_severity="high",
+        languages=("csharp",),
+        maturity="stable",
+        precision="high",
+        summary="Flags connection strings or literals containing passwords or API keys committed directly to C# source.",
+        remediation="Store secrets in configuration providers or a secrets manager and rotate exposed credentials.",
+        tags=("csharp", "secrets", "credentials"),
+    ),
+    "CS-007": _apply_cwe_base(
+        "CS-007",
+        cwe="CWE-611",
+        title="C# XML parser without DTD hardening",
+        category="security",
+        default_severity="high",
+        languages=("csharp",),
+        precision="medium",
+        summary="Flags XmlDocument or XmlReader usage that does not explicitly prohibit DTD processing.",
+        remediation="Set DtdProcessing to Prohibit or Ignore and disable external entity resolution when parsing untrusted XML.",
+        tags=("csharp", "xml", "xxe"),
+    ),
+}
+
+
 @lru_cache(maxsize=1)
 def _rule_overrides() -> dict[str, RuleContract]:
     overrides = dict(_PY_RULE_CONTRACTS)
     overrides.update(_build_js_pattern_contracts())
     overrides.update(_JS_HEURISTIC_RULE_CONTRACTS)
+    overrides.update(_GO_RULE_CONTRACTS)
+    overrides.update(_JAVA_RULE_CONTRACTS)
+    overrides.update(_CSHARP_RULE_CONTRACTS)
     return overrides
 
 
+def _language_tuple(language: str | None) -> tuple[str, ...]:
+    if not language:
+        return tuple()
+    normalized = language.strip().lower()
+    if normalized == "python":
+        return ("python",)
+    if normalized in {"javascript", "typescript", "js", "ts"}:
+        return ("javascript", "typescript")
+    if normalized == "go":
+        return ("go",)
+    if normalized == "java":
+        return ("java",)
+    if normalized in {"csharp", "cs", "c#"}:
+        return ("csharp",)
+    return (normalized,)
+
+
+def _prefix_languages(rule_id: str) -> tuple[str, ...]:
+    prefix = rule_id.split("-", 1)[0]
+    return {
+        "PY": ("python",),
+        "JS": ("javascript", "typescript"),
+        "GO": ("go",),
+        "JV": ("java",),
+        "CS": ("csharp",),
+    }.get(prefix, tuple())
+
+
 def _placeholder_contract(rule_id: str) -> RuleContract:
-    prefix = "javascript" if rule_id.startswith("JS-") else "python"
+    languages = _prefix_languages(rule_id)
+    prefix = languages[0] if languages else "unknown"
     return RuleContract(
         rule_id=rule_id,
         title=f"Undocumented {prefix} detector {rule_id}",
         category="security",
         default_severity="medium",
-        languages=(prefix,) if prefix == "python" else ("javascript", "typescript"),
+        languages=languages,
         maturity="beta",
         precision="medium",
         summary="This detector exists in the analyzer, but its contract has not been manually curated yet.",
@@ -1535,7 +2045,7 @@ def get_rule_contract(
 
     if cwe_token and cwe_token in _CWE_CONTRACTS:
         base = _CWE_CONTRACTS[cwe_token]
-        inferred_languages = base.languages if not language else ((language,) if language == "python" else ("javascript", "typescript"))
+        inferred_languages = base.languages if not language else _language_tuple(language)
         return _enrich_compliance(RuleContract(
             rule_id=token,
             cwe=base.cwe,
@@ -1555,7 +2065,7 @@ def get_rule_contract(
     if token:
         placeholder = _placeholder_contract(token)
         if language:
-            langs = (language,) if language == "python" else ("javascript", "typescript")
+            langs = _language_tuple(language)
             return _enrich_compliance(RuleContract(
                 rule_id=placeholder.rule_id,
                 title=title or placeholder.title,

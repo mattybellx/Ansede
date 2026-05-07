@@ -282,7 +282,7 @@ RULES: list[Rule] = [
         r'\brequire\s*\(\s*(?!["\'`](?:\./|\.\./|[a-z])[^"\'`]*["\'`]\s*\))[^"\'`\s]',
     ),
     Rule(
-        "JS-024", "CWE-1333",
+        "JS-057", "CWE-1333",
         "CWE-1333: Potential ReDoS — catastrophic backtracking regex at line {line}",
         "Regex with nested quantifiers or ambiguous alternation at L{line}: `{snippet}`.",
         "Use safe regex patterns or a non-backtracking engine.",
@@ -290,7 +290,7 @@ RULES: list[Rule] = [
         r'new\s+RegExp\s*\(|/(?:[^/\\]|\\.)*\((?:[^()\\/]|\\.)*(?:\+|\*|\{[\d,]+\})(?:[^()\\/]|\\.)*\)(?:\?|\+|\*|\{[\d,]+\})',
     ),
     Rule(
-        "JS-026", "CWE-312",
+        "JS-058", "CWE-312",
         "CWE-312: JWT stored in localStorage at line {line}",
         "`localStorage.setItem` called with a JWT value at L{line}: `{snippet}`.",
         "Store authentication tokens in httpOnly, secure, SameSite=Strict cookies.",
@@ -298,7 +298,7 @@ RULES: list[Rule] = [
         r'localStorage\.setItem\s*\([^)]*jwt|localStorage\.setItem\s*\([^)]*[Tt]oken',
     ),
     Rule(
-        "JS-027", "CWE-79",
+        "JS-059", "CWE-79",
         "CWE-79: XSS via unencoded template literal inserted into HTML at line {line}",
         "Template literal with user data appended to `.innerHTML` or DOM at L{line}: `{snippet}`.",
         "Encode output or sanitize HTML before writing it to the DOM.",
@@ -306,7 +306,7 @@ RULES: list[Rule] = [
         r'innerHTML\s*\+=\s*`[^`]*\$\{|innerHTML\s*=\s*`[^`]*\$\{',
     ),
     Rule(
-        "JS-028", "CWE-352",
+        "JS-060", "CWE-352",
         "CWE-352: State-mutating route may lack CSRF protection at line {line}",
         "POST/PUT/PATCH/DELETE route defined at L{line} (`{snippet}`). Without CSRF protection, authenticated users can be tricked into submitting unwanted requests.",
         "Use CSRF middleware or set `SameSite=Strict` on session cookies.",

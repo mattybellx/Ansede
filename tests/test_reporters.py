@@ -50,7 +50,7 @@ def _mixed_results():
                 description="Cyclomatic complexity is too high.",
                 line=22,
                 suggestion="Extract helper functions.",
-                rule_id="PY-028",
+                rule_id="PY-044",
                 agent="python-analyzer",
                 confidence=0.78,
                 analysis_kind="metric",
@@ -140,7 +140,7 @@ def test_text_and_sarif_expose_finding_class_breakdown():
     precisions = {rule["properties"]["precision"] for rule in sarif["runs"][0]["tool"]["driver"]["rules"]}
     assert precisions == {"high", "low"}
     rule_ids = {rule["id"] for rule in sarif["runs"][0]["tool"]["driver"]["rules"]}
-    assert rule_ids == {"PY-004", "PY-028"}
+    assert rule_ids == {"PY-004", "PY-044"}
     maturities = {rule["properties"]["maturity"] for rule in sarif["runs"][0]["tool"]["driver"]["rules"]}
     assert "stable" in maturities
 
