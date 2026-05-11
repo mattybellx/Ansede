@@ -1016,6 +1016,78 @@ export async function GET(request) {
         assert any("getServerSession" in label for label in labels)
         assert labels[-1] == "admin route reachable after auth only"
 
+    def test_next_admin_route_missing_auth_detected_without_middleware(self, tmp_path):
+        route_file = tmp_path / "app" / "api" / "admin" / "users" / "route.ts"
+        route_file.parent.mkdir(parents=True)
+        route_code = """
+export async function GET(request) {
+    return Response.json({ users: [] });
+}
+"""
+        route_file.write_text(route_code, encoding="utf-8")
+
+        result = analyze_js(route_code, filename=str(route_file))
+        finding = next(f for f in result.findings if f.rule_id == "JS-034")
+
+        assert finding.cwe == "CWE-862"
+        assert any(frame.label == "admin route reachable without auth" for frame in finding.trace)
+
+    def test_next_admin_route_global_middleware_auth_suppresses_missing_auth(self, tmp_path):
+        route_file = tmp_path / "app" / "api" / "admin" / "users" / "route.ts"
+        middleware_file = tmp_path / "middleware.ts"
+        route_file.parent.mkdir(parents=True)
+        route_code = """
+export async function GET(request) {
+    return Response.json({ users: [] });
+}
+"""
+        middleware_code = """
+import { withAuth } from 'next-auth/middleware';
+
+export default withAuth();
+
+export const config = {
+  matcher: ['/api/:path*'],
+};
+"""
+        route_file.write_text(route_code, encoding="utf-8")
+        middleware_file.write_text(middleware_code, encoding="utf-8")
+
+        result = analyze_js(route_code, filename=str(route_file))
+
+        # Global Next.js middleware should count as route auth, so missing-auth
+        # (JS-034) is suppressed, but admin-without-role (JS-035) can still fire.
+        assert not any(f.rule_id == "JS-034" for f in result.findings)
+        finding = next(f for f in result.findings if f.rule_id == "JS-035")
+        assert finding.cwe == "CWE-285"
+        assert any("next middleware `middleware.ts`" in frame.label for frame in finding.trace)
+
+        def test_next_middleware_matcher_out_of_scope_keeps_missing_auth(self, tmp_path):
+                route_file = tmp_path / "app" / "api" / "admin" / "users" / "route.ts"
+                middleware_file = tmp_path / "middleware.ts"
+                route_file.parent.mkdir(parents=True)
+                route_code = """
+export async function GET(request) {
+        return Response.json({ users: [] });
+}
+"""
+                middleware_code = """
+import { withAuth } from 'next-auth/middleware';
+
+export default withAuth();
+
+export const config = {
+    matcher: ['/internal/:path*'],
+};
+"""
+                route_file.write_text(route_code, encoding="utf-8")
+                middleware_file.write_text(middleware_code, encoding="utf-8")
+
+                result = analyze_js(route_code, filename=str(route_file))
+                finding = next(f for f in result.findings if f.rule_id == "JS-034")
+
+                assert finding.cwe == "CWE-862"
+
 
 class TestB4FrameworkRouteHeuristics:
     def test_hapi_route_missing_auth_detected(self):
@@ -1097,6 +1169,29 @@ const server = new ApolloServer({ resolvers });
         finding = next(f for f in result.findings if f.rule_id == "JS-028")
         assert finding.cwe == "CWE-639"
         assert "args.id" in finding.description
+
+    def test_graphql_introspection_exposed_detected(self):
+        code = """
+const { ApolloServer, gql } = require('apollo-server');
+
+const typeDefs = gql`
+    type Query { users: [User] }
+    type User { id: ID, email: String, ssn: String }
+`;
+
+const server = new ApolloServer({
+    typeDefs,
+    introspection: true,
+    playground: true,
+});
+
+server.listen(4000);
+"""
+        result = analyze_js(code)
+
+        finding = next(f for f in result.findings if f.rule_id == "JS-061")
+        assert finding.cwe == "CWE-200"
+        assert "introspection" in finding.description.lower()
 
 
 class TestDeeperJsResolution:

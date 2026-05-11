@@ -64,6 +64,13 @@ _GO_DANGEROUS_SINKS: Dict[str, Tuple[str, str, str]] = {
     "database/sql.DB.Query": ("CWE-89", "SQL Injection via db.Query", "critical"),
     "database/sql.DB.Exec": ("CWE-89", "SQL Injection via db.Exec", "critical"),
     "database/sql.DB.QueryRow": ("CWE-89", "SQL Injection via db.QueryRow", "critical"),
+    # Common lowercase aliases used in real Go code (var db *sql.DB)
+    "db.Query": ("CWE-89", "SQL Injection via db.Query", "critical"),
+    "db.Exec": ("CWE-89", "SQL Injection via db.Exec", "critical"),
+    "db.QueryRow": ("CWE-89", "SQL Injection via db.QueryRow", "critical"),
+    "DB.Query": ("CWE-89", "SQL Injection via DB.Query", "critical"),
+    "DB.Exec": ("CWE-89", "SQL Injection via DB.Exec", "critical"),
+    "DB.QueryRow": ("CWE-89", "SQL Injection via DB.QueryRow", "critical"),
     "fmt.Sprintf": ("CWE-89", "Potential SQL/Command Injection via fmt.Sprintf", "medium"),
     "template.HTMLEscaper": ("CWE-79", "Unescaped template output (potential XSS)", "medium"),
     "http.Redirect": ("CWE-601", "Open Redirect via http.Redirect", "medium"),
@@ -135,6 +142,25 @@ def _is_taint_source(expr: GoExpr) -> Optional[str]:
     return None
 
 
+def _is_request_derived(expr: GoExpr) -> bool:
+    """Return True if the expression is derived from an HTTP request object.
+
+    Recognises chained access patterns like:
+      r.URL.Query().Get("key")
+      req.FormValue("x")
+      r.Header.Get("X-Custom")
+    by checking whether the ultimate receiver is a common request variable.
+    """
+    if isinstance(expr, GoIdent):
+        return expr.name in {"r", "req", "request", "ctx"}
+    if isinstance(expr, GoSelectorExpr):
+        return _is_request_derived(expr.x)
+    if isinstance(expr, GoCallExpr):
+        if isinstance(expr.func, GoSelectorExpr):
+            return _is_request_derived(expr.func.x)
+    return False
+
+
 def _is_dangerous_sink(expr: GoExpr) -> Optional[Tuple[str, str, str]]:
     """Check if expression is a known dangerous sink."""
     name = _resolve_expr_name(expr)
@@ -142,9 +168,12 @@ def _is_dangerous_sink(expr: GoExpr) -> Optional[Tuple[str, str, str]]:
         return None
     if name in _GO_DANGEROUS_SINKS:
         return _GO_DANGEROUS_SINKS[name]
-    # Substring match
+    # Qualified suffix match (name must contain '.' to avoid bare method-name
+    # false positives, e.g. '.Get' matching 'net/http.Get').
     for sink_key, info in _GO_DANGEROUS_SINKS.items():
-        if name.endswith(sink_key) or sink_key.endswith(name):
+        if name.endswith(sink_key):
+            return info
+        if sink_key.endswith(name) and "." in name:
             return info
     return None
 
@@ -331,7 +360,9 @@ class GoSecurityWalker:
                     analysis_kind="go-ast-sink",
                 ))
 
-        # Walk sub-expressions
+        # Walk sub-expressions (including func so chained calls like
+        # exec.Command(...).Output() properly visit the inner dangerous call).
+        self._walk_expr(call.func)
         for arg in call.args:
             self._walk_expr(arg)
 
@@ -379,6 +410,11 @@ class GoSecurityWalker:
                 src = self._check_taint(arg)
                 if src:
                     return src
+            # Recognise chained request access like r.URL.Query().Get("key")
+            if _is_request_derived(expr):
+                func_name = _resolve_expr_name(expr.func) or ""
+                sel = func_name.rsplit(".", 1)[-1] if "." in func_name else func_name
+                return f"HTTP request ({sel})"
             func_name = _resolve_expr_name(expr.func)
             if func_name and func_name in _GO_TAINT_SOURCES:
                 return _GO_TAINT_SOURCES[func_name]

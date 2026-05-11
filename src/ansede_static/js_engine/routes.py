@@ -110,6 +110,11 @@ _NEXT_ARROW_ROUTE_RE = re.compile(
     rf'export\s+const\s+(?P<method>{_NEXT_ROUTE_METHOD_RE})\s*=\s*(?:async\s*)?(?P<params>\([^)]*\)|[A-Za-z_$][\w$]*)\s*=>\s*\{{',
     re.MULTILINE,
 )
+_NEXT_MATCHER_RE = re.compile(
+    r'\bmatcher\s*:\s*(?P<value>\[[^\]]*\]|["\'][^"\']+["\'])',
+    re.IGNORECASE | re.DOTALL,
+)
+_QUOTED_PATH_RE = re.compile(r'["\']([^"\']+)["\']')
 _FASTIFY_REGISTER_RE = re.compile(
     r'(?P<instance>[A-Za-z_$][\w$]*)\.register\s*\(\s*(?:async\s*)?(?:function\s*\([^)]*\)|\((?P<params>[^)]*)\)\s*=>)\s*\{',
     re.MULTILINE,
@@ -144,6 +149,10 @@ _GRAPHQL_AUTH_RE = re.compile(
     r'(?:context|ctx)\.user|isAuthenticated|requireAuth|ensureAuth|assertAuth|mustBeAuthenticated',
     re.IGNORECASE,
 )
+_GRAPHQL_INTROSPECTION_RE = re.compile(
+    r'\bintrospection\s*:\s*true\b|\bplayground\s*:\s*true\b|\bdebug\s*:\s*true\b',
+    re.IGNORECASE,
+)
 _GRAPHQL_ID_LOOKUP_RE = re.compile(
     r'findById\s*\(\s*(?:args|input)\.\w*id\w*\s*\)|\bid\s*:\s*(?:args|input)\.\w*id\w*',
     re.IGNORECASE,
@@ -164,7 +173,145 @@ class RouteBlock:
     invocation_parts: tuple[str, ...]
     body: str
     source_kind: str
+    receiver: str = ''
     class_name: str = ''
+
+
+@dataclass(frozen=True)
+class MiddlewareEntry:
+    """Represents a single middleware application (app.use, router.use, @UseGuards)."""
+    name: str
+    line: int
+    scope: str  # 'app', 'router', 'route', 'class'
+    scope_name: str  # 'app', router variable name, route path, or class name
+    auth_type: str  # 'auth', 'privilege', 'mixed', 'unknown'
+    has_auth: bool
+    has_privilege: bool
+
+
+class MiddlewareRegistry:
+    """Tracks middleware application order and router scoping for route protection analysis."""
+    
+    def __init__(self, code: str):
+        self.code = code
+        self.app_middleware: list[MiddlewareEntry] = []
+        self.router_middleware: dict[str, list[MiddlewareEntry]] = {}
+        self.router_mounts: dict[str, list[tuple[str, int]]] = {}  # router_name -> [(path, line)]
+        self.nest_guards: dict[str, list[tuple[str, int]]] = {}  # class_name -> [(guard_sig, line)]
+        self._parse()
+    
+    def _parse(self):
+        """Parse middleware registrations from code."""
+        lines = self.code.splitlines()
+        
+        # Track router definitions: const router = express.Router()
+        router_def_re = re.compile(r'(?:const|let|var)\s+([A-Za-z_$]\w*)\s*=\s*(?:express\.|fastify\.)?Router\s*\(', re.IGNORECASE)
+        routers: dict[str, int] = {}
+        for lineno, line in enumerate(lines, 1):
+            match = router_def_re.search(line)
+            if match:
+                routers[match.group(1)] = lineno
+        
+        # Track NestJS class-level guards
+        for lineno, line in enumerate(lines, 1):
+            guard_match = re.search(r'@UseGuards\s*\(([^)]+)\)', line, re.IGNORECASE)
+            if guard_match:
+                guard_sig = guard_match.group(1).strip()
+                # Find the class definition this decorator belongs to
+                for i in range(lineno, min(lineno + 10, len(lines) + 1)):
+                    class_match = re.match(r'\s*(?:export\s+)?class\s+([A-Za-z_$]\w*)', lines[i - 1])
+                    if class_match:
+                        class_name = class_match.group(1)
+                        if class_name not in self.nest_guards:
+                            self.nest_guards[class_name] = []
+                        self.nest_guards[class_name].append((guard_sig, lineno))
+                        break
+        
+        # Track app.use() and router.use() middleware
+        for lineno, line in enumerate(lines, 1):
+            stripped = strip_comments(line).strip()
+            
+            # app.use(middleware) or app.use('/path', middleware)
+            if re.search(r'(?:app|server|api)\s*\.\s*use\s*\(', stripped, re.IGNORECASE):
+                has_auth = bool(AUTH_MIDDLEWARE_RE.search(line))
+                has_priv = bool(PRIVILEGE_MIDDLEWARE_RE.search(line))
+                if has_auth or has_priv:
+                    self.app_middleware.append(MiddlewareEntry(
+                        name=_extract_middleware_name(line),
+                        line=lineno,
+                        scope='app',
+                        scope_name='app',
+                        auth_type='auth' if has_auth else 'privilege' if has_priv else 'unknown',
+                        has_auth=has_auth,
+                        has_privilege=has_priv,
+                    ))
+            
+            # router.use(middleware)
+            for router_name in routers:
+                pattern = rf'{router_name}\s*\.\s*use\s*\('
+                if re.search(pattern, stripped, re.IGNORECASE):
+                    has_auth = bool(AUTH_MIDDLEWARE_RE.search(line))
+                    has_priv = bool(PRIVILEGE_MIDDLEWARE_RE.search(line))
+                    if has_auth or has_priv:
+                        if router_name not in self.router_middleware:
+                            self.router_middleware[router_name] = []
+                        self.router_middleware[router_name].append(MiddlewareEntry(
+                            name=_extract_middleware_name(line),
+                            line=lineno,
+                            scope='router',
+                            scope_name=router_name,
+                            auth_type='auth' if has_auth else 'privilege' if has_priv else 'unknown',
+                            has_auth=has_auth,
+                            has_privilege=has_priv,
+                        ))
+            
+            # app.use('/path', router) - track router mounts
+            mount_match = re.search(r'(?:app|server)\s*\.\s*use\s*\(\s*["\']([^"\']*)["\']?\s*,\s*([A-Za-z_$]\w*)\s*\)', stripped, re.IGNORECASE)
+            if mount_match:
+                path, router_name = mount_match.groups()
+                if router_name in routers:
+                    if router_name not in self.router_mounts:
+                        self.router_mounts[router_name] = []
+                    self.router_mounts[router_name].append((path, lineno))
+    
+    def get_middleware_before_line(self, line: int) -> list[MiddlewareEntry]:
+        """Get all app-level middleware that appears before the given line."""
+        return [m for m in self.app_middleware if m.line < line]
+    
+    def get_router_middleware(self, router_name: str) -> list[MiddlewareEntry]:
+        """Get middleware for a specific router."""
+        return self.router_middleware.get(router_name, [])
+    
+    def route_has_auth_middleware(self, block: RouteBlock) -> bool:
+        """Check if route has any auth middleware (from inline, router, or app level)."""
+        # Check inline route auth labels
+        if _route_auth_labels(block, filename=''):
+            return True
+        
+        # Check app-level middleware before route
+        if self.get_middleware_before_line(block.start_line):
+            return True
+
+        # Check router-scoped middleware for the route receiver, if any.
+        if block.receiver and self.get_router_middleware(block.receiver):
+            return True
+        
+        # For NestJS routes with class_name, check class-level guards
+        if block.class_name and block.class_name in self.nest_guards:
+            return True
+        
+        return False
+
+
+def _extract_middleware_name(line: str) -> str:
+    """Extract middleware name/function from a .use() call."""
+    match = re.search(r'\.use\s*\(\s*(?:async\s+)?(?:function\s+)?([A-Za-z_$]\w*)', line)
+    if match:
+        return match.group(1)
+    match = re.search(r'\.use\s*\(\s*([^,)]+)', line)
+    if match:
+        return match.group(1).strip()[:30]
+    return 'unknown'
 
 
 def _consume_balanced_segment(text: str, start_index: int, opener: str, closer: str) -> int | None:
@@ -323,6 +470,84 @@ def _next_route_path_from_filename(filename: str) -> str | None:
     return '/' + '/'.join(cleaned) if cleaned else '/'
 
 
+def _next_middleware_candidates(filename: str) -> tuple[Path, ...]:
+    if not filename:
+        return ()
+    route_file = Path(filename)
+    if not route_file.exists():
+        return ()
+
+    names = ('middleware.ts', 'middleware.js', 'middleware.mts', 'middleware.mjs')
+    candidates: list[Path] = []
+    for parent in route_file.parents:
+        for name in names:
+            candidate = parent / name
+            if candidate.exists():
+                candidates.append(candidate)
+    return tuple(candidates)
+
+
+def _next_matcher_matches_route(matcher: str, route_path: str) -> bool:
+    text = matcher.strip()
+    if not text:
+        return True
+    if text.startswith('/((?!'):
+        # Complex negative-lookahead matcher; treat as unknown coverage.
+        return True
+
+    base = text
+    if '/:' in base:
+        base = base.split('/:')[0]
+    base = base.rstrip('*')
+    if base.endswith('/') and base != '/':
+        base = base.rstrip('/')
+    if not base:
+        base = '/'
+
+    if base == '/':
+        return True
+    return route_path == base or route_path.startswith(base + '/')
+
+
+def _next_middleware_applies_to_route(content: str, route_path: str) -> bool:
+    match = _NEXT_MATCHER_RE.search(content)
+    if not match:
+        return True
+    value = match.group('value')
+    patterns = [p.strip() for p in _QUOTED_PATH_RE.findall(value) if p.strip()]
+    if not patterns:
+        return True
+    return any(_next_matcher_matches_route(pattern, route_path) for pattern in patterns)
+
+
+def _next_middleware_auth_labels(block: RouteBlock, *, filename: str) -> tuple[str, ...]:
+    if block.source_kind != 'next-file-route' or not filename:
+        return ()
+
+    labels: list[str] = []
+    for candidate in _next_middleware_candidates(filename):
+        try:
+            content = candidate.read_text(encoding='utf-8', errors='replace')
+        except OSError:
+            continue
+
+        if not _next_middleware_applies_to_route(content, block.path):
+            continue
+
+        has_auth_signal = bool(
+            AUTH_MIDDLEWARE_RE.search(content)
+            or VERIFICATION_CALL_RE.search(content)
+            or re.search(r'\bexport\s*\{\s*auth\s+as\s+middleware\s*\}', content, re.IGNORECASE)
+            or re.search(r'\bwithAuth\s*\(', content, re.IGNORECASE)
+        )
+        if not has_auth_signal:
+            continue
+
+        labels.append(f"next middleware `{candidate.name}`")
+
+    return tuple(dict.fromkeys(labels))
+
+
 def _build_next_route_blocks(code: str, *, filename: str) -> list[RouteBlock]:
     route_path = _next_route_path_from_filename(filename)
     if not route_path:
@@ -390,6 +615,7 @@ def _build_nest_route_blocks(code: str) -> list[RouteBlock]:
                 invocation_parts=invocation_parts,
                 body=code[absolute_brace + 1:method_close],
                 source_kind='nest-decorator-route',
+                receiver='',
                 class_name=class_name,
             ))
     return blocks
@@ -445,6 +671,7 @@ def _build_fastify_prefixed_route_blocks(code: str) -> list[RouteBlock]:
                 invocation_parts=invocation_parts,
                 body=_handler_text_from_args(call.arguments[1:]) or call.raw,
                 source_kind='fastify-register-route',
+                receiver=instance_alias,
                 class_name='',
             ))
     return blocks
@@ -722,6 +949,7 @@ def _build_route_blocks(code: str, *, filename: str = '') -> list[RouteBlock]:
                     invocation_parts=_ambient_invocation_parts(effective_path, ambient_parts) + tuple(call.arguments[1:-1]),
                     body=_handler_text_from_args(call.arguments[1:]) or call.raw,
                     source_kind='call-route',
+                    receiver=receiver or '',
                     class_name='',
                 ))
             continue
@@ -748,6 +976,7 @@ def _build_route_blocks(code: str, *, filename: str = '') -> list[RouteBlock]:
             invocation_parts=invocation_parts,
             body=handler_text,
             source_kind='object-route',
+            receiver='',
             class_name='',
         ))
     blocks.extend(_build_nest_route_blocks(code))
@@ -801,6 +1030,7 @@ def _route_invocation_text(block: RouteBlock) -> str:
 def _route_auth_labels(block: RouteBlock, *, filename: str = '', project=None) -> tuple[str, ...]:
     invocation_text = _route_invocation_text(block)
     labels = list(_option_labels(invocation_text, AUTH_MIDDLEWARE_RE))
+    labels.extend(_next_middleware_auth_labels(block, filename=filename))
     if _auth_option_enabled(invocation_text) and 'auth option `auth`' not in labels:
         labels.append('auth option `auth`')
     labels.extend(_body_verification_labels(block))
@@ -1196,6 +1426,34 @@ def _check_graphql_missing_auth(code: str, *, agent: str, analysis_kind: str, fi
     return findings
 
 
+def _check_graphql_introspection(code: str, *, agent: str, analysis_kind: str, filename: str = '', project=None) -> list[Finding]:
+    findings: list[Finding] = []
+    if not _GRAPHQL_ENV_RE.search(code):
+        return findings
+    if not _GRAPHQL_INTROSPECTION_RE.search(code):
+        return findings
+
+    line = _line_number_for_offset(code, _GRAPHQL_INTROSPECTION_RE.search(code).start())
+    trace = (
+        TraceFrame(kind='source', label='GraphQL server enables introspection/playground in code', line=line),
+        TraceFrame(kind='sink', label='schema metadata exposed to production clients', line=line),
+    )
+    findings.append(_make_route_finding(
+        severity=Severity.MEDIUM,
+        title='GraphQL introspection exposed in production',
+        description='GraphQL server configuration enables introspection or playground mode, exposing schema details and query surfaces to clients.',
+        line=line,
+        suggestion='Disable introspection and playground mode in production deployments unless explicitly required for debugging.',
+        cwe='CWE-200',
+        rule_id='JS-061',
+        confidence=0.9,
+        trace=trace,
+        agent=agent,
+        analysis_kind=analysis_kind,
+    ))
+    return findings
+
+
 def _check_graphql_idor(code: str, *, agent: str, analysis_kind: str, filename: str = '', project=None) -> list[Finding]:
     findings: list[Finding] = []
     for name, body, line in _graphql_resolver_entries(code):
@@ -1339,29 +1597,26 @@ def _check_route_idor(code: str, *, agent: str, analysis_kind: str, filename: st
 
 def _check_route_missing_auth(code: str, *, agent: str, analysis_kind: str, filename: str = '', project=None) -> list[Finding]:
     findings: list[Finding] = []
-
-    # ── Pre-pass: collect app.use(middleware) line numbers for ordering check ─
-    _auth_mw_lines: list[int] = []
-    _use_call_re = re.compile(
-        r'(?:app|router|server|api|fastify|express)\s*\.\s*use\s*\(',
-        re.IGNORECASE,
-    )
-    for _lineno, _raw in enumerate(code.splitlines(), 1):
-        if _use_call_re.search(_raw) and AUTH_MIDDLEWARE_RE.search(_raw):
-            _auth_mw_lines.append(_lineno)
+    
+    # Build enhanced middleware registry for sophisticated middleware chain tracking
+    middleware_reg = MiddlewareRegistry(code)
 
     for block in _build_route_blocks(code, filename=filename):
         resource_params = _route_resource_params(block.path)
         if _is_public_route(block.path):
             continue
-        # If auth middleware appears AFTER this route, it doesn't protect it
-        _auth_before_route = any(ml < block.start_line for ml in _auth_mw_lines)
-        if _route_auth_labels(block, filename=filename, project=project):
+        
+        # Check for inline route auth labels
+        route_auth_labels = _route_auth_labels(block, filename=filename, project=project)
+        if route_auth_labels:
             continue
-        if _auth_before_route and not _is_admin_route(block.path):
+        
+        # Check if app-level, router-level, or class-level middleware protects this route
+        if middleware_reg.route_has_auth_middleware(block) and not _is_admin_route(block.path):
             # There IS auth middleware earlier in the file, just not inline on this route.
             # Don't flag — the `app.use(auth)` pattern protects subsequent routes.
             continue
+        
         if _block_has_verification(block, filename=filename, project=project) or _first_presence_only_gate(block):
             continue
         if not _route_looks_sensitive(block, resource_params):
@@ -1638,6 +1893,7 @@ def run_route_checks(
         _check_restify_missing_auth_plugin,
         _check_trpc_public_mutation,
         _check_graphql_missing_auth,
+        _check_graphql_introspection,
         _check_graphql_idor,
         _check_route_missing_auth,
         _check_admin_broken_access_control,

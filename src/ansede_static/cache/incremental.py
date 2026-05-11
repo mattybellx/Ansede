@@ -33,6 +33,7 @@ from __future__ import annotations
 import ast
 import hashlib
 import json
+import re
 from pathlib import Path
 from typing import Any, Iterable, List, Optional
 
@@ -101,6 +102,35 @@ def _extract_python_imports(path: Path) -> list[str]:
     return sorted(imports)
 
 
+def _extract_js_imports(path: Path) -> list[str]:
+    """Return normalised local JS/TS import targets for *path*."""
+    if path.suffix.lower() not in {".js", ".ts", ".jsx", ".tsx", ".mjs", ".mts", ".cjs", ".cts"}:
+        return []
+    try:
+        source = path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return []
+
+    import_re = re.compile(
+        r'''(?:import\s+(?:[\w*{}\s,]+from\s+)?|require\s*\(\s*)['"]((?:\.|@)[^'"]+)['"]''',
+        re.IGNORECASE,
+    )
+    imports: set[str] = set()
+    current_dir = path.resolve(strict=False).parent
+    for match in import_re.finditer(source):
+        module_path = match.group(1)
+        if module_path.startswith("."):
+            candidate = (current_dir / module_path).resolve(strict=False)
+            for ext in (".js", ".ts", ".jsx", ".tsx", ".mjs", ".mts", "/index.js", "/index.ts"):
+                resolved = candidate.with_name(candidate.name + ext) if "/" not in ext else candidate.parent / ext.lstrip("/")
+                if Path(str(candidate) + ext).exists():
+                    imports.add(str(Path(str(candidate) + ext).resolve(strict=False)))
+                    break
+            else:
+                imports.add(str(candidate.with_suffix(".js").resolve(strict=False)))
+    return sorted(imports)
+
+
 def _hash_file(path: Path) -> str:
     """Return the SHA-256 hex digest of a file's contents."""
     h = hashlib.sha256()
@@ -157,7 +187,11 @@ class IncrementalCache:
         current_hash = _hash_file(Path(path))
         if current_hash:
             self._store.set_json(_BUCKET_HASH, key, current_hash)
-        self._store.set_json(_BUCKET_IMPORTS, key, _extract_python_imports(Path(path)))
+        # Store Python and JS import dependencies for affected-file propagation
+        imports = _extract_python_imports(Path(path))
+        if not imports:
+            imports = _extract_js_imports(Path(path))
+        self._store.set_json(_BUCKET_IMPORTS, key, imports)
 
     def get_imports(self, path: str | Path) -> list[str]:
         """Return the cached import dependencies for *path*."""

@@ -50,6 +50,8 @@ from ansede_static.cache.sqlite_store import SQLiteStore, stable_hash
 from ansede_static.hardening import TemplateEngineDetector
 from ansede_static.ir.global_graph import GlobalGraph
 from ansede_static.template_transpiler import template_taint_nodes
+from ansede_static.engine.clustering import cluster_findings
+from ansede_static.engine.confidence import rescore_findings
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -745,11 +747,49 @@ def _cbv_get_queryset_method(cls: ast.ClassDef) -> ast.FunctionDef | ast.AsyncFu
 
 
 def _queryset_method_has_user_scope(fnode: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
-    """Return True when a queryset-building method scopes results to the current user."""
+    """Return True when a queryset-building method scopes results to the current user.
+    
+    Recognizes patterns like:
+    - .filter(owner=self.request.user)
+    - .filter(owner_id=self.request.user.id)
+    - .filter(User__id=current_user.id)
+    - .filter(owner_id__in=[...user...])
+    - .all() then .filter() in a chain
+    """
+    # First check with simple regex for quick path
     text = _safe_unparse(fnode)
     if not text:
         return False
-    return bool(_CBV_FILTER_CALL_RE.search(text) and _CBV_USER_SCOPE_RE.search(text))
+    if _CBV_FILTER_CALL_RE.search(text) and _CBV_USER_SCOPE_RE.search(text):
+        return True
+    
+    # Now check AST for more sophisticated patterns
+    for node in ast.walk(fnode):
+        # Look for .filter() or .filter_by() calls
+        if not isinstance(node, ast.Call):
+            continue
+        if not isinstance(node.func, ast.Attribute):
+            continue
+        
+        method_name = node.func.attr
+        if method_name not in ("filter", "filter_by"):
+            continue
+        
+        # Check keyword arguments for ownership patterns like owner=, owner_id=, user_id=
+        for kw in node.keywords:
+            if not kw.arg:
+                continue
+            # Check if kwarg name looks like ownership (owner, owner_id, user_id, User__id, etc.)
+            if _OWNERSHIP_RE.search(kw.arg):
+                # Check if the value references the current user
+                kw_text = _safe_unparse(kw.value)
+                if _CBV_USER_SCOPE_RE.search(kw_text) or _PRINCIPAL_REF_RE.search(kw_text):
+                    return True
+                # Also check for user variable names
+                if _PRINCIPAL_ALIAS_NAME_RE.search(kw_text):
+                    return True
+    
+    return False
 
 _FLASK_ROUTE_ATTRS: frozenset[str] = frozenset({
     "route", "get", "post", "put", "patch", "delete", "options",
@@ -3027,10 +3067,31 @@ def _decorator_names(fnode: ast.FunctionDef | ast.AsyncFunctionDef) -> set[str]:
 
 
 def _is_admin_endpoint(fnode: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
-    """Return True when a route/function looks administrative or privileged."""
+    """Return True when a route/function looks administrative or privileged.
+    
+    Checks function/path names, route decorators, and explicit privilege decorators.
+    """
+    # Check function name
     if _PRIVILEGED_ENDPOINT_PAT.search(fnode.name):
         return True
-    return any(_PRIVILEGED_ENDPOINT_PAT.search(path) for path in _route_paths(fnode))
+    
+    # Check route path patterns
+    if any(_PRIVILEGED_ENDPOINT_PAT.search(path) for path in _route_paths(fnode)):
+        return True
+    
+    # Check for explicit privilege decorators like @admin_required, @require_admin, @requires_role('admin'), etc.
+    for deco in fnode.decorator_list:
+        deco_name = _decorator_name(deco)
+        if deco_name and _PRIVILEGE_CHECK_PAT.search(deco_name):
+            return True
+        deco_text = _safe_unparse(deco)
+        # Check for @require_role('admin'), @requires_permission('admin'), etc.
+        if re.search(r'@(?:require|requires)(?:_role|_permission|_admin)', deco_text, re.IGNORECASE):
+            return True
+        if re.search(r'\badmin(?:_required)?\b', deco_text, re.IGNORECASE):
+            return True
+    
+    return False
 
 
 def _route_trace_frames(fnode: ast.FunctionDef | ast.AsyncFunctionDef) -> tuple[TraceFrame, ...]:
@@ -6059,6 +6120,9 @@ def _detect(code: str, filename: str = "", global_graph: object = None) -> list[
     except Exception:  # pragma: no cover
         pass
 
+    # ── Rescore confidence before guard analysis (guards get final say) ──
+    findings = rescore_findings(findings)
+
     # ── Symbolic guard analysis ───────────────────────────────────────────
     try:
         from ansede_static.engine.symbolic_guards import analyze_guards_python
@@ -6066,7 +6130,7 @@ def _detect(code: str, filename: str = "", global_graph: object = None) -> list[
     except Exception:
         pass
 
-    # ── Deduplicate by (title.lower(), line) ──────────────────────────────
+    # ── Deduplicate by (title.lower(), line) then cluster by CWE+region+sink ──
     # First: prefer AST-based findings over CPG findings for the same (cwe, line)
     ast_covered: set[tuple[str, int]] = set()
     for f in findings:
@@ -6084,6 +6148,8 @@ def _detect(code: str, filename: str = "", global_graph: object = None) -> list[
         if key not in seen:
             seen.add(key)
             deduped.append(f)
+    # Third: cluster by CWE family, region, and sink identity
+    deduped = cluster_findings(deduped)
 
     # ── Filter out inline-suppressed findings ─────────────────────────────
     # A comment like  # ansede: ignore  or  # ansede: ignore[CWE-89]

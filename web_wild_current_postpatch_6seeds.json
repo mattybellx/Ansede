@@ -1,94 +1,3082 @@
 {
-  "rows": [
+  "kind": "ansede-live-web-wild-report",
+  "version": 1,
+  "generated_at_epoch": 1778187682.125807,
+  "elapsed_seconds": 144.05,
+  "config": {
+    "repos": [
+      "OWASP/NodeGoat",
+      "pallets/flask",
+      "expressjs/express",
+      "django/django",
+      "tiangolo/fastapi"
+    ],
+    "n_files": 40,
+    "min_labeled": 10,
+    "seed": 1337,
+    "cache_dir": "C:\\Users\\matth\\OneDrive\\Desktop\\ansede-static-focus\\.ansede\\web-wild-cache",
+    "max_file_bytes": 256000,
+    "sampling_mode": "global",
+    "vendor_mode": "include",
+    "label_mode": "hybrid",
+    "label_manifest": "C:\\Users\\matth\\OneDrive\\Desktop\\ansede-static-focus\\benchmarks\\real_world_manifest.json",
+    "severity_min": "high",
+    "js_backend": "structural",
+    "suppression_config": "C:\\Users\\matth\\OneDrive\\Desktop\\ansede-static-focus\\suppression_candidates.json"
+  },
+  "repos": [
     {
-      "seed": 6154,
-      "current": {
-        "sampled_files": 40,
-        "labeled_files": 6,
-        "labeled_candidate_pool": 56,
-        "tp": 3,
-        "fp": 4,
-        "fn": 4,
-        "recall": 42.86,
-        "precision": 42.86,
-        "f1": 42.86,
-        "fp_rate": 57.14
-      }
+      "repo": "OWASP/NodeGoat",
+      "cache_hit": true,
+      "resolved_ref": "c5cb68a7084e4ae7dcc60e6a98768720a81841e8",
+      "cache_path": "C:\\Users\\matth\\OneDrive\\Desktop\\ansede-static-focus\\.ansede\\web-wild-cache\\OWASP__NodeGoat"
     },
     {
-      "seed": 8358,
-      "current": {
-        "sampled_files": 40,
-        "labeled_files": 7,
-        "labeled_candidate_pool": 56,
-        "tp": 4,
-        "fp": 6,
-        "fn": 5,
-        "recall": 44.44,
-        "precision": 40.0,
-        "f1": 42.11,
-        "fp_rate": 60.0
-      }
+      "repo": "pallets/flask",
+      "cache_hit": true,
+      "resolved_ref": "2ac89889f4cc330eabd50f295dcef02828522c69",
+      "cache_path": "C:\\Users\\matth\\OneDrive\\Desktop\\ansede-static-focus\\.ansede\\web-wild-cache\\pallets__flask"
     },
     {
-      "seed": 8853,
-      "current": {
-        "sampled_files": 40,
-        "labeled_files": 7,
-        "labeled_candidate_pool": 56,
-        "tp": 2,
-        "fp": 3,
-        "fn": 6,
-        "recall": 25.0,
-        "precision": 40.0,
-        "f1": 30.77,
-        "fp_rate": 60.0
-      }
+      "repo": "expressjs/express",
+      "cache_hit": true,
+      "resolved_ref": "6340c1eaaedc0ddcae8be8df2cdb1d2e961cbf2f",
+      "cache_path": "C:\\Users\\matth\\OneDrive\\Desktop\\ansede-static-focus\\.ansede\\web-wild-cache\\expressjs__express"
     },
     {
-      "seed": 7304,
-      "current": {
-        "sampled_files": 40,
-        "labeled_files": 6,
-        "labeled_candidate_pool": 56,
-        "tp": 5,
-        "fp": 3,
-        "fn": 1,
-        "recall": 83.33,
-        "precision": 62.5,
-        "f1": 71.43,
-        "fp_rate": 37.5
-      }
+      "repo": "django/django",
+      "cache_hit": true,
+      "resolved_ref": "3f912ee4189602b4df121c0dc0428673fda5c253",
+      "cache_path": "C:\\Users\\matth\\OneDrive\\Desktop\\ansede-static-focus\\.ansede\\web-wild-cache\\django__django"
     },
     {
-      "seed": 3251,
-      "current": {
-        "sampled_files": 40,
-        "labeled_files": 7,
-        "labeled_candidate_pool": 56,
-        "tp": 4,
-        "fp": 1,
-        "fn": 3,
-        "recall": 57.14,
-        "precision": 80.0,
-        "f1": 66.67,
-        "fp_rate": 20.0
-      }
+      "repo": "tiangolo/fastapi",
+      "cache_hit": true,
+      "resolved_ref": "4f64b8f65191b497255004e896a2bbfd7cfd1886",
+      "cache_path": "C:\\Users\\matth\\OneDrive\\Desktop\\ansede-static-focus\\.ansede\\web-wild-cache\\tiangolo__fastapi"
+    }
+  ],
+  "summary": {
+    "sampled_files": 40,
+    "labeled_files": 10,
+    "labeled_candidate_pool": 28,
+    "tp": 11,
+    "fp": 1,
+    "fn": 1,
+    "recall": 91.67,
+    "precision": 91.67,
+    "f1": 91.67,
+    "fp_rate": 8.33
+  },
+  "breakdown": {
+    "files_by_repo": {
+      "OWASP/NodeGoat": 6,
+      "django/django": 32,
+      "tiangolo/fastapi": 1,
+      "pallets/flask": 1
+    },
+    "expected_labels": {
+      "CWE-798": 2,
+      "CWE-95": 2,
+      "CWE-601": 2,
+      "CWE-98": 2,
+      "CWE-22": 1,
+      "CWE-1333": 1,
+      "CWE-307": 1,
+      "CWE-79": 1
+    },
+    "predicted_labels": {
+      "CWE-798": 2,
+      "CWE-95": 2,
+      "CWE-601": 2,
+      "CWE-98": 2,
+      "CWE-1333": 1,
+      "CWE-307": 1,
+      "CWE-352": 1,
+      "CWE-79": 1
+    },
+    "missed_labels": {
+      "CWE-22": 1
+    },
+    "unexpected_labels": {
+      "CWE-352": 1
+    }
+  },
+  "misses": [
+    {
+      "repo": "django/django",
+      "file": "django/contrib/gis/gdal/raster/source.py",
+      "expected_only": [
+        "CWE-22"
+      ],
+      "predicted_labels": []
+    }
+  ],
+  "unexpected_predictions": [
+    {
+      "repo": "OWASP/NodeGoat",
+      "file": "app/routes/index.js",
+      "predicted_only": [
+        "CWE-352"
+      ],
+      "expected_labels": [
+        "CWE-307",
+        "CWE-601"
+      ],
+      "finding_count_scored": 10
+    }
+  ],
+  "samples": [
+    {
+      "repo": "OWASP/NodeGoat",
+      "file": "config/env/test.js",
+      "language": "javascript",
+      "lines_scanned": 8,
+      "finding_count": 1,
+      "finding_count_scored": 1,
+      "expected_labels": [
+        "CWE-798"
+      ],
+      "label_reasons": [
+        "curated manifest: real_world_manifest.json:nodegoat-hardcoded-zap-api-key",
+        "Pinned NodeGoat test config hardcodes a ZAP API key used by security test automation."
+      ],
+      "label_source": "curated",
+      "predicted_labels": [
+        "CWE-798"
+      ],
+      "vendor_or_minified": false,
+      "tp": 1,
+      "fp": 0,
+      "fn": 0,
+      "findings": [
+        {
+          "severity": "critical",
+          "title": "CWE-798: Hardcoded credential at line 6",
+          "description": "A credential, key, or password appears to be hardcoded at L6: `zapApiKey: \"v9dn0balpqas1pcc281tn5ood1\",`. Commit history will permanently expose this credential even after removal.",
+          "line": 6,
+          "suggestion": "Move secrets to environment variables: `process.env.API_KEY`. Use a secrets manager for production.",
+          "rule_id": "JS-011",
+          "cwe": "CWE-798",
+          "category": "security",
+          "finding_class": "security",
+          "agent": "js-analyzer",
+          "confidence": 1.0,
+          "auto_fix": "",
+          "explanation": "",
+          "analysis_kind": "pattern",
+          "trace": [],
+          "rule": {
+            "rule_id": "JS-011",
+            "title": "Hardcoded credential",
+            "category": "security",
+            "default_severity": "critical",
+            "languages": [
+              "javascript",
+              "typescript"
+            ],
+            "cwe": "CWE-798",
+            "maturity": "stable",
+            "precision": "high",
+            "summary": "A credential, key, or password appears to be hardcoded.",
+            "remediation": "Move secrets to environment variables: `process.env.API_KEY`. Use a secrets manager for production.",
+            "docs_url": "https://cwe.mitre.org/data/definitions/798.html",
+            "known_limitations": [],
+            "tags": [
+              "secrets",
+              "credentials",
+              "keys",
+              "javascript",
+              "OWASP:A07:2021",
+              "NIST:IA-5",
+              "PCI-DSS:8.2.2"
+            ]
+          }
+        }
+      ]
     },
     {
-      "seed": 5411,
-      "current": {
-        "sampled_files": 40,
-        "labeled_files": 5,
-        "labeled_candidate_pool": 56,
-        "tp": 4,
-        "fp": 1,
-        "fn": 2,
-        "recall": 66.67,
-        "precision": 80.0,
-        "f1": 72.73,
-        "fp_rate": 20.0
-      }
+      "repo": "django/django",
+      "file": "django/contrib/gis/gdal/raster/source.py",
+      "language": "python",
+      "lines_scanned": 543,
+      "finding_count": 2,
+      "finding_count_scored": 0,
+      "expected_labels": [
+        "CWE-22"
+      ],
+      "label_reasons": [
+        "curated manifest: real_world_manifest.json:django-gdal-raster-clone-path-traversal",
+        "Pinned Django GDAL raster clone helper composes a virtual filesystem clone path with os.path.join() on dynamic input inside clone()."
+      ],
+      "label_source": "curated",
+      "predicted_labels": [],
+      "vendor_or_minified": false,
+      "tp": 0,
+      "fp": 0,
+      "fn": 1,
+      "findings": [
+        {
+          "severity": "high",
+          "title": "Excessive complexity in __init__() (CC=26)",
+          "description": "`__init__()` at L77 has cyclomatic complexity 26. Functions above 15 are hard to test, debug, and maintain.",
+          "line": 77,
+          "suggestion": "Extract sub-functions for distinct logic branches or use lookup tables.",
+          "rule_id": "PY-044",
+          "cwe": "",
+          "category": "architecture",
+          "finding_class": "quality",
+          "agent": "python-analyzer",
+          "confidence": 1.0,
+          "auto_fix": "",
+          "explanation": "",
+          "analysis_kind": "pattern",
+          "trace": [],
+          "rule": {
+            "rule_id": "PY-044",
+            "title": "Cyclomatic complexity hotspot",
+            "category": "architecture",
+            "default_severity": "medium",
+            "languages": [
+              "python"
+            ],
+            "cwe": "",
+            "maturity": "stable",
+            "precision": "high",
+            "summary": "Flags overly branchy functions that are statistically harder to review, test, and secure.",
+            "remediation": "Split complex control flow into smaller helpers with single responsibilities.",
+            "docs_url": "https://github.com/mattybellx/Ansede/blob/main/docs/QUALITY.md",
+            "known_limitations": [],
+            "tags": [
+              "quality",
+              "complexity",
+              "maintainability"
+            ]
+          }
+        },
+        {
+          "severity": "low",
+          "title": "CWE-22: Path traversal in clone() via os.path.join()",
+          "description": "`clone()` passes `VSI_MEM_FILESYSTEM_BASE_PATH` (dynamic/path-like input) to `os.path.join()` at L470 without sanitization. `../` sequences can escape the intended directory. (framework-internal implementation heuristic downgraded)",
+          "line": 470,
+          "suggestion": "Sanitize: `from werkzeug.utils import secure_filename; safe = secure_filename(filename)`. Verify resolved path: `assert os.path.realpath(p).startswith(BASE_DIR)`.",
+          "rule_id": "PY-023",
+          "cwe": "CWE-22",
+          "category": "security",
+          "finding_class": "security",
+          "agent": "python-analyzer",
+          "confidence": 0.25,
+          "auto_fix": "",
+          "explanation": "",
+          "analysis_kind": "pattern",
+          "trace": [],
+          "rule": {
+            "rule_id": "PY-023",
+            "title": "Python path join with unsanitized user input",
+            "category": "security",
+            "default_severity": "high",
+            "languages": [
+              "python"
+            ],
+            "cwe": "CWE-22",
+            "maturity": "stable",
+            "precision": "medium",
+            "summary": "Flags `os.path.join` or similar path composition with tainted user input.",
+            "remediation": "Normalize against a safe root and reject any resolved path that escapes it.",
+            "docs_url": "https://cwe.mitre.org/data/definitions/22.html",
+            "known_limitations": [],
+            "tags": [
+              "path",
+              "filesystem",
+              "taint",
+              "python",
+              "join",
+              "OWASP:A01:2021"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "repo": "OWASP/NodeGoat",
+      "file": "app/routes/profile.js",
+      "language": "javascript",
+      "lines_scanned": 111,
+      "finding_count": 1,
+      "finding_count_scored": 1,
+      "expected_labels": [
+        "CWE-1333"
+      ],
+      "label_reasons": [
+        "curated manifest: real_world_manifest.json:nodegoat-redos-validation",
+        "Pinned NodeGoat profile route contains an active catastrophic-backtracking regex example."
+      ],
+      "label_source": "curated",
+      "predicted_labels": [
+        "CWE-1333"
+      ],
+      "vendor_or_minified": false,
+      "tp": 1,
+      "fp": 0,
+      "fn": 0,
+      "findings": [
+        {
+          "severity": "high",
+          "title": "CWE-1333: Potential ReDoS \u2014 catastrophic backtracking regex at line 59",
+          "description": "Regex with nested quantifiers or ambiguous alternation at L59: `const regexPattern = /([0-9]+)+\\#/;`.",
+          "line": 59,
+          "suggestion": "Use safe regex patterns or a non-backtracking engine.",
+          "rule_id": "JS-057",
+          "cwe": "CWE-1333",
+          "category": "security",
+          "finding_class": "security",
+          "agent": "js-analyzer",
+          "confidence": 1.0,
+          "auto_fix": "",
+          "explanation": "",
+          "analysis_kind": "pattern",
+          "trace": [],
+          "rule": {
+            "rule_id": "JS-057",
+            "title": "Potential ReDoS \u2014 catastrophic backtracking regex",
+            "category": "security",
+            "default_severity": "high",
+            "languages": [
+              "javascript",
+              "typescript"
+            ],
+            "cwe": "CWE-1333",
+            "maturity": "stable",
+            "precision": "medium",
+            "summary": "Regex with nested quantifiers or ambiguous alternation.",
+            "remediation": "Use safe regex patterns or a non-backtracking engine.",
+            "docs_url": "https://cwe.mitre.org/data/definitions/1333.html",
+            "known_limitations": [],
+            "tags": [
+              "regex",
+              "redos",
+              "performance",
+              "javascript",
+              "OWASP:A06:2021"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "repo": "OWASP/NodeGoat",
+      "file": "config/env/all.js",
+      "language": "javascript",
+      "lines_scanned": 14,
+      "finding_count": 1,
+      "finding_count_scored": 1,
+      "expected_labels": [
+        "CWE-798"
+      ],
+      "label_reasons": [
+        "curated manifest: real_world_manifest.json:nodegoat-hardcoded-cookie-and-crypto-secrets",
+        "Pinned NodeGoat shared config hardcodes cookie and crypto secrets instead of sourcing them from environment or a secret store."
+      ],
+      "label_source": "curated",
+      "predicted_labels": [
+        "CWE-798"
+      ],
+      "vendor_or_minified": false,
+      "tp": 1,
+      "fp": 0,
+      "fn": 0,
+      "findings": [
+        {
+          "severity": "critical",
+          "title": "CWE-798: Hardcoded credential at line 8",
+          "description": "A credential, key, or password appears to be hardcoded at L8: `cookieSecret: \"session_cookie_secret_key_here\",`. Commit history will permanently expose this credential even after removal.",
+          "line": 8,
+          "suggestion": "Move secrets to environment variables: `process.env.API_KEY`. Use a secrets manager for production.",
+          "rule_id": "JS-011",
+          "cwe": "CWE-798",
+          "category": "security",
+          "finding_class": "security",
+          "agent": "js-analyzer",
+          "confidence": 1.0,
+          "auto_fix": "",
+          "explanation": "",
+          "analysis_kind": "pattern",
+          "trace": [],
+          "rule": {
+            "rule_id": "JS-011",
+            "title": "Hardcoded credential",
+            "category": "security",
+            "default_severity": "critical",
+            "languages": [
+              "javascript",
+              "typescript"
+            ],
+            "cwe": "CWE-798",
+            "maturity": "stable",
+            "precision": "high",
+            "summary": "A credential, key, or password appears to be hardcoded.",
+            "remediation": "Move secrets to environment variables: `process.env.API_KEY`. Use a secrets manager for production.",
+            "docs_url": "https://cwe.mitre.org/data/definitions/798.html",
+            "known_limitations": [],
+            "tags": [
+              "secrets",
+              "credentials",
+              "keys",
+              "javascript",
+              "OWASP:A07:2021",
+              "NIST:IA-5",
+              "PCI-DSS:8.2.2"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "repo": "OWASP/NodeGoat",
+      "file": "app/routes/contributions.js",
+      "language": "javascript",
+      "lines_scanned": 80,
+      "finding_count": 3,
+      "finding_count_scored": 3,
+      "expected_labels": [
+        "CWE-95"
+      ],
+      "label_reasons": [
+        "curated manifest: real_world_manifest.json:nodegoat-eval-code-injection",
+        "Pinned NodeGoat contribution route contains multiple direct `eval()` code-execution hits."
+      ],
+      "label_source": "curated",
+      "predicted_labels": [
+        "CWE-95"
+      ],
+      "vendor_or_minified": false,
+      "tp": 1,
+      "fp": 0,
+      "fn": 0,
+      "findings": [
+        {
+          "severity": "critical",
+          "title": "CWE-95: Code injection via eval() at line 32",
+          "description": "`eval()` is called with dynamic content at L32: `eval(req.body.preTax)`. If the argument is attacker-influenced, arbitrary JavaScript can execute.",
+          "line": 32,
+          "suggestion": "Remove `eval()`. Parse data with `JSON.parse()` or use a safe expression interpreter.",
+          "rule_id": "JS-004",
+          "cwe": "CWE-95",
+          "category": "security",
+          "finding_class": "security",
+          "agent": "js-ast-analyzer",
+          "confidence": 0.96,
+          "auto_fix": "",
+          "explanation": "",
+          "analysis_kind": "syntax-ast",
+          "trace": [
+            {
+              "kind": "source",
+              "label": "source `req.body.preTax`",
+              "line": 32,
+              "start_column": 1
+            },
+            {
+              "kind": "sink",
+              "label": "sink `eval()`",
+              "line": 32,
+              "start_column": 1
+            }
+          ],
+          "rule": {
+            "rule_id": "JS-004",
+            "title": "Code injection via eval()",
+            "category": "security",
+            "default_severity": "critical",
+            "languages": [
+              "javascript",
+              "typescript"
+            ],
+            "cwe": "CWE-95",
+            "maturity": "stable",
+            "precision": "high",
+            "summary": "`eval()` called.",
+            "remediation": "Eliminate eval(). Use JSON.parse() for data, or a safe expression library.",
+            "docs_url": "https://cwe.mitre.org/data/definitions/95.html",
+            "known_limitations": [],
+            "tags": [
+              "eval",
+              "code-exec",
+              "rce",
+              "javascript",
+              "OWASP:A03:2021"
+            ]
+          }
+        },
+        {
+          "severity": "critical",
+          "title": "CWE-95: Code injection via eval() at line 33",
+          "description": "`eval()` is called with dynamic content at L33: `eval(req.body.afterTax)`. If the argument is attacker-influenced, arbitrary JavaScript can execute.",
+          "line": 33,
+          "suggestion": "Remove `eval()`. Parse data with `JSON.parse()` or use a safe expression interpreter.",
+          "rule_id": "JS-004",
+          "cwe": "CWE-95",
+          "category": "security",
+          "finding_class": "security",
+          "agent": "js-ast-analyzer",
+          "confidence": 0.96,
+          "auto_fix": "",
+          "explanation": "",
+          "analysis_kind": "syntax-ast",
+          "trace": [
+            {
+              "kind": "source",
+              "label": "source `req.body.afterTax`",
+              "line": 33,
+              "start_column": 1
+            },
+            {
+              "kind": "sink",
+              "label": "sink `eval()`",
+              "line": 33,
+              "start_column": 1
+            }
+          ],
+          "rule": {
+            "rule_id": "JS-004",
+            "title": "Code injection via eval()",
+            "category": "security",
+            "default_severity": "critical",
+            "languages": [
+              "javascript",
+              "typescript"
+            ],
+            "cwe": "CWE-95",
+            "maturity": "stable",
+            "precision": "high",
+            "summary": "`eval()` called.",
+            "remediation": "Eliminate eval(). Use JSON.parse() for data, or a safe expression library.",
+            "docs_url": "https://cwe.mitre.org/data/definitions/95.html",
+            "known_limitations": [],
+            "tags": [
+              "eval",
+              "code-exec",
+              "rce",
+              "javascript",
+              "OWASP:A03:2021"
+            ]
+          }
+        },
+        {
+          "severity": "critical",
+          "title": "CWE-95: Code injection via eval() at line 34",
+          "description": "`eval()` is called with dynamic content at L34: `eval(req.body.roth)`. If the argument is attacker-influenced, arbitrary JavaScript can execute.",
+          "line": 34,
+          "suggestion": "Remove `eval()`. Parse data with `JSON.parse()` or use a safe expression interpreter.",
+          "rule_id": "JS-004",
+          "cwe": "CWE-95",
+          "category": "security",
+          "finding_class": "security",
+          "agent": "js-ast-analyzer",
+          "confidence": 0.96,
+          "auto_fix": "",
+          "explanation": "",
+          "analysis_kind": "syntax-ast",
+          "trace": [
+            {
+              "kind": "source",
+              "label": "source `req.body.roth`",
+              "line": 34,
+              "start_column": 1
+            },
+            {
+              "kind": "sink",
+              "label": "sink `eval()`",
+              "line": 34,
+              "start_column": 1
+            }
+          ],
+          "rule": {
+            "rule_id": "JS-004",
+            "title": "Code injection via eval()",
+            "category": "security",
+            "default_severity": "critical",
+            "languages": [
+              "javascript",
+              "typescript"
+            ],
+            "cwe": "CWE-95",
+            "maturity": "stable",
+            "precision": "high",
+            "summary": "`eval()` called.",
+            "remediation": "Eliminate eval(). Use JSON.parse() for data, or a safe expression library.",
+            "docs_url": "https://cwe.mitre.org/data/definitions/95.html",
+            "known_limitations": [],
+            "tags": [
+              "eval",
+              "code-exec",
+              "rce",
+              "javascript",
+              "OWASP:A03:2021"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "repo": "OWASP/NodeGoat",
+      "file": "app/routes/index.js",
+      "language": "javascript",
+      "lines_scanned": 85,
+      "finding_count": 16,
+      "finding_count_scored": 10,
+      "expected_labels": [
+        "CWE-307",
+        "CWE-601"
+      ],
+      "label_reasons": [
+        "curated manifest: real_world_manifest.json:nodegoat-login-bruteforce",
+        "Pinned NodeGoat login route has no visible brute-force or per-IP rate limiting.",
+        "curated manifest: real_world_manifest.json:nodegoat-signup-bruteforce",
+        "Pinned NodeGoat signup route is also exposed without visible registration throttling.",
+        "curated manifest: real_world_manifest.json:nodegoat-open-redirect-learn-link",
+        "Pinned NodeGoat learn-link route redirects directly from a query-string URL."
+      ],
+      "label_source": "curated",
+      "predicted_labels": [
+        "CWE-307",
+        "CWE-352",
+        "CWE-601"
+      ],
+      "vendor_or_minified": false,
+      "tp": 2,
+      "fp": 1,
+      "fn": 0,
+      "findings": [
+        {
+          "severity": "high",
+          "title": "CWE-307: No rate limiting on authentication route at line 34",
+          "description": "Authentication route `/login` at L34 (`app.post(\"/login\", sessionHandler.handleLoginRequest)`) has no rate-limiting middleware in scope. An attacker can brute-force credentials, OTPs, or tokens.",
+          "line": 34,
+          "suggestion": "Apply rate limiting, for example `const limiter = rateLimit({ windowMs: 15*60*1000, max: 10 })`, or attach a route-scoped/per-prefix limiter before the auth handler.",
+          "rule_id": "JS-029",
+          "cwe": "CWE-307",
+          "category": "security",
+          "finding_class": "security",
+          "agent": "js-analyzer",
+          "confidence": 1.0,
+          "auto_fix": "",
+          "explanation": "",
+          "analysis_kind": "pattern",
+          "trace": [],
+          "rule": {
+            "rule_id": "JS-029",
+            "title": "JS auth route missing rate limiting",
+            "category": "security",
+            "default_severity": "high",
+            "languages": [
+              "javascript",
+              "typescript"
+            ],
+            "cwe": "CWE-307",
+            "maturity": "stable",
+            "precision": "medium",
+            "summary": "Flags login-like routes with no obvious rate-limiter middleware in scope.",
+            "remediation": "Apply a per-IP or per-account rate limiter before the auth handler.",
+            "docs_url": "https://cwe.mitre.org/data/definitions/307.html",
+            "known_limitations": [],
+            "tags": [
+              "rate-limiting",
+              "auth",
+              "bruteforce",
+              "javascript",
+              "OWASP:A07:2021"
+            ]
+          }
+        },
+        {
+          "severity": "high",
+          "title": "CWE-352: State-changing route may lack CSRF protection at line 34",
+          "description": "POST/PUT/DELETE route defined at L34 without detectable CSRF token validation. Cross-site request forgery can force authenticated users to perform unintended actions.",
+          "line": 34,
+          "suggestion": "Use csurf middleware or implement CSRF token validation for all mutating routes.",
+          "rule_id": "JS-041",
+          "cwe": "CWE-352",
+          "category": "security",
+          "finding_class": "security",
+          "agent": "js-ast-analyzer",
+          "confidence": 0.8,
+          "auto_fix": "",
+          "explanation": "",
+          "analysis_kind": "pattern-heuristic",
+          "trace": [
+            {
+              "kind": "source",
+              "label": "route handler at L34",
+              "line": 34,
+              "start_column": 1
+            }
+          ],
+          "rule": {
+            "rule_id": "JS-041",
+            "title": "CWE-352: State-changing route may lack CSRF protection at line 34",
+            "category": "security",
+            "default_severity": "high",
+            "languages": [
+              "javascript",
+              "typescript"
+            ],
+            "cwe": "CWE-352",
+            "maturity": "stable",
+            "precision": "medium",
+            "summary": "Flags browser-exposed state mutations that appear to lack CSRF defenses.",
+            "remediation": "Require CSRF tokens or same-site protections for cookie-authenticated browser flows.",
+            "docs_url": "https://cwe.mitre.org/data/definitions/352.html",
+            "known_limitations": [],
+            "tags": [
+              "csrf",
+              "browser",
+              "middleware",
+              "OWASP:A01:2021"
+            ]
+          }
+        },
+        {
+          "severity": "high",
+          "title": "CWE-307: No rate limiting on registration route at line 38",
+          "description": "Registration route `/signup` at L38 (`app.post(\"/signup\", sessionHandler.handleSignup)`) has no rate-limiting middleware in scope. An attacker can brute-force credentials, OTPs, or tokens.",
+          "line": 38,
+          "suggestion": "Apply rate limiting, for example `const limiter = rateLimit({ windowMs: 15*60*1000, max: 10 })`, or attach a route-scoped/per-prefix limiter before the auth handler.",
+          "rule_id": "JS-029",
+          "cwe": "CWE-307",
+          "category": "security",
+          "finding_class": "security",
+          "agent": "js-analyzer",
+          "confidence": 1.0,
+          "auto_fix": "",
+          "explanation": "",
+          "analysis_kind": "pattern",
+          "trace": [],
+          "rule": {
+            "rule_id": "JS-029",
+            "title": "JS auth route missing rate limiting",
+            "category": "security",
+            "default_severity": "high",
+            "languages": [
+              "javascript",
+              "typescript"
+            ],
+            "cwe": "CWE-307",
+            "maturity": "stable",
+            "precision": "medium",
+            "summary": "Flags login-like routes with no obvious rate-limiter middleware in scope.",
+            "remediation": "Apply a per-IP or per-account rate limiter before the auth handler.",
+            "docs_url": "https://cwe.mitre.org/data/definitions/307.html",
+            "known_limitations": [],
+            "tags": [
+              "rate-limiting",
+              "auth",
+              "bruteforce",
+              "javascript",
+              "OWASP:A07:2021"
+            ]
+          }
+        },
+        {
+          "severity": "high",
+          "title": "CWE-352: State-changing route may lack CSRF protection at line 38",
+          "description": "POST/PUT/DELETE route defined at L38 without detectable CSRF token validation. Cross-site request forgery can force authenticated users to perform unintended actions.",
+          "line": 38,
+          "suggestion": "Use csurf middleware or implement CSRF token validation for all mutating routes.",
+          "rule_id": "JS-041",
+          "cwe": "CWE-352",
+          "category": "security",
+          "finding_class": "security",
+          "agent": "js-ast-analyzer",
+          "confidence": 0.8,
+          "auto_fix": "",
+          "explanation": "",
+          "analysis_kind": "pattern-heuristic",
+          "trace": [
+            {
+              "kind": "source",
+              "label": "route handler at L38",
+              "line": 38,
+              "start_column": 1
+            }
+          ],
+          "rule": {
+            "rule_id": "JS-041",
+            "title": "CWE-352: State-changing route may lack CSRF protection at line 38",
+            "category": "security",
+            "default_severity": "high",
+            "languages": [
+              "javascript",
+              "typescript"
+            ],
+            "cwe": "CWE-352",
+            "maturity": "stable",
+            "precision": "medium",
+            "summary": "Flags browser-exposed state mutations that appear to lack CSRF defenses.",
+            "remediation": "Require CSRF tokens or same-site protections for cookie-authenticated browser flows.",
+            "docs_url": "https://cwe.mitre.org/data/definitions/352.html",
+            "known_limitations": [],
+            "tags": [
+              "csrf",
+              "browser",
+              "middleware",
+              "OWASP:A01:2021"
+            ]
+          }
+        },
+        {
+          "severity": "high",
+          "title": "CWE-352: State-changing route may lack CSRF protection at line 48",
+          "description": "POST/PUT/DELETE route defined at L48 without detectable CSRF token validation. Cross-site request forgery can force authenticated users to perform unintended actions.",
+          "line": 48,
+          "suggestion": "Use csurf middleware or implement CSRF token validation for all mutating routes.",
+          "rule_id": "JS-041",
+          "cwe": "CWE-352",
+          "category": "security",
+          "finding_class": "security",
+          "agent": "js-ast-analyzer",
+          "confidence": 0.8,
+          "auto_fix": "",
+          "explanation": "",
+          "analysis_kind": "pattern-heuristic",
+          "trace": [
+            {
+              "kind": "source",
+              "label": "route handler at L48",
+              "line": 48,
+              "start_column": 1
+            }
+          ],
+          "rule": {
+            "rule_id": "JS-041",
+            "title": "CWE-352: State-changing route may lack CSRF protection at line 48",
+            "category": "security",
+            "default_severity": "high",
+            "languages": [
+              "javascript",
+              "typescript"
+            ],
+            "cwe": "CWE-352",
+            "maturity": "stable",
+            "precision": "medium",
+            "summary": "Flags browser-exposed state mutations that appear to lack CSRF defenses.",
+            "remediation": "Require CSRF tokens or same-site protections for cookie-authenticated browser flows.",
+            "docs_url": "https://cwe.mitre.org/data/definitions/352.html",
+            "known_limitations": [],
+            "tags": [
+              "csrf",
+              "browser",
+              "middleware",
+              "OWASP:A01:2021"
+            ]
+          }
+        },
+        {
+          "severity": "high",
+          "title": "CWE-352: State-changing route may lack CSRF protection at line 52",
+          "description": "POST/PUT/DELETE route defined at L52 without detectable CSRF token validation. Cross-site request forgery can force authenticated users to perform unintended actions.",
+          "line": 52,
+          "suggestion": "Use csurf middleware or implement CSRF token validation for all mutating routes.",
+          "rule_id": "JS-041",
+          "cwe": "CWE-352",
+          "category": "security",
+          "finding_class": "security",
+          "agent": "js-ast-analyzer",
+          "confidence": 0.8,
+          "auto_fix": "",
+          "explanation": "",
+          "analysis_kind": "pattern-heuristic",
+          "trace": [
+            {
+              "kind": "source",
+              "label": "route handler at L52",
+              "line": 52,
+              "start_column": 1
+            }
+          ],
+          "rule": {
+            "rule_id": "JS-041",
+            "title": "CWE-352: State-changing route may lack CSRF protection at line 52",
+            "category": "security",
+            "default_severity": "high",
+            "languages": [
+              "javascript",
+              "typescript"
+            ],
+            "cwe": "CWE-352",
+            "maturity": "stable",
+            "precision": "medium",
+            "summary": "Flags browser-exposed state mutations that appear to lack CSRF defenses.",
+            "remediation": "Require CSRF tokens or same-site protections for cookie-authenticated browser flows.",
+            "docs_url": "https://cwe.mitre.org/data/definitions/352.html",
+            "known_limitations": [],
+            "tags": [
+              "csrf",
+              "browser",
+              "middleware",
+              "OWASP:A01:2021"
+            ]
+          }
+        },
+        {
+          "severity": "high",
+          "title": "CWE-352: State-changing route may lack CSRF protection at line 56",
+          "description": "POST/PUT/DELETE route defined at L56 without detectable CSRF token validation. Cross-site request forgery can force authenticated users to perform unintended actions.",
+          "line": 56,
+          "suggestion": "Use csurf middleware or implement CSRF token validation for all mutating routes.",
+          "rule_id": "JS-041",
+          "cwe": "CWE-352",
+          "category": "security",
+          "finding_class": "security",
+          "agent": "js-ast-analyzer",
+          "confidence": 0.8,
+          "auto_fix": "",
+          "explanation": "",
+          "analysis_kind": "pattern-heuristic",
+          "trace": [
+            {
+              "kind": "source",
+              "label": "route handler at L56",
+              "line": 56,
+              "start_column": 1
+            }
+          ],
+          "rule": {
+            "rule_id": "JS-041",
+            "title": "CWE-352: State-changing route may lack CSRF protection at line 56",
+            "category": "security",
+            "default_severity": "high",
+            "languages": [
+              "javascript",
+              "typescript"
+            ],
+            "cwe": "CWE-352",
+            "maturity": "stable",
+            "precision": "medium",
+            "summary": "Flags browser-exposed state mutations that appear to lack CSRF defenses.",
+            "remediation": "Require CSRF tokens or same-site protections for cookie-authenticated browser flows.",
+            "docs_url": "https://cwe.mitre.org/data/definitions/352.html",
+            "known_limitations": [],
+            "tags": [
+              "csrf",
+              "browser",
+              "middleware",
+              "OWASP:A01:2021"
+            ]
+          }
+        },
+        {
+          "severity": "high",
+          "title": "CWE-352: State-changing route may lack CSRF protection at line 59",
+          "description": "POST/PUT/DELETE route defined at L59 without detectable CSRF token validation. Cross-site request forgery can force authenticated users to perform unintended actions.",
+          "line": 59,
+          "suggestion": "Use csurf middleware or implement CSRF token validation for all mutating routes.",
+          "rule_id": "JS-041",
+          "cwe": "CWE-352",
+          "category": "security",
+          "finding_class": "security",
+          "agent": "js-ast-analyzer",
+          "confidence": 0.8,
+          "auto_fix": "",
+          "explanation": "",
+          "analysis_kind": "pattern-heuristic",
+          "trace": [
+            {
+              "kind": "source",
+              "label": "route handler at L59",
+              "line": 59,
+              "start_column": 1
+            }
+          ],
+          "rule": {
+            "rule_id": "JS-041",
+            "title": "CWE-352: State-changing route may lack CSRF protection at line 59",
+            "category": "security",
+            "default_severity": "high",
+            "languages": [
+              "javascript",
+              "typescript"
+            ],
+            "cwe": "CWE-352",
+            "maturity": "stable",
+            "precision": "medium",
+            "summary": "Flags browser-exposed state mutations that appear to lack CSRF defenses.",
+            "remediation": "Require CSRF tokens or same-site protections for cookie-authenticated browser flows.",
+            "docs_url": "https://cwe.mitre.org/data/definitions/352.html",
+            "known_limitations": [],
+            "tags": [
+              "csrf",
+              "browser",
+              "middleware",
+              "OWASP:A01:2021"
+            ]
+          }
+        },
+        {
+          "severity": "high",
+          "title": "CWE-352: State-changing route may lack CSRF protection at line 67",
+          "description": "POST/PUT/DELETE route defined at L67 without detectable CSRF token validation. Cross-site request forgery can force authenticated users to perform unintended actions.",
+          "line": 67,
+          "suggestion": "Use csurf middleware or implement CSRF token validation for all mutating routes.",
+          "rule_id": "JS-041",
+          "cwe": "CWE-352",
+          "category": "security",
+          "finding_class": "security",
+          "agent": "js-ast-analyzer",
+          "confidence": 0.8,
+          "auto_fix": "",
+          "explanation": "",
+          "analysis_kind": "pattern-heuristic",
+          "trace": [
+            {
+              "kind": "source",
+              "label": "route handler at L67",
+              "line": 67,
+              "start_column": 1
+            }
+          ],
+          "rule": {
+            "rule_id": "JS-041",
+            "title": "CWE-352: State-changing route may lack CSRF protection at line 67",
+            "category": "security",
+            "default_severity": "high",
+            "languages": [
+              "javascript",
+              "typescript"
+            ],
+            "cwe": "CWE-352",
+            "maturity": "stable",
+            "precision": "medium",
+            "summary": "Flags browser-exposed state mutations that appear to lack CSRF defenses.",
+            "remediation": "Require CSRF tokens or same-site protections for cookie-authenticated browser flows.",
+            "docs_url": "https://cwe.mitre.org/data/definitions/352.html",
+            "known_limitations": [],
+            "tags": [
+              "csrf",
+              "browser",
+              "middleware",
+              "OWASP:A01:2021"
+            ]
+          }
+        },
+        {
+          "severity": "high",
+          "title": "CWE-601: Open redirect via tainted variable at line 72",
+          "description": "`res.redirect()` at L72 uses a user-influenced destination: `res.redirect(req.query.url)`. Attackers can redirect victims to untrusted sites.",
+          "line": 72,
+          "suggestion": "Validate redirect targets against an allowlist of permitted relative paths or trusted hosts.",
+          "rule_id": "JS-039",
+          "cwe": "CWE-601",
+          "category": "security",
+          "finding_class": "security",
+          "agent": "js-ast-analyzer",
+          "confidence": 0.96,
+          "auto_fix": "",
+          "explanation": "",
+          "analysis_kind": "syntax-ast",
+          "trace": [
+            {
+              "kind": "source",
+              "label": "source `req.query.url`",
+              "line": 72,
+              "start_column": 1
+            },
+            {
+              "kind": "sink",
+              "label": "sink `res.redirect()`",
+              "line": 72,
+              "start_column": 1
+            }
+          ],
+          "rule": {
+            "rule_id": "JS-039",
+            "title": "JS open redirect via tainted target",
+            "category": "security",
+            "default_severity": "high",
+            "languages": [
+              "javascript",
+              "typescript"
+            ],
+            "cwe": "CWE-601",
+            "maturity": "stable",
+            "precision": "medium",
+            "summary": "Flags redirects or redirect helpers driven by user-controlled targets.",
+            "remediation": "Restrict redirect targets to relative paths or explicit trusted hosts.",
+            "docs_url": "https://cwe.mitre.org/data/definitions/601.html",
+            "known_limitations": [],
+            "tags": [
+              "redirect",
+              "phishing",
+              "taint",
+              "javascript",
+              "OWASP:A01:2021"
+            ]
+          }
+        },
+        {
+          "severity": "medium",
+          "title": "CWE-352: State-mutating route may lack CSRF protection at line 34",
+          "description": "POST/PUT/PATCH/DELETE route defined at L34 (`app.post(\"/login\", sessionHandler.handleLoginRequest);`). Without CSRF protection, authenticated users can be tricked into submitting unwanted requests.",
+          "line": 34,
+          "suggestion": "Use CSRF middleware or set `SameSite=Strict` on session cookies.",
+          "rule_id": "JS-060",
+          "cwe": "CWE-352",
+          "category": "security",
+          "finding_class": "security",
+          "agent": "js-analyzer",
+          "confidence": 1.0,
+          "auto_fix": "",
+          "explanation": "",
+          "analysis_kind": "pattern",
+          "trace": [],
+          "rule": {
+            "rule_id": "JS-060",
+            "title": "State-mutating route may lack CSRF protection",
+            "category": "security",
+            "default_severity": "medium",
+            "languages": [
+              "javascript",
+              "typescript"
+            ],
+            "cwe": "CWE-352",
+            "maturity": "stable",
+            "precision": "medium",
+            "summary": "POST/PUT/PATCH/DELETE route defined (matched code).",
+            "remediation": "Use CSRF middleware or set `SameSite=Strict` on session cookies.",
+            "docs_url": "https://cwe.mitre.org/data/definitions/352.html",
+            "known_limitations": [],
+            "tags": [
+              "csrf",
+              "browser",
+              "middleware",
+              "javascript",
+              "OWASP:A01:2021"
+            ]
+          }
+        },
+        {
+          "severity": "medium",
+          "title": "CWE-352: State-mutating route may lack CSRF protection at line 38",
+          "description": "POST/PUT/PATCH/DELETE route defined at L38 (`app.post(\"/signup\", sessionHandler.handleSignup);`). Without CSRF protection, authenticated users can be tricked into submitting unwanted requests.",
+          "line": 38,
+          "suggestion": "Use CSRF middleware or set `SameSite=Strict` on session cookies.",
+          "rule_id": "JS-060",
+          "cwe": "CWE-352",
+          "category": "security",
+          "finding_class": "security",
+          "agent": "js-analyzer",
+          "confidence": 1.0,
+          "auto_fix": "",
+          "explanation": "",
+          "analysis_kind": "pattern",
+          "trace": [],
+          "rule": {
+            "rule_id": "JS-060",
+            "title": "State-mutating route may lack CSRF protection",
+            "category": "security",
+            "default_severity": "medium",
+            "languages": [
+              "javascript",
+              "typescript"
+            ],
+            "cwe": "CWE-352",
+            "maturity": "stable",
+            "precision": "medium",
+            "summary": "POST/PUT/PATCH/DELETE route defined (matched code).",
+            "remediation": "Use CSRF middleware or set `SameSite=Strict` on session cookies.",
+            "docs_url": "https://cwe.mitre.org/data/definitions/352.html",
+            "known_limitations": [],
+            "tags": [
+              "csrf",
+              "browser",
+              "middleware",
+              "javascript",
+              "OWASP:A01:2021"
+            ]
+          }
+        },
+        {
+          "severity": "medium",
+          "title": "CWE-352: State-mutating route may lack CSRF protection at line 48",
+          "description": "POST/PUT/PATCH/DELETE route defined at L48 (`app.post(\"/profile\", isLoggedIn, profileHandler.handleProfileUpdate);`). Without CSRF protection, authenticated users can be tricked into submitting unwanted requests.",
+          "line": 48,
+          "suggestion": "Use CSRF middleware or set `SameSite=Strict` on session cookies.",
+          "rule_id": "JS-060",
+          "cwe": "CWE-352",
+          "category": "security",
+          "finding_class": "security",
+          "agent": "js-analyzer",
+          "confidence": 1.0,
+          "auto_fix": "",
+          "explanation": "",
+          "analysis_kind": "pattern",
+          "trace": [],
+          "rule": {
+            "rule_id": "JS-060",
+            "title": "State-mutating route may lack CSRF protection",
+            "category": "security",
+            "default_severity": "medium",
+            "languages": [
+              "javascript",
+              "typescript"
+            ],
+            "cwe": "CWE-352",
+            "maturity": "stable",
+            "precision": "medium",
+            "summary": "POST/PUT/PATCH/DELETE route defined (matched code).",
+            "remediation": "Use CSRF middleware or set `SameSite=Strict` on session cookies.",
+            "docs_url": "https://cwe.mitre.org/data/definitions/352.html",
+            "known_limitations": [],
+            "tags": [
+              "csrf",
+              "browser",
+              "middleware",
+              "javascript",
+              "OWASP:A01:2021"
+            ]
+          }
+        },
+        {
+          "severity": "medium",
+          "title": "CWE-352: State-mutating route may lack CSRF protection at line 52",
+          "description": "POST/PUT/PATCH/DELETE route defined at L52 (`app.post(\"/contributions\", isLoggedIn, contributionsHandler.handleContributionsUpdate);`). Without CSRF protection, authenticated users can be tricked into submitting unwanted requests.",
+          "line": 52,
+          "suggestion": "Use CSRF middleware or set `SameSite=Strict` on session cookies.",
+          "rule_id": "JS-060",
+          "cwe": "CWE-352",
+          "category": "security",
+          "finding_class": "security",
+          "agent": "js-analyzer",
+          "confidence": 1.0,
+          "auto_fix": "",
+          "explanation": "",
+          "analysis_kind": "pattern",
+          "trace": [],
+          "rule": {
+            "rule_id": "JS-060",
+            "title": "State-mutating route may lack CSRF protection",
+            "category": "security",
+            "default_severity": "medium",
+            "languages": [
+              "javascript",
+              "typescript"
+            ],
+            "cwe": "CWE-352",
+            "maturity": "stable",
+            "precision": "medium",
+            "summary": "POST/PUT/PATCH/DELETE route defined (matched code).",
+            "remediation": "Use CSRF middleware or set `SameSite=Strict` on session cookies.",
+            "docs_url": "https://cwe.mitre.org/data/definitions/352.html",
+            "known_limitations": [],
+            "tags": [
+              "csrf",
+              "browser",
+              "middleware",
+              "javascript",
+              "OWASP:A01:2021"
+            ]
+          }
+        },
+        {
+          "severity": "medium",
+          "title": "CWE-352: State-mutating route may lack CSRF protection at line 56",
+          "description": "POST/PUT/PATCH/DELETE route defined at L56 (`app.post(\"/benefits\", isLoggedIn, benefitsHandler.updateBenefits);`). Without CSRF protection, authenticated users can be tricked into submitting unwanted requests.",
+          "line": 56,
+          "suggestion": "Use CSRF middleware or set `SameSite=Strict` on session cookies.",
+          "rule_id": "JS-060",
+          "cwe": "CWE-352",
+          "category": "security",
+          "finding_class": "security",
+          "agent": "js-analyzer",
+          "confidence": 1.0,
+          "auto_fix": "",
+          "explanation": "",
+          "analysis_kind": "pattern",
+          "trace": [],
+          "rule": {
+            "rule_id": "JS-060",
+            "title": "State-mutating route may lack CSRF protection",
+            "category": "security",
+            "default_severity": "medium",
+            "languages": [
+              "javascript",
+              "typescript"
+            ],
+            "cwe": "CWE-352",
+            "maturity": "stable",
+            "precision": "medium",
+            "summary": "POST/PUT/PATCH/DELETE route defined (matched code).",
+            "remediation": "Use CSRF middleware or set `SameSite=Strict` on session cookies.",
+            "docs_url": "https://cwe.mitre.org/data/definitions/352.html",
+            "known_limitations": [],
+            "tags": [
+              "csrf",
+              "browser",
+              "middleware",
+              "javascript",
+              "OWASP:A01:2021"
+            ]
+          }
+        },
+        {
+          "severity": "medium",
+          "title": "CWE-352: State-mutating route may lack CSRF protection at line 67",
+          "description": "POST/PUT/PATCH/DELETE route defined at L67 (`app.post(\"/memos\", isLoggedIn, memosHandler.addMemos);`). Without CSRF protection, authenticated users can be tricked into submitting unwanted requests.",
+          "line": 67,
+          "suggestion": "Use CSRF middleware or set `SameSite=Strict` on session cookies.",
+          "rule_id": "JS-060",
+          "cwe": "CWE-352",
+          "category": "security",
+          "finding_class": "security",
+          "agent": "js-analyzer",
+          "confidence": 1.0,
+          "auto_fix": "",
+          "explanation": "",
+          "analysis_kind": "pattern",
+          "trace": [],
+          "rule": {
+            "rule_id": "JS-060",
+            "title": "State-mutating route may lack CSRF protection",
+            "category": "security",
+            "default_severity": "medium",
+            "languages": [
+              "javascript",
+              "typescript"
+            ],
+            "cwe": "CWE-352",
+            "maturity": "stable",
+            "precision": "medium",
+            "summary": "POST/PUT/PATCH/DELETE route defined (matched code).",
+            "remediation": "Use CSRF middleware or set `SameSite=Strict` on session cookies.",
+            "docs_url": "https://cwe.mitre.org/data/definitions/352.html",
+            "known_limitations": [],
+            "tags": [
+              "csrf",
+              "browser",
+              "middleware",
+              "javascript",
+              "OWASP:A01:2021"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "repo": "django/django",
+      "file": "django/contrib/admin/static/admin/js/vendor/select2/select2.full.min.js",
+      "language": "javascript",
+      "lines_scanned": 2,
+      "finding_count": 4,
+      "finding_count_scored": 2,
+      "expected_labels": [
+        "CWE-95",
+        "CWE-98"
+      ],
+      "label_reasons": [
+        "CWE-95: pattern (?<!def\\s)(?<![\\w.])eval\\s*\\(|\\bnew\\s+Fu...",
+        "CWE-98: pattern \\brequire\\s*\\(\\s*(?![\\\"']).+\\)|\\bimport\\...",
+        "CWE-95: dynamic code execution primitive"
+      ],
+      "label_source": "weak",
+      "predicted_labels": [
+        "CWE-95",
+        "CWE-98"
+      ],
+      "vendor_or_minified": true,
+      "tp": 2,
+      "fp": 0,
+      "fn": 0,
+      "findings": [
+        {
+          "severity": "critical",
+          "title": "CWE-95: Code injection via new Function() at line 2",
+          "description": "`new Function(...)` at L2: `!function(n){\"function\"==typeof define&&define.amd?define([\"jquery\"],n):\"object\"==typeof m`. This is equivalent to eval(); any user-controlled string becomes executable code. (minified bundle without source map; confidence downgraded to low)",
+          "line": 2,
+          "suggestion": "Avoid new Function(). If dynamic logic is required, use a safe interpreter.",
+          "rule_id": "JS-005",
+          "cwe": "CWE-95",
+          "category": "security",
+          "finding_class": "security",
+          "agent": "js-analyzer",
+          "confidence": 0.35,
+          "auto_fix": "",
+          "explanation": "",
+          "analysis_kind": "pattern",
+          "trace": [],
+          "rule": {
+            "rule_id": "JS-005",
+            "title": "Code injection via new Function()",
+            "category": "security",
+            "default_severity": "critical",
+            "languages": [
+              "javascript",
+              "typescript"
+            ],
+            "cwe": "CWE-95",
+            "maturity": "stable",
+            "precision": "high",
+            "summary": "`new Function(...)`.",
+            "remediation": "Avoid new Function(). If dynamic logic is required, use a safe interpreter.",
+            "docs_url": "https://cwe.mitre.org/data/definitions/95.html",
+            "known_limitations": [],
+            "tags": [
+              "eval",
+              "code-exec",
+              "rce",
+              "javascript",
+              "OWASP:A03:2021"
+            ]
+          }
+        },
+        {
+          "severity": "high",
+          "title": "CWE-98: Dynamic require() with variable path at line 2",
+          "description": "`require()` called with a non-literal argument at L2: `!function(n){\"function\"==typeof define&&define.amd?define([\"jquery\"],n):\"object\"==typeof m`. (minified bundle without source map; confidence downgraded to low)",
+          "line": 2,
+          "suggestion": "Use static `require('module-name')` only. Never pass user input to require().",
+          "rule_id": "JS-023",
+          "cwe": "CWE-98",
+          "category": "security",
+          "finding_class": "security",
+          "agent": "js-analyzer",
+          "confidence": 0.35,
+          "auto_fix": "",
+          "explanation": "",
+          "analysis_kind": "pattern",
+          "trace": [],
+          "rule": {
+            "rule_id": "JS-023",
+            "title": "Dynamic require() with variable path",
+            "category": "security",
+            "default_severity": "high",
+            "languages": [
+              "javascript",
+              "typescript"
+            ],
+            "cwe": "CWE-98",
+            "maturity": "stable",
+            "precision": "high",
+            "summary": "`require()` called with a non-literal argument.",
+            "remediation": "Use static `require('module-name')` only. Never pass user input to require().",
+            "docs_url": "https://cwe.mitre.org/data/definitions/98.html",
+            "known_limitations": [],
+            "tags": [
+              "dynamic-load",
+              "module",
+              "supply-chain",
+              "javascript",
+              "OWASP:A03:2021"
+            ]
+          }
+        },
+        {
+          "severity": "medium",
+          "title": "CWE-338: Weak PRNG (Math.random) in security context at line 2",
+          "description": "`Math.random()` used near security-sensitive code at L2: `!function(n){\"function\"==typeof define&&define.amd?define([\"jquery\"],n):\"object\"==typeof m`. Math.random is NOT cryptographically secure. (minified bundle without source map; confidence downgraded to low)",
+          "line": 2,
+          "suggestion": "Use `crypto.randomBytes(32)` (Node.js) or `crypto.getRandomValues()` (browser).",
+          "rule_id": "JS-016",
+          "cwe": "CWE-338",
+          "category": "security",
+          "finding_class": "security",
+          "agent": "js-analyzer",
+          "confidence": 0.35,
+          "auto_fix": "",
+          "explanation": "",
+          "analysis_kind": "pattern",
+          "trace": [],
+          "rule": {
+            "rule_id": "JS-016",
+            "title": "Weak PRNG (Math.random) in security context",
+            "category": "security",
+            "default_severity": "medium",
+            "languages": [
+              "javascript",
+              "typescript"
+            ],
+            "cwe": "CWE-338",
+            "maturity": "stable",
+            "precision": "medium",
+            "summary": "`Math.random()` used near security-sensitive code.",
+            "remediation": "Use `crypto.randomBytes(32)` (Node.js) or `crypto.getRandomValues()` (browser).",
+            "docs_url": "https://cwe.mitre.org/data/definitions/338.html",
+            "known_limitations": [],
+            "tags": [
+              "crypto",
+              "randomness",
+              "tokens",
+              "javascript",
+              "OWASP:A02:2021"
+            ]
+          }
+        },
+        {
+          "severity": "low",
+          "title": "CWE-1333: Potential ReDoS \u2014 catastrophic backtracking regex at line 2",
+          "description": "Regex with nested quantifiers or ambiguous alternation at L2: `!function(n){\"function\"==typeof define&&define.amd?define([\"jquery\"],n):\"object\"==typeof m`. (minified bundle without source map; confidence downgraded to low) (vendor/minified asset heuristic downgraded) (framework-internal implementation heuristic downgraded)",
+          "line": 2,
+          "suggestion": "Use safe regex patterns or a non-backtracking engine.",
+          "rule_id": "JS-057",
+          "cwe": "CWE-1333",
+          "category": "security",
+          "finding_class": "security",
+          "agent": "js-analyzer",
+          "confidence": 0.15,
+          "auto_fix": "",
+          "explanation": "",
+          "analysis_kind": "pattern",
+          "trace": [],
+          "rule": {
+            "rule_id": "JS-057",
+            "title": "Potential ReDoS \u2014 catastrophic backtracking regex",
+            "category": "security",
+            "default_severity": "high",
+            "languages": [
+              "javascript",
+              "typescript"
+            ],
+            "cwe": "CWE-1333",
+            "maturity": "stable",
+            "precision": "medium",
+            "summary": "Regex with nested quantifiers or ambiguous alternation.",
+            "remediation": "Use safe regex patterns or a non-backtracking engine.",
+            "docs_url": "https://cwe.mitre.org/data/definitions/1333.html",
+            "known_limitations": [],
+            "tags": [
+              "regex",
+              "redos",
+              "performance",
+              "javascript",
+              "OWASP:A06:2021"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "repo": "django/django",
+      "file": "js_tests/gis/mapwidget.test.js",
+      "language": "javascript",
+      "lines_scanned": 258,
+      "finding_count": 2,
+      "finding_count_scored": 2,
+      "expected_labels": [
+        "CWE-79"
+      ],
+      "label_reasons": [
+        "CWE-79: pattern innerHTML\\s*=|document\\.write\\s*\\(..."
+      ],
+      "label_source": "weak",
+      "predicted_labels": [
+        "CWE-79"
+      ],
+      "vendor_or_minified": false,
+      "tp": 1,
+      "fp": 0,
+      "fn": 0,
+      "findings": [
+        {
+          "severity": "critical",
+          "title": "CWE-79: XSS via innerHTML assignment at line 217",
+          "description": "Unsanitized data assigned to `innerHTML` or `outerHTML` at L217: `wrapper1.innerHTML = ``. An attacker can inject a `<script>` tag or event handler that executes in the victim's browser.",
+          "line": 217,
+          "suggestion": "Use `textContent` instead of `innerHTML`, or sanitize with DOMPurify.sanitize(). Never concatenate user data into HTML.",
+          "rule_id": "JS-001",
+          "cwe": "CWE-79",
+          "category": "security",
+          "finding_class": "security",
+          "agent": "js-analyzer",
+          "confidence": 1.0,
+          "auto_fix": "",
+          "explanation": "",
+          "analysis_kind": "pattern",
+          "trace": [],
+          "rule": {
+            "rule_id": "JS-001",
+            "title": "XSS via innerHTML assignment",
+            "category": "security",
+            "default_severity": "critical",
+            "languages": [
+              "javascript",
+              "typescript"
+            ],
+            "cwe": "CWE-79",
+            "maturity": "stable",
+            "precision": "high",
+            "summary": "Unsanitized data assigned to `innerHTML` or `outerHTML`.",
+            "remediation": "Use `textContent` instead of `innerHTML`, or sanitize with DOMPurify.sanitize(). Never concatenate user data into HTML.",
+            "docs_url": "https://cwe.mitre.org/data/definitions/79.html",
+            "known_limitations": [
+              "DOM and template heuristics are strongest when flows remain inside a file or helper chain."
+            ],
+            "tags": [
+              "xss",
+              "html",
+              "frontend",
+              "javascript",
+              "OWASP:A03:2021",
+              "NIST:SI-10"
+            ]
+          }
+        },
+        {
+          "severity": "critical",
+          "title": "CWE-79: XSS via innerHTML assignment at line 229",
+          "description": "Unsanitized data assigned to `innerHTML` or `outerHTML` at L229: `wrapper2.innerHTML = ``. An attacker can inject a `<script>` tag or event handler that executes in the victim's browser.",
+          "line": 229,
+          "suggestion": "Use `textContent` instead of `innerHTML`, or sanitize with DOMPurify.sanitize(). Never concatenate user data into HTML.",
+          "rule_id": "JS-001",
+          "cwe": "CWE-79",
+          "category": "security",
+          "finding_class": "security",
+          "agent": "js-analyzer",
+          "confidence": 1.0,
+          "auto_fix": "",
+          "explanation": "",
+          "analysis_kind": "pattern",
+          "trace": [],
+          "rule": {
+            "rule_id": "JS-001",
+            "title": "XSS via innerHTML assignment",
+            "category": "security",
+            "default_severity": "critical",
+            "languages": [
+              "javascript",
+              "typescript"
+            ],
+            "cwe": "CWE-79",
+            "maturity": "stable",
+            "precision": "high",
+            "summary": "Unsanitized data assigned to `innerHTML` or `outerHTML`.",
+            "remediation": "Use `textContent` instead of `innerHTML`, or sanitize with DOMPurify.sanitize(). Never concatenate user data into HTML.",
+            "docs_url": "https://cwe.mitre.org/data/definitions/79.html",
+            "known_limitations": [
+              "DOM and template heuristics are strongest when flows remain inside a file or helper chain."
+            ],
+            "tags": [
+              "xss",
+              "html",
+              "frontend",
+              "javascript",
+              "OWASP:A03:2021",
+              "NIST:SI-10"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "repo": "django/django",
+      "file": "django/contrib/admin/static/admin/js/vendor/select2/select2.full.js",
+      "language": "javascript",
+      "lines_scanned": 6820,
+      "finding_count": 10,
+      "finding_count_scored": 7,
+      "expected_labels": [
+        "CWE-98"
+      ],
+      "label_reasons": [
+        "CWE-98: pattern \\brequire\\s*\\(\\s*(?![\\\"']).+\\)|\\bimport\\..."
+      ],
+      "label_source": "weak",
+      "predicted_labels": [
+        "CWE-98"
+      ],
+      "vendor_or_minified": true,
+      "tp": 1,
+      "fp": 0,
+      "fn": 0,
+      "findings": [
+        {
+          "severity": "high",
+          "title": "CWE-98: Dynamic require() with variable path at line 343",
+          "description": "`require()` called with a non-literal argument at L343: `args[i] = handlers.require(name);`.",
+          "line": 343,
+          "suggestion": "Use static `require('module-name')` only. Never pass user input to require().",
+          "rule_id": "JS-023",
+          "cwe": "CWE-98",
+          "category": "security",
+          "finding_class": "security",
+          "agent": "js-analyzer",
+          "confidence": 1.0,
+          "auto_fix": "",
+          "explanation": "",
+          "analysis_kind": "pattern",
+          "trace": [],
+          "rule": {
+            "rule_id": "JS-023",
+            "title": "Dynamic require() with variable path",
+            "category": "security",
+            "default_severity": "high",
+            "languages": [
+              "javascript",
+              "typescript"
+            ],
+            "cwe": "CWE-98",
+            "maturity": "stable",
+            "precision": "high",
+            "summary": "`require()` called with a non-literal argument.",
+            "remediation": "Use static `require('module-name')` only. Never pass user input to require().",
+            "docs_url": "https://cwe.mitre.org/data/definitions/98.html",
+            "known_limitations": [],
+            "tags": [
+              "dynamic-load",
+              "module",
+              "supply-chain",
+              "javascript",
+              "OWASP:A03:2021"
+            ]
+          }
+        },
+        {
+          "severity": "high",
+          "title": "CWE-98: Dynamic require() with variable path at line 2284",
+          "description": "`require()` called with a non-literal argument at L2284: `var translations = require(path);`.",
+          "line": 2284,
+          "suggestion": "Use static `require('module-name')` only. Never pass user input to require().",
+          "rule_id": "JS-023",
+          "cwe": "CWE-98",
+          "category": "security",
+          "finding_class": "security",
+          "agent": "js-analyzer",
+          "confidence": 1.0,
+          "auto_fix": "",
+          "explanation": "",
+          "analysis_kind": "pattern",
+          "trace": [],
+          "rule": {
+            "rule_id": "JS-023",
+            "title": "Dynamic require() with variable path",
+            "category": "security",
+            "default_severity": "high",
+            "languages": [
+              "javascript",
+              "typescript"
+            ],
+            "cwe": "CWE-98",
+            "maturity": "stable",
+            "precision": "high",
+            "summary": "`require()` called with a non-literal argument.",
+            "remediation": "Use static `require('module-name')` only. Never pass user input to require().",
+            "docs_url": "https://cwe.mitre.org/data/definitions/98.html",
+            "known_limitations": [],
+            "tags": [
+              "dynamic-load",
+              "module",
+              "supply-chain",
+              "javascript",
+              "OWASP:A03:2021"
+            ]
+          }
+        },
+        {
+          "severity": "high",
+          "title": "CWE-98: Dynamic require() with variable path at line 4859",
+          "description": "`require()` called with a non-literal argument at L4859: `var Query = require(options.amdBase + 'compat/query');`.",
+          "line": 4859,
+          "suggestion": "Use static `require('module-name')` only. Never pass user input to require().",
+          "rule_id": "JS-023",
+          "cwe": "CWE-98",
+          "category": "security",
+          "finding_class": "security",
+          "agent": "js-analyzer",
+          "confidence": 1.0,
+          "auto_fix": "",
+          "explanation": "",
+          "analysis_kind": "pattern",
+          "trace": [],
+          "rule": {
+            "rule_id": "JS-023",
+            "title": "Dynamic require() with variable path",
+            "category": "security",
+            "default_severity": "high",
+            "languages": [
+              "javascript",
+              "typescript"
+            ],
+            "cwe": "CWE-98",
+            "maturity": "stable",
+            "precision": "high",
+            "summary": "`require()` called with a non-literal argument.",
+            "remediation": "Use static `require('module-name')` only. Never pass user input to require().",
+            "docs_url": "https://cwe.mitre.org/data/definitions/98.html",
+            "known_limitations": [],
+            "tags": [
+              "dynamic-load",
+              "module",
+              "supply-chain",
+              "javascript",
+              "OWASP:A03:2021"
+            ]
+          }
+        },
+        {
+          "severity": "high",
+          "title": "CWE-98: Dynamic require() with variable path at line 4868",
+          "description": "`require()` called with a non-literal argument at L4868: `var InitSelection = require(options.amdBase + 'compat/initSelection');`.",
+          "line": 4868,
+          "suggestion": "Use static `require('module-name')` only. Never pass user input to require().",
+          "rule_id": "JS-023",
+          "cwe": "CWE-98",
+          "category": "security",
+          "finding_class": "security",
+          "agent": "js-analyzer",
+          "confidence": 1.0,
+          "auto_fix": "",
+          "explanation": "",
+          "analysis_kind": "pattern",
+          "trace": [],
+          "rule": {
+            "rule_id": "JS-023",
+            "title": "Dynamic require() with variable path",
+            "category": "security",
+            "default_severity": "high",
+            "languages": [
+              "javascript",
+              "typescript"
+            ],
+            "cwe": "CWE-98",
+            "maturity": "stable",
+            "precision": "high",
+            "summary": "`require()` called with a non-literal argument.",
+            "remediation": "Use static `require('module-name')` only. Never pass user input to require().",
+            "docs_url": "https://cwe.mitre.org/data/definitions/98.html",
+            "known_limitations": [],
+            "tags": [
+              "dynamic-load",
+              "module",
+              "supply-chain",
+              "javascript",
+              "OWASP:A03:2021"
+            ]
+          }
+        },
+        {
+          "severity": "high",
+          "title": "CWE-98: Dynamic require() with variable path at line 4930",
+          "description": "`require()` called with a non-literal argument at L4930: `var DropdownCSS = require(options.amdBase + 'compat/dropdownCss');`.",
+          "line": 4930,
+          "suggestion": "Use static `require('module-name')` only. Never pass user input to require().",
+          "rule_id": "JS-023",
+          "cwe": "CWE-98",
+          "category": "security",
+          "finding_class": "security",
+          "agent": "js-analyzer",
+          "confidence": 1.0,
+          "auto_fix": "",
+          "explanation": "",
+          "analysis_kind": "pattern",
+          "trace": [],
+          "rule": {
+            "rule_id": "JS-023",
+            "title": "Dynamic require() with variable path",
+            "category": "security",
+            "default_severity": "high",
+            "languages": [
+              "javascript",
+              "typescript"
+            ],
+            "cwe": "CWE-98",
+            "maturity": "stable",
+            "precision": "high",
+            "summary": "`require()` called with a non-literal argument.",
+            "remediation": "Use static `require('module-name')` only. Never pass user input to require().",
+            "docs_url": "https://cwe.mitre.org/data/definitions/98.html",
+            "known_limitations": [],
+            "tags": [
+              "dynamic-load",
+              "module",
+              "supply-chain",
+              "javascript",
+              "OWASP:A03:2021"
+            ]
+          }
+        },
+        {
+          "severity": "high",
+          "title": "CWE-98: Dynamic require() with variable path at line 4978",
+          "description": "`require()` called with a non-literal argument at L4978: `var ContainerCSS = require(options.amdBase + 'compat/containerCss');`.",
+          "line": 4978,
+          "suggestion": "Use static `require('module-name')` only. Never pass user input to require().",
+          "rule_id": "JS-023",
+          "cwe": "CWE-98",
+          "category": "security",
+          "finding_class": "security",
+          "agent": "js-analyzer",
+          "confidence": 1.0,
+          "auto_fix": "",
+          "explanation": "",
+          "analysis_kind": "pattern",
+          "trace": [],
+          "rule": {
+            "rule_id": "JS-023",
+            "title": "Dynamic require() with variable path",
+            "category": "security",
+            "default_severity": "high",
+            "languages": [
+              "javascript",
+              "typescript"
+            ],
+            "cwe": "CWE-98",
+            "maturity": "stable",
+            "precision": "high",
+            "summary": "`require()` called with a non-literal argument.",
+            "remediation": "Use static `require('module-name')` only. Never pass user input to require().",
+            "docs_url": "https://cwe.mitre.org/data/definitions/98.html",
+            "known_limitations": [],
+            "tags": [
+              "dynamic-load",
+              "module",
+              "supply-chain",
+              "javascript",
+              "OWASP:A03:2021"
+            ]
+          }
+        },
+        {
+          "severity": "high",
+          "title": "CWE-98: Dynamic require() with variable path at line 5236",
+          "description": "`require()` called with a non-literal argument at L5236: `var InputCompat = require(this.get('amdBase') + 'compat/inputData');`.",
+          "line": 5236,
+          "suggestion": "Use static `require('module-name')` only. Never pass user input to require().",
+          "rule_id": "JS-023",
+          "cwe": "CWE-98",
+          "category": "security",
+          "finding_class": "security",
+          "agent": "js-analyzer",
+          "confidence": 1.0,
+          "auto_fix": "",
+          "explanation": "",
+          "analysis_kind": "pattern",
+          "trace": [],
+          "rule": {
+            "rule_id": "JS-023",
+            "title": "Dynamic require() with variable path",
+            "category": "security",
+            "default_severity": "high",
+            "languages": [
+              "javascript",
+              "typescript"
+            ],
+            "cwe": "CWE-98",
+            "maturity": "stable",
+            "precision": "high",
+            "summary": "`require()` called with a non-literal argument.",
+            "remediation": "Use static `require('module-name')` only. Never pass user input to require().",
+            "docs_url": "https://cwe.mitre.org/data/definitions/98.html",
+            "known_limitations": [],
+            "tags": [
+              "dynamic-load",
+              "module",
+              "supply-chain",
+              "javascript",
+              "OWASP:A03:2021"
+            ]
+          }
+        },
+        {
+          "severity": "low",
+          "title": "CWE-1321: Prototype pollution risk at line 519",
+          "description": "Object modification using `__proto__`, `constructor.prototype`, or `Object.assign` with unchecked user input at L519: `BaseConstructor.prototype = SuperClass.prototype;`. (vendor/minified asset heuristic downgraded)",
+          "line": 519,
+          "suggestion": "Validate keys, strip `__proto__` / `constructor`, and prefer safe merge patterns.",
+          "rule_id": "JS-018",
+          "cwe": "CWE-1321",
+          "category": "security",
+          "finding_class": "security",
+          "agent": "js-analyzer",
+          "confidence": 0.15,
+          "auto_fix": "",
+          "explanation": "",
+          "analysis_kind": "pattern",
+          "trace": [],
+          "rule": {
+            "rule_id": "JS-018",
+            "title": "Prototype pollution risk",
+            "category": "security",
+            "default_severity": "high",
+            "languages": [
+              "javascript",
+              "typescript"
+            ],
+            "cwe": "CWE-1321",
+            "maturity": "stable",
+            "precision": "high",
+            "summary": "Object modification using `__proto__`, `constructor.prototype`, or `Object.assign` with unchecked user input.",
+            "remediation": "Validate keys, strip `__proto__` / `constructor`, and prefer safe merge patterns.",
+            "docs_url": "https://cwe.mitre.org/data/definitions/1321.html",
+            "known_limitations": [],
+            "tags": [
+              "prototype-pollution",
+              "objects",
+              "merge",
+              "javascript",
+              "OWASP:A03:2021"
+            ]
+          }
+        },
+        {
+          "severity": "low",
+          "title": "CWE-79: XSS via innerHTML assignment at line 1369",
+          "description": "Unsanitized data assigned to `innerHTML` or `outerHTML` at L1369: `container.innerHTML = escapeMarkup(content);`. An attacker can inject a `<script>` tag or event handler that executes in the victim's browser. (vendor/minified asset heuristic downgraded)",
+          "line": 1369,
+          "suggestion": "Use `textContent` instead of `innerHTML`, or sanitize with DOMPurify.sanitize(). Never concatenate user data into HTML.",
+          "rule_id": "JS-001",
+          "cwe": "CWE-79",
+          "category": "security",
+          "finding_class": "security",
+          "agent": "js-analyzer",
+          "confidence": 0.15,
+          "auto_fix": "",
+          "explanation": "",
+          "analysis_kind": "pattern",
+          "trace": [],
+          "rule": {
+            "rule_id": "JS-001",
+            "title": "XSS via innerHTML assignment",
+            "category": "security",
+            "default_severity": "critical",
+            "languages": [
+              "javascript",
+              "typescript"
+            ],
+            "cwe": "CWE-79",
+            "maturity": "stable",
+            "precision": "high",
+            "summary": "Unsanitized data assigned to `innerHTML` or `outerHTML`.",
+            "remediation": "Use `textContent` instead of `innerHTML`, or sanitize with DOMPurify.sanitize(). Never concatenate user data into HTML.",
+            "docs_url": "https://cwe.mitre.org/data/definitions/79.html",
+            "known_limitations": [
+              "DOM and template heuristics are strongest when flows remain inside a file or helper chain."
+            ],
+            "tags": [
+              "xss",
+              "html",
+              "frontend",
+              "javascript",
+              "OWASP:A03:2021",
+              "NIST:SI-10"
+            ]
+          }
+        },
+        {
+          "severity": "low",
+          "title": "CWE-1333: Potential ReDoS \u2014 catastrophic backtracking regex at line 5480",
+          "description": "Regex with nested quantifiers or ambiguous alternation at L5480: `var WIDTH = /^width:(([-+]?([0-9]*\\.)?[0-9]+)(px|em|ex|%|in|cm|mm|pt|pc))/i;`. (vendor/minified asset heuristic downgraded) (framework-internal implementation heuristic downgraded)",
+          "line": 5480,
+          "suggestion": "Use safe regex patterns or a non-backtracking engine.",
+          "rule_id": "JS-057",
+          "cwe": "CWE-1333",
+          "category": "security",
+          "finding_class": "security",
+          "agent": "js-analyzer",
+          "confidence": 0.15,
+          "auto_fix": "",
+          "explanation": "",
+          "analysis_kind": "pattern",
+          "trace": [],
+          "rule": {
+            "rule_id": "JS-057",
+            "title": "Potential ReDoS \u2014 catastrophic backtracking regex",
+            "category": "security",
+            "default_severity": "high",
+            "languages": [
+              "javascript",
+              "typescript"
+            ],
+            "cwe": "CWE-1333",
+            "maturity": "stable",
+            "precision": "medium",
+            "summary": "Regex with nested quantifiers or ambiguous alternation.",
+            "remediation": "Use safe regex patterns or a non-backtracking engine.",
+            "docs_url": "https://cwe.mitre.org/data/definitions/1333.html",
+            "known_limitations": [],
+            "tags": [
+              "regex",
+              "redos",
+              "performance",
+              "javascript",
+              "OWASP:A06:2021"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "repo": "django/django",
+      "file": "django/contrib/admin/sites.py",
+      "language": "python",
+      "lines_scanned": 621,
+      "finding_count": 1,
+      "finding_count_scored": 1,
+      "expected_labels": [
+        "CWE-601"
+      ],
+      "label_reasons": [
+        "CWE-601: pattern redirect\\s*\\(\\s*(?:req\\.|request\\.)..."
+      ],
+      "label_source": "weak",
+      "predicted_labels": [
+        "CWE-601"
+      ],
+      "vendor_or_minified": false,
+      "tp": 1,
+      "fp": 0,
+      "fn": 0,
+      "findings": [
+        {
+          "severity": "high",
+          "title": "CWE-601: Open redirect in login() via redirect()",
+          "description": "`login()` passes user-controlled `redirect_url` to `redirect()` at L431. An attacker can craft a URL that redirects victims to a malicious site for phishing or credential theft.",
+          "line": 431,
+          "suggestion": "Validate redirect targets against an allowlist of safe paths/domains. Use `url_for()` for internal redirects. Check with `url_has_allowed_host_and_scheme(url, allowed_hosts)`.",
+          "rule_id": "PY-046",
+          "cwe": "CWE-601",
+          "category": "security",
+          "finding_class": "security",
+          "agent": "python-analyzer",
+          "confidence": 1.0,
+          "auto_fix": "BEFORE: return HttpResponseRedirect(redirect_url)\nAFTER:              from urllib.parse import urlparse\n                    parsed = urlparse(next_url)\n                    if parsed.netloc and parsed.netloc != request.host:\n                        abort(400)  # block external redirect\n                    return HttpResponseRedirect(redirect_url)",
+          "explanation": "",
+          "analysis_kind": "pattern",
+          "trace": [],
+          "rule": {
+            "rule_id": "PY-046",
+            "title": "Python open redirect via redirect()",
+            "category": "security",
+            "default_severity": "high",
+            "languages": [
+              "python"
+            ],
+            "cwe": "CWE-601",
+            "maturity": "stable",
+            "precision": "medium",
+            "summary": "Flags `redirect()` calls that forward user-controlled URLs without allowlist validation.",
+            "remediation": "Use `url_for()` for internal redirects or allowlist external destinations explicitly.",
+            "docs_url": "https://cwe.mitre.org/data/definitions/601.html",
+            "known_limitations": [],
+            "tags": [
+              "redirect",
+              "phishing",
+              "taint",
+              "python",
+              "OWASP:A01:2021"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "repo": "django/django",
+      "file": "django/core/files/images.py",
+      "language": "python",
+      "lines_scanned": 89,
+      "finding_count": 0,
+      "finding_count_scored": 0,
+      "expected_labels": [],
+      "label_reasons": [],
+      "label_source": "weak",
+      "predicted_labels": [],
+      "vendor_or_minified": false,
+      "tp": 0,
+      "fp": 0,
+      "fn": 0,
+      "findings": []
+    },
+    {
+      "repo": "django/django",
+      "file": "django/views/decorators/vary.py",
+      "language": "python",
+      "lines_scanned": 43,
+      "finding_count": 0,
+      "finding_count_scored": 0,
+      "expected_labels": [],
+      "label_reasons": [],
+      "label_source": "weak",
+      "predicted_labels": [],
+      "vendor_or_minified": false,
+      "tp": 0,
+      "fp": 0,
+      "fn": 0,
+      "findings": []
+    },
+    {
+      "repo": "django/django",
+      "file": "django/contrib/gis/gdal/layer.py",
+      "language": "python",
+      "lines_scanned": 234,
+      "finding_count": 0,
+      "finding_count_scored": 0,
+      "expected_labels": [],
+      "label_reasons": [],
+      "label_source": "weak",
+      "predicted_labels": [],
+      "vendor_or_minified": false,
+      "tp": 0,
+      "fp": 0,
+      "fn": 0,
+      "findings": []
+    },
+    {
+      "repo": "tiangolo/fastapi",
+      "file": "fastapi/exception_handlers.py",
+      "language": "python",
+      "lines_scanned": 34,
+      "finding_count": 0,
+      "finding_count_scored": 0,
+      "expected_labels": [],
+      "label_reasons": [],
+      "label_source": "weak",
+      "predicted_labels": [],
+      "vendor_or_minified": false,
+      "tp": 0,
+      "fp": 0,
+      "fn": 0,
+      "findings": []
+    },
+    {
+      "repo": "django/django",
+      "file": "django/utils/duration.py",
+      "language": "python",
+      "lines_scanned": 46,
+      "finding_count": 0,
+      "finding_count_scored": 0,
+      "expected_labels": [],
+      "label_reasons": [],
+      "label_source": "weak",
+      "predicted_labels": [],
+      "vendor_or_minified": false,
+      "tp": 0,
+      "fp": 0,
+      "fn": 0,
+      "findings": []
+    },
+    {
+      "repo": "django/django",
+      "file": "django/core/cache/backends/dummy.py",
+      "language": "python",
+      "lines_scanned": 34,
+      "finding_count": 0,
+      "finding_count_scored": 0,
+      "expected_labels": [],
+      "label_reasons": [],
+      "label_source": "weak",
+      "predicted_labels": [],
+      "vendor_or_minified": false,
+      "tp": 0,
+      "fp": 0,
+      "fn": 0,
+      "findings": []
+    },
+    {
+      "repo": "django/django",
+      "file": "django/contrib/auth/password_validation.py",
+      "language": "python",
+      "lines_scanned": 280,
+      "finding_count": 0,
+      "finding_count_scored": 0,
+      "expected_labels": [],
+      "label_reasons": [],
+      "label_source": "weak",
+      "predicted_labels": [],
+      "vendor_or_minified": false,
+      "tp": 0,
+      "fp": 0,
+      "fn": 0,
+      "findings": []
+    },
+    {
+      "repo": "django/django",
+      "file": "django/core/management/commands/dbshell.py",
+      "language": "python",
+      "lines_scanned": 49,
+      "finding_count": 0,
+      "finding_count_scored": 0,
+      "expected_labels": [],
+      "label_reasons": [],
+      "label_source": "weak",
+      "predicted_labels": [],
+      "vendor_or_minified": false,
+      "tp": 0,
+      "fp": 0,
+      "fn": 0,
+      "findings": []
+    },
+    {
+      "repo": "django/django",
+      "file": "django/urls/converters.py",
+      "language": "python",
+      "lines_scanned": 68,
+      "finding_count": 0,
+      "finding_count_scored": 0,
+      "expected_labels": [],
+      "label_reasons": [],
+      "label_source": "weak",
+      "predicted_labels": [],
+      "vendor_or_minified": false,
+      "tp": 0,
+      "fp": 0,
+      "fn": 0,
+      "findings": []
+    },
+    {
+      "repo": "django/django",
+      "file": "django/core/files/storage/mixins.py",
+      "language": "python",
+      "lines_scanned": 15,
+      "finding_count": 0,
+      "finding_count_scored": 0,
+      "expected_labels": [],
+      "label_reasons": [],
+      "label_source": "weak",
+      "predicted_labels": [],
+      "vendor_or_minified": false,
+      "tp": 0,
+      "fp": 0,
+      "fn": 0,
+      "findings": []
+    },
+    {
+      "repo": "django/django",
+      "file": "django/contrib/admin/static/admin/js/prepopulate.js",
+      "language": "javascript",
+      "lines_scanned": 45,
+      "finding_count": 0,
+      "finding_count_scored": 0,
+      "expected_labels": [],
+      "label_reasons": [],
+      "label_source": "weak",
+      "predicted_labels": [],
+      "vendor_or_minified": false,
+      "tp": 0,
+      "fp": 0,
+      "fn": 0,
+      "findings": []
+    },
+    {
+      "repo": "django/django",
+      "file": "django/db/backends/postgresql/operations.py",
+      "language": "python",
+      "lines_scanned": 405,
+      "finding_count": 0,
+      "finding_count_scored": 0,
+      "expected_labels": [],
+      "label_reasons": [],
+      "label_source": "weak",
+      "predicted_labels": [],
+      "vendor_or_minified": false,
+      "tp": 0,
+      "fp": 0,
+      "fn": 0,
+      "findings": []
+    },
+    {
+      "repo": "django/django",
+      "file": "django/views/generic/__init__.py",
+      "language": "python",
+      "lines_scanned": 39,
+      "finding_count": 0,
+      "finding_count_scored": 0,
+      "expected_labels": [],
+      "label_reasons": [],
+      "label_source": "weak",
+      "predicted_labels": [],
+      "vendor_or_minified": false,
+      "tp": 0,
+      "fp": 0,
+      "fn": 0,
+      "findings": []
+    },
+    {
+      "repo": "django/django",
+      "file": "django/utils/lorem_ipsum.py",
+      "language": "python",
+      "lines_scanned": 286,
+      "finding_count": 0,
+      "finding_count_scored": 0,
+      "expected_labels": [],
+      "label_reasons": [],
+      "label_source": "weak",
+      "predicted_labels": [],
+      "vendor_or_minified": false,
+      "tp": 0,
+      "fp": 0,
+      "fn": 0,
+      "findings": []
+    },
+    {
+      "repo": "django/django",
+      "file": "django/contrib/staticfiles/management/commands/collectstatic.py",
+      "language": "python",
+      "lines_scanned": 403,
+      "finding_count": 5,
+      "finding_count_scored": 0,
+      "expected_labels": [],
+      "label_reasons": [],
+      "label_source": "weak",
+      "predicted_labels": [],
+      "vendor_or_minified": false,
+      "tp": 0,
+      "fp": 0,
+      "fn": 0,
+      "findings": [
+        {
+          "severity": "medium",
+          "title": "Implicit None return in link_file() \u2014 can fall off end",
+          "description": "`link_file()` has 1 branches that return a value and 1 that return None implicitly. Callers that do not check for None will encounter AttributeError or incorrect logic.",
+          "line": 358,
+          "suggestion": "Ensure all code paths return an explicit value, or annotate the return type.",
+          "rule_id": "PY-003",
+          "cwe": "",
+          "category": "bug",
+          "finding_class": "quality",
+          "agent": "python-analyzer",
+          "confidence": 1.0,
+          "auto_fix": "",
+          "explanation": "",
+          "analysis_kind": "pattern",
+          "trace": [],
+          "rule": {
+            "rule_id": "PY-003",
+            "title": "Inconsistent return paths causing implicit None",
+            "category": "bug",
+            "default_severity": "medium",
+            "languages": [
+              "python"
+            ],
+            "cwe": "",
+            "maturity": "stable",
+            "precision": "high",
+            "summary": "Flags functions whose branches mix explicit return values with implicit `None` fall-through.",
+            "remediation": "Ensure all paths return an explicit value or annotate the optional return contract clearly.",
+            "docs_url": "https://github.com/mattybellx/Ansede/blob/main/docs/QUALITY.md",
+            "known_limitations": [],
+            "tags": [
+              "python",
+              "returns",
+              "bug-risk"
+            ]
+          }
+        },
+        {
+          "severity": "medium",
+          "title": "Implicit None return in copy_file() \u2014 can fall off end",
+          "description": "`copy_file()` has 1 branches that return a value and 1 that return None implicitly. Callers that do not check for None will encounter AttributeError or incorrect logic.",
+          "line": 393,
+          "suggestion": "Ensure all code paths return an explicit value, or annotate the return type.",
+          "rule_id": "PY-003",
+          "cwe": "",
+          "category": "bug",
+          "finding_class": "quality",
+          "agent": "python-analyzer",
+          "confidence": 1.0,
+          "auto_fix": "",
+          "explanation": "",
+          "analysis_kind": "pattern",
+          "trace": [],
+          "rule": {
+            "rule_id": "PY-003",
+            "title": "Inconsistent return paths causing implicit None",
+            "category": "bug",
+            "default_severity": "medium",
+            "languages": [
+              "python"
+            ],
+            "cwe": "",
+            "maturity": "stable",
+            "precision": "high",
+            "summary": "Flags functions whose branches mix explicit return values with implicit `None` fall-through.",
+            "remediation": "Ensure all paths return an explicit value or annotate the optional return contract clearly.",
+            "docs_url": "https://github.com/mattybellx/Ansede/blob/main/docs/QUALITY.md",
+            "known_limitations": [],
+            "tags": [
+              "python",
+              "returns",
+              "bug-risk"
+            ]
+          }
+        },
+        {
+          "severity": "low",
+          "title": "CWE-22: Path traversal in collect() via os.path.join()",
+          "description": "`collect()` passes `prefix` (dynamic/path-like input) to `os.path.join()` at L131 without sanitization. `../` sequences can escape the intended directory. (framework-internal implementation heuristic downgraded)",
+          "line": 131,
+          "suggestion": "Sanitize: `from werkzeug.utils import secure_filename; safe = secure_filename(filename)`. Verify resolved path: `assert os.path.realpath(p).startswith(BASE_DIR)`.",
+          "rule_id": "PY-023",
+          "cwe": "CWE-22",
+          "category": "security",
+          "finding_class": "security",
+          "agent": "python-analyzer",
+          "confidence": 0.25,
+          "auto_fix": "",
+          "explanation": "",
+          "analysis_kind": "pattern",
+          "trace": [],
+          "rule": {
+            "rule_id": "PY-023",
+            "title": "Python path join with unsanitized user input",
+            "category": "security",
+            "default_severity": "high",
+            "languages": [
+              "python"
+            ],
+            "cwe": "CWE-22",
+            "maturity": "stable",
+            "precision": "medium",
+            "summary": "Flags `os.path.join` or similar path composition with tainted user input.",
+            "remediation": "Normalize against a safe root and reject any resolved path that escapes it.",
+            "docs_url": "https://cwe.mitre.org/data/definitions/22.html",
+            "known_limitations": [],
+            "tags": [
+              "path",
+              "filesystem",
+              "taint",
+              "python",
+              "join",
+              "OWASP:A01:2021"
+            ]
+          }
+        },
+        {
+          "severity": "low",
+          "title": "CWE-22: Path traversal in clear_dir() via os.path.join()",
+          "description": "`clear_dir()` passes `path` (dynamic/path-like input) to `os.path.join()` at L278 without sanitization. `../` sequences can escape the intended directory. (framework-internal implementation heuristic downgraded)",
+          "line": 278,
+          "suggestion": "Sanitize: `from werkzeug.utils import secure_filename; safe = secure_filename(filename)`. Verify resolved path: `assert os.path.realpath(p).startswith(BASE_DIR)`.",
+          "rule_id": "PY-023",
+          "cwe": "CWE-22",
+          "category": "security",
+          "finding_class": "security",
+          "agent": "python-analyzer",
+          "confidence": 0.25,
+          "auto_fix": "",
+          "explanation": "",
+          "analysis_kind": "pattern",
+          "trace": [],
+          "rule": {
+            "rule_id": "PY-023",
+            "title": "Python path join with unsanitized user input",
+            "category": "security",
+            "default_severity": "high",
+            "languages": [
+              "python"
+            ],
+            "cwe": "CWE-22",
+            "maturity": "stable",
+            "precision": "medium",
+            "summary": "Flags `os.path.join` or similar path composition with tainted user input.",
+            "remediation": "Normalize against a safe root and reject any resolved path that escapes it.",
+            "docs_url": "https://cwe.mitre.org/data/definitions/22.html",
+            "known_limitations": [],
+            "tags": [
+              "path",
+              "filesystem",
+              "taint",
+              "python",
+              "join",
+              "OWASP:A01:2021"
+            ]
+          }
+        },
+        {
+          "severity": "low",
+          "title": "CWE-22: Path traversal in clear_dir() via os.path.join()",
+          "description": "`clear_dir()` passes `path` (dynamic/path-like input) to `os.path.join()` at L296 without sanitization. `../` sequences can escape the intended directory. (framework-internal implementation heuristic downgraded)",
+          "line": 296,
+          "suggestion": "Sanitize: `from werkzeug.utils import secure_filename; safe = secure_filename(filename)`. Verify resolved path: `assert os.path.realpath(p).startswith(BASE_DIR)`.",
+          "rule_id": "PY-023",
+          "cwe": "CWE-22",
+          "category": "security",
+          "finding_class": "security",
+          "agent": "python-analyzer",
+          "confidence": 0.25,
+          "auto_fix": "",
+          "explanation": "",
+          "analysis_kind": "pattern",
+          "trace": [],
+          "rule": {
+            "rule_id": "PY-023",
+            "title": "Python path join with unsanitized user input",
+            "category": "security",
+            "default_severity": "high",
+            "languages": [
+              "python"
+            ],
+            "cwe": "CWE-22",
+            "maturity": "stable",
+            "precision": "medium",
+            "summary": "Flags `os.path.join` or similar path composition with tainted user input.",
+            "remediation": "Normalize against a safe root and reject any resolved path that escapes it.",
+            "docs_url": "https://cwe.mitre.org/data/definitions/22.html",
+            "known_limitations": [],
+            "tags": [
+              "path",
+              "filesystem",
+              "taint",
+              "python",
+              "join",
+              "OWASP:A01:2021"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "repo": "django/django",
+      "file": "django/core/handlers/__init__.py",
+      "language": "python",
+      "lines_scanned": 0,
+      "finding_count": 0,
+      "finding_count_scored": 0,
+      "expected_labels": [],
+      "label_reasons": [],
+      "label_source": "weak",
+      "predicted_labels": [],
+      "vendor_or_minified": false,
+      "tp": 0,
+      "fp": 0,
+      "fn": 0,
+      "findings": []
+    },
+    {
+      "repo": "pallets/flask",
+      "file": "src/flask/sansio/app.py",
+      "language": "python",
+      "lines_scanned": 1010,
+      "finding_count": 2,
+      "finding_count_scored": 0,
+      "expected_labels": [],
+      "label_reasons": [],
+      "label_source": "weak",
+      "predicted_labels": [],
+      "vendor_or_minified": false,
+      "tp": 0,
+      "fp": 0,
+      "fn": 0,
+      "findings": [
+        {
+          "severity": "medium",
+          "title": "CWE-200: Traceback/error details exposed to users at line 1007",
+          "description": "`traceback.print_exc()` or equivalent at L1007 may leak internal paths, versions, and logic to end users.",
+          "line": 1007,
+          "suggestion": "Use `logger.exception()` server-side and return a generic error message to clients.",
+          "rule_id": "PY-039",
+          "cwe": "CWE-200",
+          "category": "security",
+          "finding_class": "security",
+          "agent": "python-analyzer",
+          "confidence": 1.0,
+          "auto_fix": "",
+          "explanation": "",
+          "analysis_kind": "pattern",
+          "trace": [],
+          "rule": {
+            "rule_id": "PY-039",
+            "title": "Stack trace or internal error details exposed to users",
+            "category": "security",
+            "default_severity": "medium",
+            "languages": [
+              "python"
+            ],
+            "cwe": "CWE-200",
+            "maturity": "stable",
+            "precision": "high",
+            "summary": "Flags `traceback.print_exc()`, `sys.exc_info()` in response bodies, or debug error handlers leaking internals.",
+            "remediation": "Use generic error handlers in production; log details with `logger.exception()` server-side only.",
+            "docs_url": "https://cwe.mitre.org/data/definitions/200.html",
+            "known_limitations": [],
+            "tags": [
+              "information-disclosure",
+              "debug",
+              "errors",
+              "production",
+              "python",
+              "OWASP:A04:2021"
+            ]
+          }
+        },
+        {
+          "severity": "low",
+          "title": "CWE-22: Path traversal in auto_find_instance_path() via os.path.join()",
+          "description": "`auto_find_instance_path()` passes `package_path` (dynamic/path-like input) to `os.path.join()` at L517 without sanitization. `../` sequences can escape the intended directory. (framework-internal implementation heuristic downgraded)",
+          "line": 517,
+          "suggestion": "Sanitize: `from werkzeug.utils import secure_filename; safe = secure_filename(filename)`. Verify resolved path: `assert os.path.realpath(p).startswith(BASE_DIR)`.",
+          "rule_id": "PY-023",
+          "cwe": "CWE-22",
+          "category": "security",
+          "finding_class": "security",
+          "agent": "python-analyzer",
+          "confidence": 0.25,
+          "auto_fix": "",
+          "explanation": "",
+          "analysis_kind": "pattern",
+          "trace": [],
+          "rule": {
+            "rule_id": "PY-023",
+            "title": "Python path join with unsanitized user input",
+            "category": "security",
+            "default_severity": "high",
+            "languages": [
+              "python"
+            ],
+            "cwe": "CWE-22",
+            "maturity": "stable",
+            "precision": "medium",
+            "summary": "Flags `os.path.join` or similar path composition with tainted user input.",
+            "remediation": "Normalize against a safe root and reject any resolved path that escapes it.",
+            "docs_url": "https://cwe.mitre.org/data/definitions/22.html",
+            "known_limitations": [],
+            "tags": [
+              "path",
+              "filesystem",
+              "taint",
+              "python",
+              "join",
+              "OWASP:A01:2021"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "repo": "django/django",
+      "file": "django/contrib/redirects/models.py",
+      "language": "python",
+      "lines_scanned": 35,
+      "finding_count": 0,
+      "finding_count_scored": 0,
+      "expected_labels": [],
+      "label_reasons": [],
+      "label_source": "weak",
+      "predicted_labels": [],
+      "vendor_or_minified": false,
+      "tp": 0,
+      "fp": 0,
+      "fn": 0,
+      "findings": []
+    },
+    {
+      "repo": "django/django",
+      "file": "django/utils/http.py",
+      "language": "python",
+      "lines_scanned": 405,
+      "finding_count": 1,
+      "finding_count_scored": 0,
+      "expected_labels": [],
+      "label_reasons": [],
+      "label_source": "weak",
+      "predicted_labels": [],
+      "vendor_or_minified": false,
+      "tp": 0,
+      "fp": 0,
+      "fn": 0,
+      "findings": [
+        {
+          "severity": "low",
+          "title": "Silent exception swallowing in parse_http_date_safe()",
+          "description": "`parse_http_date_safe()` catches Exception with `pass` at L146, hiding disk I/O failures, permission errors, data corruption, and any other exception. (framework-internal implementation heuristic downgraded)",
+          "line": 146,
+          "suggestion": "Log and re-raise: `logger.exception('Unexpected error'); raise`",
+          "rule_id": "PY-001",
+          "cwe": "CWE-617",
+          "category": "error-handling",
+          "finding_class": "security",
+          "agent": "python-analyzer",
+          "confidence": 0.25,
+          "auto_fix": "BEFORE: except Exception:\nAFTER:      logger.exception(\"Unexpected error\")\n            raise",
+          "explanation": "",
+          "analysis_kind": "pattern",
+          "trace": [],
+          "rule": {
+            "rule_id": "PY-001",
+            "title": "Silent exception swallowing",
+            "category": "error-handling",
+            "default_severity": "high",
+            "languages": [
+              "python"
+            ],
+            "cwe": "CWE-617",
+            "maturity": "stable",
+            "precision": "high",
+            "summary": "Flags broad exception handlers that swallow failures with `pass` or `continue`.",
+            "remediation": "Log and re-raise unexpected errors or catch only specific exceptions you can safely handle.",
+            "docs_url": "https://cwe.mitre.org/data/definitions/617.html",
+            "known_limitations": [],
+            "tags": [
+              "exceptions",
+              "error-handling",
+              "reliability",
+              "python",
+              "swallowing"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "repo": "OWASP/NodeGoat",
+      "file": "app/routes/error.js",
+      "language": "javascript",
+      "lines_scanned": 15,
+      "finding_count": 0,
+      "finding_count_scored": 0,
+      "expected_labels": [],
+      "label_reasons": [],
+      "label_source": "weak",
+      "predicted_labels": [],
+      "vendor_or_minified": false,
+      "tp": 0,
+      "fp": 0,
+      "fn": 0,
+      "findings": []
+    },
+    {
+      "repo": "django/django",
+      "file": "django/contrib/staticfiles/urls.py",
+      "language": "python",
+      "lines_scanned": 19,
+      "finding_count": 0,
+      "finding_count_scored": 0,
+      "expected_labels": [],
+      "label_reasons": [],
+      "label_source": "weak",
+      "predicted_labels": [],
+      "vendor_or_minified": false,
+      "tp": 0,
+      "fp": 0,
+      "fn": 0,
+      "findings": []
+    },
+    {
+      "repo": "django/django",
+      "file": "django/tasks/backends/dummy.py",
+      "language": "python",
+      "lines_scanned": 64,
+      "finding_count": 0,
+      "finding_count_scored": 0,
+      "expected_labels": [],
+      "label_reasons": [],
+      "label_source": "weak",
+      "predicted_labels": [],
+      "vendor_or_minified": false,
+      "tp": 0,
+      "fp": 0,
+      "fn": 0,
+      "findings": []
+    },
+    {
+      "repo": "django/django",
+      "file": "django/contrib/contenttypes/apps.py",
+      "language": "python",
+      "lines_scanned": 22,
+      "finding_count": 0,
+      "finding_count_scored": 0,
+      "expected_labels": [],
+      "label_reasons": [],
+      "label_source": "weak",
+      "predicted_labels": [],
+      "vendor_or_minified": false,
+      "tp": 0,
+      "fp": 0,
+      "fn": 0,
+      "findings": []
+    },
+    {
+      "repo": "django/django",
+      "file": "django/core/signing.py",
+      "language": "python",
+      "lines_scanned": 278,
+      "finding_count": 0,
+      "finding_count_scored": 0,
+      "expected_labels": [],
+      "label_reasons": [],
+      "label_source": "weak",
+      "predicted_labels": [],
+      "vendor_or_minified": false,
+      "tp": 0,
+      "fp": 0,
+      "fn": 0,
+      "findings": []
+    },
+    {
+      "repo": "django/django",
+      "file": "django/contrib/gis/management/commands/ogrinspect.py",
+      "language": "python",
+      "lines_scanned": 164,
+      "finding_count": 0,
+      "finding_count_scored": 0,
+      "expected_labels": [],
+      "label_reasons": [],
+      "label_source": "weak",
+      "predicted_labels": [],
+      "vendor_or_minified": false,
+      "tp": 0,
+      "fp": 0,
+      "fn": 0,
+      "findings": []
+    },
+    {
+      "repo": "django/django",
+      "file": "django/contrib/gis/db/backends/postgis/pgraster.py",
+      "language": "python",
+      "lines_scanned": 152,
+      "finding_count": 1,
+      "finding_count_scored": 0,
+      "expected_labels": [],
+      "label_reasons": [],
+      "label_source": "weak",
+      "predicted_labels": [],
+      "vendor_or_minified": false,
+      "tp": 0,
+      "fp": 0,
+      "fn": 0,
+      "findings": [
+        {
+          "severity": "medium",
+          "title": "Implicit None return in from_pgraster() \u2014 can fall off end",
+          "description": "`from_pgraster()` has 1 branches that return a value and 1 that return None implicitly. Callers that do not check for None will encounter AttributeError or incorrect logic.",
+          "line": 42,
+          "suggestion": "Ensure all code paths return an explicit value, or annotate the return type.",
+          "rule_id": "PY-003",
+          "cwe": "",
+          "category": "bug",
+          "finding_class": "quality",
+          "agent": "python-analyzer",
+          "confidence": 1.0,
+          "auto_fix": "",
+          "explanation": "",
+          "analysis_kind": "pattern",
+          "trace": [],
+          "rule": {
+            "rule_id": "PY-003",
+            "title": "Inconsistent return paths causing implicit None",
+            "category": "bug",
+            "default_severity": "medium",
+            "languages": [
+              "python"
+            ],
+            "cwe": "",
+            "maturity": "stable",
+            "precision": "high",
+            "summary": "Flags functions whose branches mix explicit return values with implicit `None` fall-through.",
+            "remediation": "Ensure all paths return an explicit value or annotate the optional return contract clearly.",
+            "docs_url": "https://github.com/mattybellx/Ansede/blob/main/docs/QUALITY.md",
+            "known_limitations": [],
+            "tags": [
+              "python",
+              "returns",
+              "bug-risk"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "repo": "django/django",
+      "file": "django/contrib/sessions/backends/__init__.py",
+      "language": "python",
+      "lines_scanned": 0,
+      "finding_count": 0,
+      "finding_count_scored": 0,
+      "expected_labels": [],
+      "label_reasons": [],
+      "label_source": "weak",
+      "predicted_labels": [],
+      "vendor_or_minified": false,
+      "tp": 0,
+      "fp": 0,
+      "fn": 0,
+      "findings": []
+    },
+    {
+      "repo": "django/django",
+      "file": "django/utils/translation/template.py",
+      "language": "python",
+      "lines_scanned": 246,
+      "finding_count": 1,
+      "finding_count_scored": 0,
+      "expected_labels": [],
+      "label_reasons": [],
+      "label_source": "weak",
+      "predicted_labels": [],
+      "vendor_or_minified": false,
+      "tp": 0,
+      "fp": 0,
+      "fn": 0,
+      "findings": [
+        {
+          "severity": "high",
+          "title": "Excessive complexity in templatize() (CC=52)",
+          "description": "`templatize()` at L39 has cyclomatic complexity 52. Functions above 15 are hard to test, debug, and maintain.",
+          "line": 39,
+          "suggestion": "Extract sub-functions for distinct logic branches or use lookup tables.",
+          "rule_id": "PY-044",
+          "cwe": "",
+          "category": "architecture",
+          "finding_class": "quality",
+          "agent": "python-analyzer",
+          "confidence": 1.0,
+          "auto_fix": "",
+          "explanation": "",
+          "analysis_kind": "pattern",
+          "trace": [],
+          "rule": {
+            "rule_id": "PY-044",
+            "title": "Cyclomatic complexity hotspot",
+            "category": "architecture",
+            "default_severity": "medium",
+            "languages": [
+              "python"
+            ],
+            "cwe": "",
+            "maturity": "stable",
+            "precision": "high",
+            "summary": "Flags overly branchy functions that are statistically harder to review, test, and secure.",
+            "remediation": "Split complex control flow into smaller helpers with single responsibilities.",
+            "docs_url": "https://github.com/mattybellx/Ansede/blob/main/docs/QUALITY.md",
+            "known_limitations": [],
+            "tags": [
+              "quality",
+              "complexity",
+              "maintainability"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "repo": "django/django",
+      "file": "django/views/decorators/common.py",
+      "language": "python",
+      "lines_scanned": 26,
+      "finding_count": 0,
+      "finding_count_scored": 0,
+      "expected_labels": [],
+      "label_reasons": [],
+      "label_source": "weak",
+      "predicted_labels": [],
+      "vendor_or_minified": false,
+      "tp": 0,
+      "fp": 0,
+      "fn": 0,
+      "findings": []
+    },
+    {
+      "repo": "django/django",
+      "file": "django/template/backends/dummy.py",
+      "language": "python",
+      "lines_scanned": 51,
+      "finding_count": 0,
+      "finding_count_scored": 0,
+      "expected_labels": [],
+      "label_reasons": [],
+      "label_source": "weak",
+      "predicted_labels": [],
+      "vendor_or_minified": false,
+      "tp": 0,
+      "fp": 0,
+      "fn": 0,
+      "findings": []
     }
   ]
 }

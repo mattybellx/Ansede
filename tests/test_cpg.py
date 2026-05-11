@@ -127,6 +127,50 @@ def risky():
     assert len(except_edges) >= 0  # non-crash contract; builder may differ
 
 
+def test_build_cpg_assigns_ssa_versions_to_defs_and_uses():
+    from ansede_static.cpg import build_cpg
+
+    code = '''
+def f(x):
+    y = x + 1
+    y = y + 2
+    return y
+'''
+    cpg = build_cpg(code, "test.py")
+
+    ssa_def_entries = []
+    ssa_use_entries = []
+    for node in cpg.nodes.values():
+        ssa_def_entries.extend(node.meta.get("ssa_defs", []))
+        ssa_use_entries.extend(node.meta.get("ssa_uses", []))
+
+    y_defs = [entry for entry in ssa_def_entries if entry.get("var") == "y"]
+    assert len(y_defs) >= 2
+    assert y_defs[0]["name"] == "y_1"
+    assert y_defs[1]["name"] == "y_2"
+
+    assert any(entry.get("name") == "x_1" for entry in ssa_use_entries)
+    assert any(entry.get("name") in {"y_1", "y_2"} for entry in ssa_use_entries)
+
+
+def test_build_cpg_emits_phi_node_for_if_else_redefinitions():
+    from ansede_static.cpg import build_cpg
+
+    code = '''
+def f(flag):
+    if flag:
+        x = 1
+    else:
+        x = 2
+    return x
+'''
+    cpg = build_cpg(code, "test.py")
+
+    phi_nodes = [node for node in cpg.nodes.values() if node.node_type == "Phi"]
+    assert phi_nodes, "expected at least one Phi node for if/else join"
+    assert any("x" in node.meta.get("phi_vars", []) for node in phi_nodes)
+
+
 def test_build_cpg_syntax_error_returns_empty():
     from ansede_static.cpg import build_cpg
     cpg = build_cpg("def broken(", "bad.py")

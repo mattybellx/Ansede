@@ -406,14 +406,24 @@ class MultiLineRefactorer:
 
     def refactor(self, cwe: str, context: str, line_offset: int) -> Optional[str]:
         """Attempt multi-line refactoring for a given CWE."""
-        if cwe == "CWE-89":  # SQL Injection
+        if cwe == "CWE-89":
             result = MultiLineRefactorer.refactor_sql_injection(context, line_offset)
-        elif cwe == "CWE-78":  # Command Injection
+        elif cwe == "CWE-78":
             result = MultiLineRefactorer.refactor_command_injection(context, line_offset)
-        elif cwe == "CWE-22":  # Path Traversal
+        elif cwe == "CWE-22":
             result = MultiLineRefactorer.refactor_path_traversal(context, line_offset)
-        elif cwe == "CWE-862":  # Missing Auth
+        elif cwe == "CWE-862":
             result = MultiLineRefactorer.refactor_missing_auth(context, line_offset)
+        elif cwe in {"CWE-639", "CWE-285"}:
+            # IDOR/ownership: suggest adding owner filter
+            if 0 <= line_offset < len(lines):
+                vuln_line = lines[line_offset]
+                _lookup = re.compile(r'(?:\.(?:get|filter|filter_by|findById|findByPk|findOne)\s*\()', re.I)
+                if _lookup.search(vuln_line) and not re.search(r'(?:owner|user_id|created_by|tenant)', vuln_line, re.I):
+                    before = vuln_line.strip()
+                    after = re.sub(r'(\bfilter\s*\(|\bfilter_by\s*\(|\bget\s*\()', r'\1owner=request.user, ', before, count=1)
+                    result = RefactorResult(before=before, after=after,
+                        description="Add ownership filter (owner=request.user) to scope resource access")
         else:
             return None
 

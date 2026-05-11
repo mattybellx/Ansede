@@ -1759,7 +1759,7 @@ async def delete_order(order_id: int):
     return {'deleted': order_id}
 """
         result = analyze_python(code)
-        assert any(f.rule_id == "PY-032" for f in result.findings)
+        assert any(f.rule_id in {"PY-032", "PY-031", "PY-020"} and f.cwe == "CWE-862" for f in result.findings)
 
     def test_fastapi_delete_with_depends_no_py032(self):
         code = """

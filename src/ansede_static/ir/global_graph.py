@@ -584,6 +584,35 @@ class GlobalGraph:
         )
         return sink_hit, sink_trace, ret_hit, return_trace
 
+    def propagate_js_call_facts(
+        self,
+        *,
+        caller_file: str,
+        callee_file: str,
+        callee_name: str,
+        tainted_arg_indexes: Set[int],
+        call_line: Optional[int] = None,
+        caller_name: str = "<js-scope>",
+        call_string: Tuple[str, ...] = (),
+        call_string_k: int = DEFAULT_CALL_STRING_K,
+    ) -> Tuple[bool, Tuple[TraceFrame, ...], bool, Tuple[TraceFrame, ...]]:
+        """JS-facing wrapper around IFDS call transfer.
+
+        Keeps JavaScript helper-flow callsites on a single GlobalGraph entrypoint
+        while sharing the same bounded call-string and IDE-lattice transfer
+        semantics used by Python.
+        """
+        return self.propagate_call_facts(
+            caller_file=caller_file,
+            caller_name=caller_name,
+            callee_file=callee_file,
+            callee_name=callee_name,
+            tainted_arg_indexes=tainted_arg_indexes,
+            call_line=call_line,
+            call_string=call_string,
+            call_string_k=call_string_k,
+        )
+
     def resolve_cross_file_taint(
         self,
         file_path: str,

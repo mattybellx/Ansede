@@ -320,6 +320,20 @@ _SARIF_PRECISION_ORDER: dict[str, int] = {
 }
 
 
+def _enriched_properties(finding: Finding) -> dict[str, Any]:
+    """Return CVSS, OWASP, and exploitability properties for a finding."""
+    props: dict[str, Any] = {}
+    if finding.cwe:
+        try:
+            from ansede_static.engine.cvss import enrich_finding_properties
+            taint_depth = len(finding.trace) if finding.trace else 0
+            enriched = enrich_finding_properties(finding.cwe, finding.confidence, taint_depth)
+            props.update(enriched)
+        except Exception:
+            pass
+    return props
+
+
 def format_sarif(results: list[AnalysisResult], *, execution: dict[str, Any] | None = None) -> str:
     """
     Return a SARIF 2.1.0 JSON string.
@@ -352,6 +366,16 @@ def format_sarif(results: list[AnalysisResult], *, execution: dict[str, Any] | N
                     "maturity": contract.maturity,
                     "ruleSummary": contract.summary,
                 }
+                if f.cwe:
+                    try:
+                        from ansede_static.engine.cvss import get_cvss as _cvss_get, get_owasp as _owasp_get
+                        cvss = _cvss_get(f.cwe)
+                        properties["cvss"] = {"vector": cvss["vector"], "score": cvss["score"], "severity": cvss["severity"]}
+                        owasp = _owasp_get(f.cwe)
+                        if owasp:
+                            properties["owasp"] = owasp
+                    except Exception:
+                        pass
                 if f.finding_class == "security":
                     properties["security-severity"] = _cwe_to_cvss(f.cwe)
                 rules_by_id[rule_id] = {
@@ -416,6 +440,7 @@ def format_sarif(results: list[AnalysisResult], *, execution: dict[str, Any] | N
                         severity=f.severity.value,
                         language=result.language,
                     ).as_dict(),
+                    **_enriched_properties(f),
                 },
             })
 

@@ -347,8 +347,35 @@ class GoParser:
             if self.lexer.check(GoTokenType.FUNC):
                 decls.append(self._parse_func_decl())
             elif self.lexer.check(GoTokenType.VAR) or self.lexer.check(GoTokenType.CONST) or self.lexer.check(GoTokenType.TYPE):
-                self.lexer.advance()
-                self._skip_to_semicolon()
+                kw_tok = self.lexer.advance()  # consume var/const/type
+                if self.lexer.check(GoTokenType.LPAREN):
+                    # Parenthesized block: var ( x T; y T )
+                    self.lexer.advance()
+                    depth = 1
+                    while not self.lexer.check(GoTokenType.EOF):
+                        if self.lexer.check(GoTokenType.LPAREN):
+                            depth += 1
+                        elif self.lexer.check(GoTokenType.RPAREN):
+                            depth -= 1
+                            self.lexer.advance()
+                            if depth == 0:
+                                break
+                            continue
+                        self.lexer.advance()
+                else:
+                    # Single-line declaration — skip until the line changes.
+                    # This avoids the ASI problem where _skip_to_semicolon would
+                    # consume the next function declaration (no SEMI tokens are
+                    # emitted by the lexer without ASI).
+                    decl_line = kw_tok.line
+                    while not self.lexer.check(GoTokenType.EOF):
+                        nxt = self.lexer.peek()
+                        if nxt.line != decl_line:
+                            break
+                        if self.lexer.check(GoTokenType.SEMI):
+                            self.lexer.advance()
+                            break
+                        self.lexer.advance()
             else:
                 self.lexer.advance()
         return GoFile(package=name, imports=tuple(imports), decls=tuple(decls))

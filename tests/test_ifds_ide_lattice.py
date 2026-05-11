@@ -100,6 +100,38 @@ def test_propagate_call_facts_records_return_lattice_fact():
     assert fact.call_string[-1].endswith("caller.js::route@9->helper")
 
 
+def test_propagate_js_call_facts_uses_js_defaults():
+    graph = GlobalGraph()
+    graph.record_function_summary(
+        FunctionSummary(
+            file_path="callee.js",
+            function_name="helper",
+            args_to_return=(0,),
+        )
+    )
+
+    sink_hit, _, ret_hit, _ = graph.propagate_js_call_facts(
+        caller_file="caller.js",
+        callee_file="callee.js",
+        callee_name="helper",
+        tainted_arg_indexes={0},
+        call_line=11,
+    )
+
+    assert sink_hit is False
+    assert ret_hit is True
+    matching = [
+        fact
+        for (file_path, function_name, value_label, _), fact in graph.ide_facts.items()
+        if file_path.endswith("callee.js") and function_name == "helper" and value_label == "$ret"
+    ]
+    assert matching
+    fact = matching[-1]
+    assert fact.level == IDETaintLevel.TAINTED
+    assert fact.sources == ("arg[0]",)
+    assert fact.call_string[-1].endswith("caller.js::<js-scope>@11->helper")
+
+
 def test_resolve_taint_with_access_path_prefers_field_specific_fact():
     graph = GlobalGraph()
     graph.set_taint_with_access_path(

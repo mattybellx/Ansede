@@ -1398,16 +1398,15 @@ def _trace_helper_return_expression(
 			function_def.lookup_key or function_def.name,
 			global_graph=global_graph,
 		)
-		if global_graph is not None and hasattr(global_graph, "propagate_call_facts"):
+		if global_graph is not None and hasattr(global_graph, "propagate_js_call_facts"):
 			tainted_arg_indexes: set[int] = set()
 			for idx, argument in enumerate(call.arguments):
 				argument_trace = trace_for_expr(argument, taint_traces, line=line) or request_object_trace(argument, line=line)
 				if argument_trace:
 					tainted_arg_indexes.add(idx)
 			try:
-				_, _, ret_hit, return_trace = global_graph.propagate_call_facts(
+				_, _, ret_hit, return_trace = global_graph.propagate_js_call_facts(
 					caller_file=file_path,
-					caller_name="<js-scope>",
 					callee_file=resolved_file,
 					callee_name=function_def.lookup_key or function_def.name,
 					tainted_arg_indexes=tainted_arg_indexes,

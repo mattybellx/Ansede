@@ -40,6 +40,8 @@ from ansede_static.js_engine.react import run_react_checks
 from ansede_static.js_engine.routes import run_route_checks
 from ansede_static.js_engine.taint_checks import run_taint_flow_checks
 from ansede_static.js_engine.minified_scanner import scan_minified_js
+from ansede_static.engine.clustering import cluster_findings
+from ansede_static.engine.confidence import rescore_findings
 
 _log = logging.getLogger(__name__)
 
@@ -869,7 +871,8 @@ def analyze_js_ast(code: str, filename: str = "", global_graph: object | None = 
         _log.debug("ansede-static: syntax-aware JS analysis failed on %r: %s", filename, exc, exc_info=True)
 
     fallback = analyze_js(code, filename, global_graph=global_graph)
-    merged = dedup_findings(structural_findings + fallback.findings)
+    merged = cluster_findings(structural_findings + fallback.findings)
+    merged = rescore_findings(merged)
     merged = remap_findings_to_source_map(merged, filename)
 
     # ── Source-map-aware rescan ───────────────────────────────────────

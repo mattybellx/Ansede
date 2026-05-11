@@ -57,6 +57,8 @@ class CPGBuilder(ast.NodeVisitor):
         self._cpg: CPG = CPG()
         self._func_stack: list[str] = ["<module>"]
         self._scope_stack: list[dict[str, list[int]]] = [{}]  # var → [defining node_ids]
+        # SSA variable versions per lexical scope: var -> latest version number
+        self._ssa_stack: list[dict[str, int]] = [{}]
         # Track which vars are nonlocal/global in the current scope
         self._nonlocal_vars: list[set[str]] = [set()]
         self._global_vars: list[set[str]] = [set()]
@@ -93,6 +95,15 @@ class CPGBuilder(ast.NodeVisitor):
     def _current_scope(self) -> dict[str, list[int]]:
         return self._scope_stack[-1]
 
+    def _current_ssa_scope(self) -> dict[str, int]:
+        return self._ssa_stack[-1]
+
+    def _lookup_ssa_version(self, var: str) -> int | None:
+        for i in range(len(self._ssa_stack) - 1, -1, -1):
+            if var in self._ssa_stack[i]:
+                return self._ssa_stack[i][var]
+        return None
+
     def _add_stmt_node(self, node: ast.AST, extra_value: str = "") -> CPGNode:
         lineno = getattr(node, "lineno", 0)
         col    = getattr(node, "col_offset", 0)
@@ -128,10 +139,36 @@ class CPGBuilder(ast.NodeVisitor):
         scope.setdefault(var, []).append(node_id)
         self._cpg.record_def(var, node_id)
 
+        prev_version = self._lookup_ssa_version(var) or 0
+        next_version = prev_version + 1
+        self._current_ssa_scope()[var] = next_version
+        node = self._cpg.nodes.get(node_id)
+        if node is not None:
+            defs = node.meta.setdefault("ssa_defs", [])
+            defs.append(
+                {
+                    "var": var,
+                    "version": next_version,
+                    "name": f"{var}_{next_version}",
+                }
+            )
+
     def _use_var(self, var: str, node_id: int) -> None:
         """Record a use of var at node_id and draw DATA_DEPENDENCY edges."""
         self._cpg.record_use(var, node_id)
         self._link_data_dep(var, node_id)
+
+        version = self._lookup_ssa_version(var)
+        node = self._cpg.nodes.get(node_id)
+        if version is not None and node is not None:
+            uses = node.meta.setdefault("ssa_uses", [])
+            uses.append(
+                {
+                    "var": var,
+                    "version": version,
+                    "name": f"{var}_{version}",
+                }
+            )
 
     # ------------------------------------------------------------------
     # Statement-level visitors
@@ -166,6 +203,7 @@ class CPGBuilder(ast.NodeVisitor):
         # Push new scope/context
         self._func_stack.append(func_name)
         self._scope_stack.append({})
+        self._ssa_stack.append({})
         self._nonlocal_vars.append(set())
         self._global_vars.append(set())
 
@@ -186,6 +224,7 @@ class CPGBuilder(ast.NodeVisitor):
         # Pop context
         self._func_stack.pop()
         self._scope_stack.pop()
+        self._ssa_stack.pop()
         self._nonlocal_vars.pop()
         self._global_vars.pop()
         self._cfg_prev = saved_prev
@@ -335,39 +374,60 @@ class CPGBuilder(ast.NodeVisitor):
 
         # True branch
         self._cfg_prev = [test_node.node_id]
-        self._cpg.add_edge(test_node.node_id, test_node.node_id, EdgeKind.CFG_BRANCH_TRUE)  # placeholder
-        saved_true_prev = []
+        saved_true_prev = [test_node.node_id]
+        true_branch_nodes: set[int] = set()
         if node.body:
-            for bid in [test_node.node_id]:
-                # re-route: first body stmt gets a BRANCH_TRUE edge
-                first_body = node.body[0]
-                fb_node = self._add_stmt_node(first_body)
-                self._cpg.add_edge(test_node.node_id, fb_node.node_id, EdgeKind.CFG_BRANCH_TRUE)
-                self._cfg_prev = [fb_node.node_id]
-                # visit remaining body stmts
-                for i, child in enumerate(node.body):
-                    if i == 0:
-                        self._visit_node_body(child)
-                    else:
-                        self.visit(child)
-                saved_true_prev = list(self._cfg_prev)
-                break
+            before_true_ids = set(self._cpg.nodes.keys())
+            self._visit_stmts(node.body)
+            after_true_ids = set(self._cpg.nodes.keys())
+            true_branch_nodes = after_true_ids - before_true_ids
+            if true_branch_nodes:
+                first_true = min(true_branch_nodes)
+                self._cpg.add_edge(test_node.node_id, first_true, EdgeKind.CFG_BRANCH_TRUE)
+            saved_true_prev = list(self._cfg_prev)
 
         # False / else branch
+        false_branch_nodes: set[int] = set()
         if node.orelse:
             self._cfg_prev = [test_node.node_id]
-            first_else = node.orelse[0]
-            fe_node = self._add_stmt_node(first_else)
-            self._cpg.add_edge(test_node.node_id, fe_node.node_id, EdgeKind.CFG_BRANCH_FALSE)
-            self._cfg_prev = [fe_node.node_id]
-            for i, child in enumerate(node.orelse):
-                if i == 0:
-                    self._visit_node_body(child)
-                else:
-                    self.visit(child)
+            before_false_ids = set(self._cpg.nodes.keys())
+            self._visit_stmts(node.orelse)
+            after_false_ids = set(self._cpg.nodes.keys())
+            false_branch_nodes = after_false_ids - before_false_ids
+            if false_branch_nodes:
+                first_false = min(false_branch_nodes)
+                self._cpg.add_edge(test_node.node_id, first_false, EdgeKind.CFG_BRANCH_FALSE)
             saved_false_prev = list(self._cfg_prev)
         else:
             saved_false_prev = [test_node.node_id]
+
+        # Lightweight SSA φ-node insertion at explicit if/else join.
+        # For vars defined on both sides, emit one Phi node that creates a new SSA version.
+        if node.body and node.orelse and saved_true_prev and saved_false_prev:
+            phi_vars = []
+            for var, def_ids in self._cpg.defs.items():
+                in_true = [did for did in def_ids if did in true_branch_nodes]
+                in_false = [did for did in def_ids if did in false_branch_nodes]
+                if in_true and in_false:
+                    phi_vars.append((var, in_true, in_false))
+            if phi_vars:
+                phi_node = self._cpg.add_node(
+                    node_type="Phi",
+                    lineno=getattr(node, "lineno", 0),
+                    col=getattr(node, "col_offset", 0),
+                    value="phi",
+                    ast_node=node,
+                    func_name=self._current_func(),
+                    meta={"phi_vars": [var for var, _, _ in phi_vars]},
+                )
+                for prev_id in saved_true_prev + saved_false_prev:
+                    self._cpg.add_edge(prev_id, phi_node.node_id, EdgeKind.CFG_NEXT)
+                for var, true_defs, false_defs in phi_vars:
+                    for incoming in true_defs + false_defs:
+                        self._cpg.add_edge(incoming, phi_node.node_id, EdgeKind.DATA_DEPENDENCY, label=f"phi:{var}")
+                    self._define_var(var, phi_node.node_id)
+                self._cfg_prev = [phi_node.node_id]
+                return
 
         self._cfg_prev = saved_true_prev + saved_false_prev
 
@@ -598,6 +658,7 @@ class CPGBuilder(ast.NodeVisitor):
         # Parameters
         self._func_stack.append(lambda_name)
         self._scope_stack.append({})
+        self._ssa_stack.append({})
         self._nonlocal_vars.append(set())
         self._global_vars.append(set())
         for arg in node.args.args:
@@ -608,6 +669,7 @@ class CPGBuilder(ast.NodeVisitor):
                 self._use_var(child.id, l_entry.node_id)
         self._func_stack.pop()
         self._scope_stack.pop()
+        self._ssa_stack.pop()
         self._nonlocal_vars.pop()
         self._global_vars.pop()
 

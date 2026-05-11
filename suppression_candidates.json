@@ -2,84 +2,39 @@
   "kind": "ansede-suppression-candidates",
   "version": 1,
   "report_path": "suppression_candidates_web_wild.json",
-  "generated_rules": [
-    {
-      "id": "SUPPRESS-AUTO-PY_ENTROPY_002",
-      "match": {
-        "rule_id": "PY-ENTROPY-002",
-        "cwe": "CWE-798",
-        "path_contains_any": [
-          "django/",
-          "fastapi/",
-          "src/flask/",
-          "flask/",
-          "lib/"
-        ]
-      },
-      "confidence": 0.7,
-      "enabled": true,
-      "source": "web_wild_harness",
-      "explanation": "Rule repeatedly fires in framework-internal implementation code where weak labels are not representative of app-level risk.",
-      "evidence": {
-        "occurrences": 17,
-        "examples": [
-          {
-            "repo": "django/django",
-            "file": "django\\utils\\version.py",
-            "line": 25,
-            "title": "Hardcoded high-entropy string (potential secret/credential)"
-          },
-          {
-            "repo": "django/django",
-            "file": "django\\utils\\version.py",
-            "line": 49,
-            "title": "Hardcoded high-entropy string (potential secret/credential)"
-          },
-          {
-            "repo": "pallets/flask",
-            "file": "src\\flask\\cli.py",
-            "line": 1112,
-            "title": "Hardcoded high-entropy string (potential secret/credential)"
-          }
-        ]
-      },
-      "deployment_status": "enabled"
-    }
-  ],
+  "generated_rules": [],
   "validation": {
     "cve_guard": "executed",
     "passed": true,
     "details": {
-      "baseline_failed_cases": 0,
-      "failed_cases": 0,
+      "baseline_failed_cases": 5,
+      "failed_cases": 5,
       "regression_delta": 0,
       "regression_budget": 0,
-      "initial_enable_count": 1,
-      "final_enable_count": 1,
+      "initial_enable_count": 0,
+      "final_enable_count": 0,
       "auto_refined": false,
       "summary": {
-        "total_cases": 35,
-        "passed_cases": 35,
-        "tp": 35,
-        "fp": 0,
-        "fn": 0,
-        "suppressed_findings": 13,
-        "recall": 100.0,
-        "precision": 100.0,
-        "f1": 100.0,
-        "fp_rate": 0.0
+        "total_cases": 66,
+        "passed_cases": 61,
+        "tp": 61,
+        "fp": 16,
+        "fn": 5,
+        "suppressed_findings": 27,
+        "recall": 92.42,
+        "precision": 79.22,
+        "f1": 85.31,
+        "fp_rate": 20.78
       },
       "report_meta": {
-        "total_cases": 35,
-        "passed_cases": 35
+        "total_cases": 66,
+        "passed_cases": 61
       }
     }
   },
   "deployment": {
-    "enabled_rule_ids": [
-      "SUPPRESS-AUTO-PY_ENTROPY_002"
-    ],
-    "enabled_count": 1,
-    "candidate_count": 1
+    "enabled_rule_ids": [],
+    "enabled_count": 0,
+    "candidate_count": 0
   }
 }

@@ -54,6 +54,25 @@ vendored assets or framework internals unless that noise is the point of the tes
 
 All checks should pass before submitting a PR. CI targets Python **3.9–3.13**.
 
+### Regression safety gate (recommended for framework/taint changes)
+
+Use this when tuning detection behavior so improvements do not degrade unrelated metrics.
+
+1. Generate one or more benchmark reports (e.g. `tools/live_web_wild_benchmark.py`)
+2. Evaluate with the ratchet gate:
+
+```bash
+python tools/benchmark_ratchet_gate.py \
+	--profile expanded-hard \
+	--reports "tmp/web_wild_hard_20260511/seed_*.json" \
+	--baseline benchmarks/baselines/expanded_web_wild_hard_20260511.json \
+	--regression-tolerance 0.0 \
+	--output tmp/web_wild_hard_20260511/gate_result.json
+```
+
+For canonical world-best protocol checks, continue using `world_best_final_validation.json`
+gates (web recall >= 85, web fp_rate <= 10) as the absolute bar.
+
 ## Add or update a rule
 
 1. Add a `_rule_NN(ctx: _Ctx) -> list[Finding]` function in the appropriate analyzer

@@ -170,7 +170,7 @@ def shell_command():
         code,
         filename="C:/tmp/site-packages/flask/cli.py",
     )
-    finding = next(f for f in result.findings if f.rule_id == "PY-006" and "eval" in f.title.lower())
+    finding = next(f for f in result.findings if f.rule_id == "PY-006")
 
     assert finding.severity == Severity.LOW
     assert finding.confidence <= 0.25

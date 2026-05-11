@@ -85,6 +85,21 @@ _GUARD_POSITIVE_SIGNAL_RE = re.compile(
     re.IGNORECASE,
 )
 
+_NULL_GUARD_RE = re.compile(
+    r'(?:\buser\s+is\s+None\b|\buser\s+is\s+not\s+None\b|'
+    r'\brequest\.user\s+is\s+None\b|\bcurrent_user\s+is\s+None\b|'
+    r'\bg\.user\s+is\s+None\b|\bsession\.get\([^)]+\)\s+is\s+None|'
+    r'\bnot\s+(?:g\.)?user\b)',
+    re.IGNORECASE,
+)
+
+_TYPE_GUARD_RE = re.compile(
+    r'\bisinstance\s*\([^,]+,\s*(?:int|float|str|bool|dict|list|bytes)\b',
+    re.IGNORECASE,
+)
+
+_COMPOUND_CONDITION_SPLIT_RE = re.compile(r'\band\b|\bor\b')
+
 _JS_INLINE_AUTH_GUARD_RE = re.compile(
     r'(?:req\.user|ctx\.state\.user|request\.user|currentUser|current_user|'
     r'isAuthenticated\s*\(|hasPermission\s*\(|permissionCheck\s*\()',
@@ -102,8 +117,8 @@ _JS_ROUTE_APPLY_RE = re.compile(
 )
 
 _DENY_ACCESS_RE = re.compile(
-    r'(?:abort\s*\(\s*403\s*\)|return\s+403\b|raise\s+PermissionDenied\b|'
-    r'forbidden\s*\(|deny\s*\(|unauthorized\s*\()',
+    r'(?:abort\s*\(\s*(?:40[13]|403)\s*\)|return\s+(?:40[13]|403)\b|'
+    r'raise\s+PermissionDenied\b|forbidden\s*\(|deny\s*\(|unauthorized\s*\()',
     re.IGNORECASE,
 )
 
@@ -115,38 +130,44 @@ def _extract_python_guards(tree: ast.AST, source_lines: list[str]) -> list[Guard
     class GuardVisitor(ast.NodeVisitor):
         def visit_If(self, node: ast.If) -> None:
             test_text = ast.unparse(node.test) if hasattr(ast, "unparse") else ""
-            if _AUTH_GUARD_RE.search(test_text):
-                body_lines = set(range(node.lineno, node.end_lineno + 1)) if node.end_lineno else set()
-                guards.append(GuardInfo(
-                    kind="auth_check", line=node.lineno,
-                    protects_lines=body_lines,
-                ))
-                if node.orelse:
-                    orelse_start = node.orelse[0].lineno if node.orelse else node.lineno
-                    orelse_end = node.orelse[-1].end_lineno if node.orelse and hasattr(node.orelse[-1], "end_lineno") else orelse_start + 5
+            body_lines = set(range(node.lineno, node.end_lineno + 1)) if node.end_lineno else set()
+            orelse_start = node.orelse[0].lineno if node.orelse else node.lineno
+            orelse_end = (node.orelse[-1].end_lineno
+                          if node.orelse and hasattr(node.orelse[-1], "end_lineno")
+                          else orelse_start + 5)
+
+            # Compound condition splitting: if auth() and ownership():
+            sub_conditions = _COMPOUND_CONDITION_SPLIT_RE.split(test_text)
+
+            for sub in sub_conditions:
+                sub = sub.strip()
+
+                if _AUTH_GUARD_RE.search(sub) or _NULL_GUARD_RE.search(sub):
                     guards.append(GuardInfo(
-                        kind="auth_check", line=orelse_start,
-                        protects_lines=set(range(orelse_start, orelse_end + 1)),
-                        is_else_guard=True,
+                        kind="auth_check", line=node.lineno,
+                        protects_lines=body_lines,
                     ))
-            if _OWNERSHIP_GUARD_RE.search(test_text):
-                body_lines = set(range(node.lineno, node.end_lineno + 1)) if node.end_lineno else set()
-                guards.append(GuardInfo(
-                    kind="ownership_check", line=node.lineno,
-                    protects_lines=body_lines,
-                ))
-            if _INPUT_VALIDATION_GUARD_RE.search(test_text):
-                body_lines = set(range(node.lineno, node.end_lineno + 1)) if node.end_lineno else set()
-                guards.append(GuardInfo(
-                    kind="input_validation", line=node.lineno,
-                    protects_lines=body_lines,
-                ))
-            if _PATH_BOUNDARY_GUARD_RE.search(test_text):
-                body_lines = set(range(node.lineno, node.end_lineno + 1)) if node.end_lineno else set()
-                guards.append(GuardInfo(
-                    kind="path_boundary", line=node.lineno,
-                    protects_lines=body_lines,
-                ))
+                    if node.orelse:
+                        guards.append(GuardInfo(
+                            kind="auth_check", line=orelse_start,
+                            protects_lines=set(range(orelse_start, orelse_end + 1)),
+                            is_else_guard=True,
+                        ))
+                if _OWNERSHIP_GUARD_RE.search(sub):
+                    guards.append(GuardInfo(
+                        kind="ownership_check", line=node.lineno,
+                        protects_lines=body_lines,
+                    ))
+                if _INPUT_VALIDATION_GUARD_RE.search(sub) or _TYPE_GUARD_RE.search(sub):
+                    guards.append(GuardInfo(
+                        kind="input_validation", line=node.lineno,
+                        protects_lines=body_lines,
+                    ))
+                if _PATH_BOUNDARY_GUARD_RE.search(sub):
+                    guards.append(GuardInfo(
+                        kind="path_boundary", line=node.lineno,
+                        protects_lines=body_lines,
+                    ))
             self.generic_visit(node)
 
         def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
@@ -223,14 +244,17 @@ def _collect_python_guard_kinds_for_line(tree: ast.AST, line: int) -> set[str]:
             parent = parents[id(current)]
             if isinstance(parent, ast.If):
                 test_text = ast.unparse(parent.test) if hasattr(ast, "unparse") else ""
-                if _is_positive_guard_condition(test_text):
-                    guarded.add("auth_check")
-                if _OWNERSHIP_GUARD_RE.search(test_text):
-                    guarded.add("ownership_check")
-                if _INPUT_VALIDATION_GUARD_RE.search(test_text):
-                    guarded.add("input_validation")
-                if _PATH_BOUNDARY_GUARD_RE.search(test_text):
-                    guarded.add("path_boundary")
+                sub_conditions = _COMPOUND_CONDITION_SPLIT_RE.split(test_text)
+                for sub in sub_conditions:
+                    sub = sub.strip()
+                    if _is_positive_guard_condition(sub) or _NULL_GUARD_RE.search(sub):
+                        guarded.add("auth_check")
+                    if _OWNERSHIP_GUARD_RE.search(sub):
+                        guarded.add("ownership_check")
+                    if _INPUT_VALIDATION_GUARD_RE.search(sub) or _TYPE_GUARD_RE.search(sub):
+                        guarded.add("input_validation")
+                    if _PATH_BOUNDARY_GUARD_RE.search(sub):
+                        guarded.add("path_boundary")
             elif isinstance(parent, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 for deco in parent.decorator_list:
                     deco_text = ast.unparse(deco) if hasattr(ast, "unparse") else ""
@@ -262,10 +286,21 @@ def _function_scope_guard_kinds(tree: ast.AST, line: int) -> set[str]:
             if not isinstance(stmt, ast.If):
                 continue
             test_text = ast.unparse(stmt.test) if hasattr(ast, "unparse") else ""
-            has_auth_signal = bool(_EXPLICIT_AUTH_TEST_RE.search(test_text))
-            has_ownership_signal = bool(_OWNERSHIP_GUARD_RE.search(test_text))
-            has_input_signal = bool(_INPUT_VALIDATION_GUARD_RE.search(test_text))
-            has_path_boundary_signal = bool(_PATH_BOUNDARY_GUARD_RE.search(test_text))
+            sub_conditions = _COMPOUND_CONDITION_SPLIT_RE.split(test_text)
+            has_auth_signal = any(
+                _EXPLICIT_AUTH_TEST_RE.search(sub)
+                for sub in sub_conditions
+            )
+            has_null_guard = any(
+                _NULL_GUARD_RE.search(sub)
+                for sub in sub_conditions
+            )
+            has_ownership_signal = any(_OWNERSHIP_GUARD_RE.search(sub) for sub in sub_conditions)
+            has_input_signal = any(
+                _INPUT_VALIDATION_GUARD_RE.search(sub) or _TYPE_GUARD_RE.search(sub)
+                for sub in sub_conditions
+            )
+            has_path_boundary_signal = any(_PATH_BOUNDARY_GUARD_RE.search(sub) for sub in sub_conditions)
             has_negative_guard = bool(re.search(r'\bnot\b|!=|is not|not in', test_text))
             following_statements = statements[idx + 1:]
             if has_auth_signal:
@@ -278,6 +313,15 @@ def _function_scope_guard_kinds(tree: ast.AST, line: int) -> set[str]:
                     guarded.add("auth_check")
                 elif _is_positive_guard_condition(test_text):
                     guarded.add("auth_check")
+            # Null guard: `if user is None: return 403` protects the rest
+            if has_null_guard:
+                if has_negative_guard:
+                    # `if user is not None:` → body is the protected path
+                    guarded.add("auth_check")
+                else:
+                    # `if user is None:` → body denies access, rest is protected
+                    if _statements_deny_access(stmt.body):
+                        guarded.add("auth_check")
             if has_ownership_signal:
                 guarded.add("ownership_check")
             if has_input_signal:
@@ -413,6 +457,7 @@ _GUARD_CWE_DOWNGRADE_MAP: dict[str, dict[str, float]] = {
         "CWE-862": 0.0,   # Missing auth — auth check proves it's there
         "CWE-287": 0.0,   # Auth bypass — auth guard present
         "CWE-285": 0.15,  # Improper auth — guard present but may be insufficient
+        "CWE-306": 0.0,   # Missing authentication — guard present
     },
     "csrf_check": {
         "CWE-352": 0.0,   # CSRF — token check present
@@ -428,9 +473,21 @@ _GUARD_CWE_DOWNGRADE_MAP: dict[str, dict[str, float]] = {
         "CWE-434": 0.0,   # File upload — validation present
         "CWE-22": 0.10,   # Path traversal — input validated
         "CWE-89": 0.10,   # SQLi — input validated
+        "CWE-78": 0.15,   # Command injection — input validated
+        "CWE-79": 0.15,   # XSS — input validated
     },
     "path_boundary": {
-        "CWE-22": 0.0,    # Path traversal — resolved path is checked against a base dir
+        "CWE-22": 0.0,    # Path traversal — resolved path checked against base dir
+    },
+    "null_guard": {
+        "CWE-862": 0.0,   # Missing auth — None check before access means auth gate
+        "CWE-287": 0.0,   # Auth bypass — None gate present
+        "CWE-639": 0.0,   # IDOR in gated context
+    },
+    "type_guard": {
+        "CWE-502": 0.10,  # Unsafe deserialization — type guard present
+        "CWE-434": 0.10,  # File upload — type guard present
+        "CWE-89": 0.15,   # SQLi — type-constrained input
     },
 }
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import base64
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -142,6 +143,54 @@ def load_sourcemap_path(filename: str) -> Path | None:
     return None
 
 
+_DATA_URL_SOURCEMAP_RE = re.compile(
+    r'''sourceMappingURL=data:(?:application|text)/(?:json|javascript)(?:;charset=[^;]+)?;base64,([A-Za-z0-9+/=]+)''',
+    re.IGNORECASE,
+)
+
+
+def _decode_inline_sourcemap(tail: str) -> dict | None:
+    """Try to extract and decode an inline source map from a data: URL comment."""
+    match = _DATA_URL_SOURCEMAP_RE.search(tail)
+    if not match:
+        return None
+    b64_raw = match.group(1).strip()
+    try:
+        decoded = base64.b64decode(b64_raw)
+        return json.loads(decoded)
+    except (ValueError, json.JSONDecodeError):
+        return None
+
+
+def load_inline_sourcemap_segments(filename: str) -> dict[int, list[SourceMapSegment]]:
+    """Load source-map segments from an inline data: URL, if present."""
+    if not filename:
+        return {}
+    js_path = Path(filename)
+    if not js_path.exists():
+        return {}
+    try:
+        tail = js_path.read_text(encoding="utf-8", errors="replace")[-16384:]
+    except OSError:
+        return {}
+
+    payload = _decode_inline_sourcemap(tail)
+    if payload is None:
+        return {}
+
+    mappings_raw = payload.get("mappings")
+    sources = payload.get("sources", [])
+    if not isinstance(mappings_raw, str) or not isinstance(sources, list):
+        return {}
+
+    return _parse_sourcemap_mapping_lines(
+        mappings_raw=mappings_raw,
+        sources=[str(item) for item in sources],
+        source_map_path=js_path,
+        source_root=payload.get("sourceRoot") if isinstance(payload.get("sourceRoot"), str) else None,
+    )
+
+
 def parse_sourcemap_segments(source_map_path: Path) -> dict[int, list[SourceMapSegment]]:
     try:
         payload = json.loads(source_map_path.read_text(encoding="utf-8", errors="replace"))
@@ -217,8 +266,10 @@ def remap_findings_to_source_map(
         return findings
     source_map_path = load_sourcemap_path(filename)
     if source_map_path is None:
-        return findings
-    line_map = parse_sourcemap_segments(source_map_path)
+        # No sidecar .map file — try inline data: URL source map
+        line_map = load_inline_sourcemap_segments(filename)
+    else:
+        line_map = parse_sourcemap_segments(source_map_path)
     if not line_map:
         return findings
 

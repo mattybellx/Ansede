@@ -254,15 +254,14 @@ def _helper_taint_findings(
             function_def.lookup_key or function_def.name,
             global_graph=global_graph,
         )
-        if global_graph is not None and hasattr(global_graph, "propagate_call_facts"):
+        if global_graph is not None and hasattr(global_graph, "propagate_js_call_facts"):
             tainted_arg_indexes: set[int] = set()
             for idx, argument in enumerate(call.arguments):
                 if trace_for_expr(argument, taint_traces, line=call.line) or request_object_trace(argument, line=call.line):
                     tainted_arg_indexes.add(idx)
             try:
-                sink_hit, _, _, _ = global_graph.propagate_call_facts(
+                sink_hit, _, _, _ = global_graph.propagate_js_call_facts(
                     caller_file=filename or "<memory>",
-                    caller_name="<js-scope>",
                     callee_file=resolved_file,
                     callee_name=function_def.lookup_key or function_def.name,
                     tainted_arg_indexes=tainted_arg_indexes,
