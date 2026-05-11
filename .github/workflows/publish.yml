@@ -1,15 +1,14 @@
 name: Publish to PyPI
 
-# Fires automatically when a version tag is pushed.
-# This keeps publishing aligned with the tag-driven Release workflow,
-# including releases created by GitHub Actions itself.
+# Primary path: run after the Release workflow succeeds.
+# Fallback path: manual dispatch for emergency republish.
 #
 # Uses PyPI Trusted Publishing via GitHub OIDC.
 
 on:
-  push:
-    tags:
-      - 'v*'
+  workflow_run:
+    workflows: ["Release"]
+    types: [completed]
   workflow_dispatch:
 
 permissions:
@@ -19,12 +18,15 @@ permissions:
 jobs:
   publish:
     name: Build and publish to PyPI
+    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     environment:
       name: pypi
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
 
       - uses: actions/setup-python@v5
         with:

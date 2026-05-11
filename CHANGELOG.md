@@ -3,6 +3,12 @@
 All notable changes to ansede-static are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [2.1.4] — 2026-05-11
+
+### Fixed — Release-to-publish orchestration
+- **Publish trigger source changed** — `.github/workflows/publish.yml` now runs from successful completion of the `Release` workflow (`workflow_run`) instead of direct tag push.
+- **Trusted publisher claim stability** — publishing now executes from the default-branch workflow context while checking out the release commit SHA, preserving release correctness while matching stable trusted-publisher workflow identity.
+
 ## [2.1.3] — 2026-05-11
 
 ### Fixed — PyPI publisher identity alignment
