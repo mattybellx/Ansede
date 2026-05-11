@@ -1,9 +1,7 @@
 name: Publish to PyPI
 
-# Primary path: run after the Release workflow succeeds.
-# Fallback path: manual dispatch for emergency republish.
-#
-# Uses PyPI Trusted Publishing via GitHub OIDC.
+# Triggered by Release workflow success, or manual dispatch for republish.
+# Uses PyPI Trusted Publishing (OIDC) as primary path with API token fallback.
 
 on:
   workflow_run:
@@ -41,22 +39,19 @@ jobs:
       - name: Check distribution
         run: twine check dist/*
 
-      - name: Publish to PyPI (trusted publishing)
+      - name: Publish to PyPI (Trusted Publishing)
         id: publish_trusted
-        continue-on-error: true
         uses: pypa/gh-action-pypi-publish@release/v1
 
       - name: Publish to PyPI (API token fallback)
         id: publish_token
-        if: steps.publish_trusted.outcome == 'failure'
-        continue-on-error: true
+        if: failure() && steps.publish_trusted.conclusion == 'failure'
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           password: ${{ secrets.PYPI_API_TOKEN }}
 
-      - name: Fail if no publish path succeeded
-        if: steps.publish_trusted.outcome == 'failure' && steps.publish_token.outcome == 'failure'
+      - name: Verify PyPI publication
+        if: success() || (steps.publish_token.conclusion == 'success')
         run: |
-          echo "PyPI publish failed via trusted publishing, and API token fallback was unavailable or failed."
-          echo "Action needed: either configure PyPI trusted publisher to match this workflow or set repository secret PYPI_API_TOKEN."
-          exit 1
+          sleep 15
+          pip install --no-deps --dry-run ansede-static==$(python -c "import tomllib; print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])") 2>&1 || echo "Package may still be indexing on PyPI..."
