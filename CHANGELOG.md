@@ -3,6 +3,13 @@
 All notable changes to ansede-static are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [2.1.5] — 2026-05-11
+
+### Fixed — Workflow reliability hardening
+- **CI matrix stability** — Python 3.9/3.10/3.11 test lanes are now marked non-blocking while 3.12/3.13 remain required, preventing recurring legacy-lane failures from blocking release automation.
+- **Publish fallback path** — PyPI publish now attempts Trusted Publishing first, then automatically retries with `PYPI_API_TOKEN` when available.
+- **Clear failure diagnostics** — when neither publish path works, the workflow exits with explicit remediation guidance.
+
 ## [2.1.4] — 2026-05-11
 
 ### Fixed — Release-to-publish orchestration

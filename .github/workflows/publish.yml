@@ -41,5 +41,22 @@ jobs:
       - name: Check distribution
         run: twine check dist/*
 
-      - name: Publish to PyPI
+      - name: Publish to PyPI (trusted publishing)
+        id: publish_trusted
+        continue-on-error: true
         uses: pypa/gh-action-pypi-publish@release/v1
+
+      - name: Publish to PyPI (API token fallback)
+        id: publish_token
+        if: steps.publish_trusted.outcome == 'failure'
+        continue-on-error: true
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          password: ${{ secrets.PYPI_API_TOKEN }}
+
+      - name: Fail if no publish path succeeded
+        if: steps.publish_trusted.outcome == 'failure' && steps.publish_token.outcome == 'failure'
+        run: |
+          echo "PyPI publish failed via trusted publishing, and API token fallback was unavailable or failed."
+          echo "Action needed: either configure PyPI trusted publisher to match this workflow or set repository secret PYPI_API_TOKEN."
+          exit 1
