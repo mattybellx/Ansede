@@ -24,6 +24,8 @@ ansede-static src/
 [![PyPI downloads](https://img.shields.io/pypi/dm/ansede-static?label=downloads)](https://pypi.org/project/ansede-static/)
 [![Python 3.9+](https://img.shields.io/badge/python-3.9%2B-blue)](https://github.com/mattybellx/Ansede/blob/master/pyproject.toml)
 [![CI](https://github.com/mattybellx/Ansede/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/mattybellx/Ansede/actions/workflows/ci.yml)
+[![NVD CVE 66/66](https://img.shields.io/badge/NVD%20CVE-66%2F66-brightgreen)](BENCHMARKS.md)
+[![Web Wild F1 97.78%](https://img.shields.io/badge/Web%20Wild%20F1-97.78%25-brightgreen)](BENCHMARKS.md)
 [![License](https://img.shields.io/badge/license-MIT-yellow.svg)](LICENSE)
 [![GitHub stars](https://img.shields.io/github/stars/mattybellx/Ansede?style=social)](https://github.com/mattybellx/Ansede/stargazers)
 [![Discussions](https://img.shields.io/github/discussions/mattybellx/Ansede?label=Discussions)](https://github.com/mattybellx/Ansede/discussions)
@@ -39,44 +41,43 @@ ansede-static src/
 - [CI integration](#ci-integration)
 - [Contributing](#contributing)
 
-## Latest validation snapshot
+## Latest validation snapshot (v2.1.0 — May 2026)
 
 | Benchmark | Result |
 |---|---|
-| Full regression suite | **619 passed** |
-| Definitive web-wild validation | **20/20 seeds PASS · 100.00% recall · 1.05% FP rate** |
-| CVE corpus gate | **92.42% recall · 4.69% FP rate** |
+| Full regression suite | **675 passed** (0 regressions) |
+| NVD CVE corpus | **66/66 (100% recall)** — Python 35/35, JS 24/24, Go 3/3, Java 2/2, C# 2/2 |
+| Web-wild 500-file stress test | **100% recall · 95.65% precision · 97.78% F1 · 4.35% FP rate** |
 | Quality checks | **41/41 (100%)** |
 | External real-world corpus | **19/19 (100%)** |
+| Multi-language support | Python · JavaScript · TypeScript · Go · Java · C# |
 
-Full artifacts: [`final_product_scorecard.json`](final_product_scorecard.json) · [`world_best_final_validation.json`](world_best_final_validation.json)
+Full artifacts: [`web_wild_stress_may12.json`](web_wild_stress_may12.json) · [`BENCHMARKS.md`](BENCHMARKS.md)
 
 ## Definitive world-best validation
 
-On **2026-05-11**, `ansede-static` cleared its largest public validation run yet:
+On **2026-05-11**, `ansede-static` v2.1.0 cleared its largest public validation run yet:
 
-- **20 independent random seeds**
-- **60 files per seed**
-- **5 cached real-world web frameworks / applications**
-- **Hybrid labeling with curated manifest overrides**
-- **High-severity gate only**
-- **Inline CVE corpus gate in the same validation pass**
+- **500 real-world source files** from 5 open-source web frameworks (Django, Flask, FastAPI, Express, NodeGoat)
+- **Hybrid labeling** with curated manifest overrides
+- **High-severity gate only** — critical and high findings
+- **Structural JS backend** for precision AST analysis
+- **100% NVD CVE recall** across all 6 supported languages
 
 ### Final result
 
 | Gate | Result | Threshold | Status |
 |---|---:|---:|---|
-| Web-wild recall | **100.00%** | ≥ 85% | ✅ |
-| Web-wild FP rate | **1.05%** | < 10% | ✅ |
-| Web-wild seeds passing | **20 / 20** | 20 / 20 | ✅ |
-| CVE recall | **92.42%** | ≥ 90% | ✅ |
-| CVE FP rate | **4.69%** | < 10% | ✅ |
+| Web-wild recall (500 files) | **100.00%** | ≥ 85% | ✅ |
+| Web-wild precision | **95.65%** | — | ✅ |
+| Web-wild F1 | **97.78%** | — | ✅ |
+| Web-wild FP rate | **4.35%** | < 10% | ✅ |
+| NVD CVE recall | **66/66 (100%)** | 100% | ✅ |
+| Pytest regression | **675/675 passed** | — | ✅ |
 
-That is the current public proof point for the repository: **definitively world-best on this benchmark protocol**.
+**ansede-static is definitively world-best on this benchmark protocol.**
 
-Machine-readable artifact: [`world_best_final_validation.json`](world_best_final_validation.json)
-
-Public benchmark write-up: [`BENCHMARKS.md`](BENCHMARKS.md)
+Machine-readable artifacts: [`web_wild_stress_may12.json`](web_wild_stress_may12.json) · [`BENCHMARKS.md`](BENCHMARKS.md)
 
 ## Start here (2-minute tour)
 

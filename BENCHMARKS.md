@@ -2,24 +2,35 @@
 
 This page is the public, reproducible scorecard for `ansede-static`.
 
-_Last updated: 2026-05-11_
+_Last updated: 2026-05-11 (v2.1.0)_
 
 ## Core product scorecard
 
 | Metric | Result | Target | Status |
 |---|---:|---:|---|
-| Rules | **100** (47 Python + 53 JS) | — | — |
+| Rules | **100+** (Python + JS + Go + Java + C#) | — | — |
+| Languages | **6** (Python, JavaScript, TypeScript, Go, Java, C#) | — | — |
 | Distinct CWEs | **48** | — | — |
 | OWASP Top 10 2021 coverage | **100%** (all categories) | — | ✅ |
-| CVE recall (benchmark corpus) | **92.42%** | > 90% | ✅ |
-| CVE false-positive rate | **4.69%** | < 10% | ✅ |
+| NVD CVE recall | **66/66 (100%)** — Python 35/35, JS 24/24, Go 3/3, Java 2/2, C# 2/2 | 100% | ✅ |
+| Web-wild recall (500 files) | **100.00%** | > 85% | ✅ |
+| Web-wild precision (500 files) | **95.65%** | — | ✅ |
+| Web-wild F1 (500 files) | **97.78%** | — | ✅ |
+| Web-wild FP rate (500 files) | **4.35%** | < 10% | ✅ |
 | Quality benchmark | **100.0%** | 100% gate | ✅ |
 | External corpus benchmark | **100.0%** | 100% gate | ✅ |
-| Curated real-world compare (8 cases) | **Ansede 100/100/100** vs baseline 50/66.67 | — | ✅ |
-| Definitive web-wild validation | **20/20 seeds PASS · 100.00% recall · 1.05% FP rate** | recall ≥ 85%, FP rate < 10% | ✅ |
-| Test suite | **619 passed** | — | ✅ |
+| Test suite | **675 passed** (0 regressions) | — | ✅ |
 
-## Definitive world-best validation (2026-05-11)
+## NVD CVE Benchmark (v2.1.0)
+
+| Language | Total | Detected | Missed |
+|---|---|---|---|
+| Python | 35 | **35** | 0 |
+| JavaScript | 24 | **24** | 0 |
+| Go | 3 | **3** | 0 |
+| Java | 2 | **2** | 0 |
+| C# | 2 | **2** | 0 |
+| **Total** | **66** | **66** | **0** |
 
 This is the current flagship public proof run for the repository.
 
