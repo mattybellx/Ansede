@@ -1,0 +1,21 @@
+{
+  "schema_version": "1.0",
+  "updated": "2026-05-16",
+  "packs": [
+    {
+      "id": "pack-auth-access",
+      "file": "packs/auth_and_access.yml",
+      "topics": ["auth", "access-control", "idor"]
+    },
+    {
+      "id": "pack-ssrf-open-redirect",
+      "file": "packs/ssrf_open_redirect.yml",
+      "topics": ["ssrf", "open-redirect"]
+    },
+    {
+      "id": "pack-secrets-config",
+      "file": "packs/secrets_and_config.yml",
+      "topics": ["secrets", "config", "defaults"]
+    }
+  ]
+}

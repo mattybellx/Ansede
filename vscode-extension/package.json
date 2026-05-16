@@ -2,7 +2,7 @@
   "name": "ansede-static",
   "displayName": "Ansede Static Security Scanner",
   "description": "Offline SAST for Python/JS/TS with route-aware auth/IDOR detection, trace-backed findings, and SARIF-ready output inline while you code.",
-  "version": "1.2.0",
+  "version": "2.2.0",
   "publisher": "ansede",
   "license": "MIT",
   "engines": {

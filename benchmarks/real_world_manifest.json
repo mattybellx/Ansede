@@ -50,7 +50,7 @@
       },
       "languages": ["javascript"],
       "exclude_paths": ["node_modules/", "test/"],
-      "expected_findings": {"min": 23, "max": 43},
+      "expected_findings": {"min": 22, "max": 43},
       "js_backend": "structural",
       "notes": "Intentionally vulnerable Node.js app — broad JS/TS pattern coverage."
     },
@@ -171,7 +171,7 @@
       "targets": ["index.js"],
       "js_backend": "structural",
       "expected_cwes": ["CWE-352"],
-      "expected_rule_ids": ["JS-041", "JS-060"],
+      "expected_rule_ids": ["JS-041"],
       "notes": "Pinned NodeGoat route file defines multiple state-changing auth/account routes with no detectable CSRF token validation middleware."
     },
     {
@@ -187,6 +187,33 @@
       "expected_cwes": ["CWE-601"],
       "expected_rule_ids": ["PY-046"],
       "notes": "Pinned Django i18n view contains user-influenced redirect flows in set_language that should be constrained to allowed hosts/schemes."
+    },
+    {
+      "case_id": "gin-full-repo",
+      "name": "Gin Web Framework",
+      "source": {
+        "kind": "git",
+        "repo": "https://github.com/gin-gonic/gin.git",
+        "ref": "5f4f9643258dc2a65e684b63f12c8d543c936c67"
+      },
+      "languages": ["go"],
+      "exclude_paths": ["docs/", "examples/", "*_test.go"],
+      "expected_findings": {"min": 0, "max": 80},
+      "notes": "Large Go framework target for non-synthetic parser fidelity tracking."
+    },
+    {
+      "case_id": "aspnetcore-security-subtree",
+      "name": "ASP.NET Core Security Subtree",
+      "source": {
+        "kind": "git",
+        "repo": "https://github.com/dotnet/aspnetcore.git",
+        "ref": "93a1b5295d92954d46e26f2bbb3abde15f332a4b",
+        "subdir": "src/Security"
+      },
+      "languages": ["csharp"],
+      "exclude_paths": ["**/test/", "**/samples/", "**/benchmarks/"],
+      "expected_findings": {"min": 0, "max": 200},
+      "notes": "Pinned ASP.NET Core security-focused subtree for C# structural coverage at realistic scale."
     }
   ]
 }

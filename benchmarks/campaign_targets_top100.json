@@ -1,0 +1,1716 @@
+{
+  "version": "1.0",
+  "updated": "2026-05-16",
+  "selection": {
+    "goal": "Top OSS repos for real-world CWE-862/CWE-639 campaign",
+    "languages": [
+      "python",
+      "javascript",
+      "typescript"
+    ],
+    "target_count": 100,
+    "source": "GitHub API search"
+  },
+  "entries": [
+    {
+      "id": "py-public-apis-54346799",
+      "repo": "public-apis/public-apis",
+      "url": "https://github.com/public-apis/public-apis",
+      "language": "python",
+      "ref": "<pin_sha>",
+      "priority": "high",
+      "scan_profile": {
+        "severity_min": "high",
+        "js_backend": "structural",
+        "focus_cwes": [
+          "CWE-862",
+          "CWE-639"
+        ]
+      },
+      "status": "queued"
+    },
+    {
+      "id": "py-free-programming-books-13491895",
+      "repo": "EbookFoundation/free-programming-books",
+      "url": "https://github.com/EbookFoundation/free-programming-books",
+      "language": "python",
+      "ref": "<pin_sha>",
+      "priority": "high",
+      "scan_profile": {
+        "severity_min": "high",
+        "js_backend": "structural",
+        "focus_cwes": [
+          "CWE-862",
+          "CWE-639"
+        ]
+      },
+      "status": "queued"
+    },
+    {
+      "id": "py-system-design-primer-83222441",
+      "repo": "donnemartin/system-design-primer",
+      "url": "https://github.com/donnemartin/system-design-primer",
+      "language": "python",
+      "ref": "<pin_sha>",
+      "priority": "high",
+      "scan_profile": {
+        "severity_min": "high",
+        "js_backend": "structural",
+        "focus_cwes": [
+          "CWE-862",
+          "CWE-639"
+        ]
+      },
+      "status": "queued"
+    },
+    {
+      "id": "py-awesome-python-21289110",
+      "repo": "vinta/awesome-python",
+      "url": "https://github.com/vinta/awesome-python",
+      "language": "python",
+      "ref": "<pin_sha>",
+      "priority": "high",
+      "scan_profile": {
+        "severity_min": "high",
+        "js_backend": "structural",
+        "focus_cwes": [
+          "CWE-862",
+          "CWE-639"
+        ]
+      },
+      "status": "queued"
+    },
+    {
+      "id": "py-python-63476337",
+      "repo": "TheAlgorithms/Python",
+      "url": "https://github.com/TheAlgorithms/Python",
+      "language": "python",
+      "ref": "<pin_sha>",
+      "priority": "high",
+      "scan_profile": {
+        "severity_min": "high",
+        "js_backend": "structural",
+        "focus_cwes": [
+          "CWE-862",
+          "CWE-639"
+        ]
+      },
+      "status": "queued"
+    },
+    {
+      "id": "py-autogpt-614765452",
+      "repo": "Significant-Gravitas/AutoGPT",
+      "url": "https://github.com/Significant-Gravitas/AutoGPT",
+      "language": "python",
+      "ref": "<pin_sha>",
+      "priority": "high",
+      "scan_profile": {
+        "severity_min": "high",
+        "js_backend": "structural",
+        "focus_cwes": [
+          "CWE-862",
+          "CWE-639"
+        ]
+      },
+      "status": "queued"
+    },
+    {
+      "id": "py-stable-diffusion-webui-527591471",
+      "repo": "AUTOMATIC1111/stable-diffusion-webui",
+      "url": "https://github.com/AUTOMATIC1111/stable-diffusion-webui",
+      "language": "python",
+      "ref": "<pin_sha>",
+      "priority": "high",
+      "scan_profile": {
+        "severity_min": "high",
+        "js_backend": "structural",
+        "focus_cwes": [
+          "CWE-862",
+          "CWE-639"
+        ]
+      },
+      "status": "queued"
+    },
+    {
+      "id": "py-yt-dlp-307260205",
+      "repo": "yt-dlp/yt-dlp",
+      "url": "https://github.com/yt-dlp/yt-dlp",
+      "language": "python",
+      "ref": "<pin_sha>",
+      "priority": "high",
+      "scan_profile": {
+        "severity_min": "high",
+        "js_backend": "structural",
+        "focus_cwes": [
+          "CWE-862",
+          "CWE-639"
+        ]
+      },
+      "status": "queued"
+    },
+    {
+      "id": "py-transformers-155220641",
+      "repo": "huggingface/transformers",
+      "url": "https://github.com/huggingface/transformers",
+      "language": "python",
+      "ref": "<pin_sha>",
+      "priority": "high",
+      "scan_profile": {
+        "severity_min": "high",
+        "js_backend": "structural",
+        "focus_cwes": [
+          "CWE-862",
+          "CWE-639"
+        ]
+      },
+      "status": "queued"
+    },
+    {
+      "id": "py-hellogithub-58028038",
+      "repo": "521xueweihan/HelloGitHub",
+      "url": "https://github.com/521xueweihan/HelloGitHub",
+      "language": "python",
+      "ref": "<pin_sha>",
+      "priority": "high",
+      "scan_profile": {
+        "severity_min": "high",
+        "js_backend": "structural",
+        "focus_cwes": [
+          "CWE-862",
+          "CWE-639"
+        ]
+      },
+      "status": "queued"
+    },
+    {
+      "id": "py-hermes-agent-1024554267",
+      "repo": "NousResearch/hermes-agent",
+      "url": "https://github.com/NousResearch/hermes-agent",
+      "language": "python",
+      "ref": "<pin_sha>",
+      "priority": "high",
+      "scan_profile": {
+        "severity_min": "high",
+        "js_backend": "structural",
+        "focus_cwes": [
+          "CWE-862",
+          "CWE-639"
+        ]
+      },
+      "status": "queued"
+    },
+    {
+      "id": "py-langflow-599320067",
+      "repo": "langflow-ai/langflow",
+      "url": "https://github.com/langflow-ai/langflow",
+      "language": "python",
+      "ref": "<pin_sha>",
+      "priority": "high",
+      "scan_profile": {
+        "severity_min": "high",
+        "js_backend": "structural",
+        "focus_cwes": [
+          "CWE-862",
+          "CWE-639"
+        ]
+      },
+      "status": "queued"
+    },
+    {
+      "id": "py-youtube-dl-1039520",
+      "repo": "ytdl-org/youtube-dl",
+      "url": "https://github.com/ytdl-org/youtube-dl",
+      "language": "python",
+      "ref": "<pin_sha>",
+      "priority": "high",
+      "scan_profile": {
+        "severity_min": "high",
+        "js_backend": "structural",
+        "focus_cwes": [
+          "CWE-862",
+          "CWE-639"
+        ]
+      },
+      "status": "queued"
+    },
+    {
+      "id": "py-open-webui-701547123",
+      "repo": "open-webui/open-webui",
+      "url": "https://github.com/open-webui/open-webui",
+      "language": "python",
+      "ref": "<pin_sha>",
+      "priority": "high",
+      "scan_profile": {
+        "severity_min": "high",
+        "js_backend": "structural",
+        "focus_cwes": [
+          "CWE-862",
+          "CWE-639"
+        ]
+      },
+      "status": "queued"
+    },
+    {
+      "id": "py-langchain-552661142",
+      "repo": "langchain-ai/langchain",
+      "url": "https://github.com/langchain-ai/langchain",
+      "language": "python",
+      "ref": "<pin_sha>",
+      "priority": "high",
+      "scan_profile": {
+        "severity_min": "high",
+        "js_backend": "structural",
+        "focus_cwes": [
+          "CWE-862",
+          "CWE-639"
+        ]
+      },
+      "status": "queued"
+    },
+    {
+      "id": "py-skills-1061953414",
+      "repo": "anthropics/skills",
+      "url": "https://github.com/anthropics/skills",
+      "language": "python",
+      "ref": "<pin_sha>",
+      "priority": "high",
+      "scan_profile": {
+        "severity_min": "high",
+        "js_backend": "structural",
+        "focus_cwes": [
+          "CWE-862",
+          "CWE-639"
+        ]
+      },
+      "status": "queued"
+    },
+    {
+      "id": "py-markitdown-888092115",
+      "repo": "microsoft/markitdown",
+      "url": "https://github.com/microsoft/markitdown",
+      "language": "python",
+      "ref": "<pin_sha>",
+      "priority": "high",
+      "scan_profile": {
+        "severity_min": "high",
+        "js_backend": "structural",
+        "focus_cwes": [
+          "CWE-862",
+          "CWE-639"
+        ]
+      },
+      "status": "queued"
+    },
+    {
+      "id": "py-comfyui-589831718",
+      "repo": "Comfy-Org/ComfyUI",
+      "url": "https://github.com/Comfy-Org/ComfyUI",
+      "language": "python",
+      "ref": "<pin_sha>",
+      "priority": "high",
+      "scan_profile": {
+        "severity_min": "high",
+        "js_backend": "structural",
+        "focus_cwes": [
+          "CWE-862",
+          "CWE-639"
+        ]
+      },
+      "status": "queued"
+    },
+    {
+      "id": "py-awesome-llm-apps-793375104",
+      "repo": "Shubhamsaboo/awesome-llm-apps",
+      "url": "https://github.com/Shubhamsaboo/awesome-llm-apps",
+      "language": "python",
+      "ref": "<pin_sha>",
+      "priority": "high",
+      "scan_profile": {
+        "severity_min": "high",
+        "js_backend": "structural",
+        "focus_cwes": [
+          "CWE-862",
+          "CWE-639"
+        ]
+      },
+      "status": "queued"
+    },
+    {
+      "id": "py-deepseek-v3-908531752",
+      "repo": "deepseek-ai/DeepSeek-V3",
+      "url": "https://github.com/deepseek-ai/DeepSeek-V3",
+      "language": "python",
+      "ref": "<pin_sha>",
+      "priority": "high",
+      "scan_profile": {
+        "severity_min": "high",
+        "js_backend": "structural",
+        "focus_cwes": [
+          "CWE-862",
+          "CWE-639"
+        ]
+      },
+      "status": "queued"
+    },
+    {
+      "id": "py-spec-kit-1042367133",
+      "repo": "github/spec-kit",
+      "url": "https://github.com/github/spec-kit",
+      "language": "python",
+      "ref": "<pin_sha>",
+      "priority": "high",
+      "scan_profile": {
+        "severity_min": "high",
+        "js_backend": "structural",
+        "focus_cwes": [
+          "CWE-862",
+          "CWE-639"
+        ]
+      },
+      "status": "queued"
+    },
+    {
+      "id": "py-pytorch-65600975",
+      "repo": "pytorch/pytorch",
+      "url": "https://github.com/pytorch/pytorch",
+      "language": "python",
+      "ref": "<pin_sha>",
+      "priority": "high",
+      "scan_profile": {
+        "severity_min": "high",
+        "js_backend": "structural",
+        "focus_cwes": [
+          "CWE-862",
+          "CWE-639"
+        ]
+      },
+      "status": "queued"
+    },
+    {
+      "id": "py-whisper-537603333",
+      "repo": "openai/whisper",
+      "url": "https://github.com/openai/whisper",
+      "language": "python",
+      "ref": "<pin_sha>",
+      "priority": "high",
+      "scan_profile": {
+        "severity_min": "high",
+        "js_backend": "structural",
+        "focus_cwes": [
+          "CWE-862",
+          "CWE-639"
+        ]
+      },
+      "status": "queued"
+    },
+    {
+      "id": "py-fastapi-160919119",
+      "repo": "fastapi/fastapi",
+      "url": "https://github.com/fastapi/fastapi",
+      "language": "python",
+      "ref": "<pin_sha>",
+      "priority": "high",
+      "scan_profile": {
+        "severity_min": "high",
+        "js_backend": "structural",
+        "focus_cwes": [
+          "CWE-862",
+          "CWE-639"
+        ]
+      },
+      "status": "queued"
+    },
+    {
+      "id": "py-thefuck-33614304",
+      "repo": "nvbn/thefuck",
+      "url": "https://github.com/nvbn/thefuck",
+      "language": "python",
+      "ref": "<pin_sha>",
+      "priority": "high",
+      "scan_profile": {
+        "severity_min": "high",
+        "js_backend": "structural",
+        "focus_cwes": [
+          "CWE-862",
+          "CWE-639"
+        ]
+      },
+      "status": "queued"
+    },
+    {
+      "id": "py-browser-use-881458615",
+      "repo": "browser-use/browser-use",
+      "url": "https://github.com/browser-use/browser-use",
+      "language": "python",
+      "ref": "<pin_sha>",
+      "priority": "high",
+      "scan_profile": {
+        "severity_min": "high",
+        "js_backend": "structural",
+        "focus_cwes": [
+          "CWE-862",
+          "CWE-639"
+        ]
+      },
+      "status": "queued"
+    },
+    {
+      "id": "py-deep-live-cam-695864515",
+      "repo": "hacksider/Deep-Live-Cam",
+      "url": "https://github.com/hacksider/Deep-Live-Cam",
+      "language": "python",
+      "ref": "<pin_sha>",
+      "priority": "high",
+      "scan_profile": {
+        "severity_min": "high",
+        "js_backend": "structural",
+        "focus_cwes": [
+          "CWE-862",
+          "CWE-639"
+        ]
+      },
+      "status": "queued"
+    },
+    {
+      "id": "py-django-4164482",
+      "repo": "django/django",
+      "url": "https://github.com/django/django",
+      "language": "python",
+      "ref": "<pin_sha>",
+      "priority": "high",
+      "scan_profile": {
+        "severity_min": "high",
+        "js_backend": "structural",
+        "focus_cwes": [
+          "CWE-862",
+          "CWE-639"
+        ]
+      },
+      "status": "queued"
+    },
+    {
+      "id": "py-core-12888993",
+      "repo": "home-assistant/core",
+      "url": "https://github.com/home-assistant/core",
+      "language": "python",
+      "ref": "<pin_sha>",
+      "priority": "high",
+      "scan_profile": {
+        "severity_min": "high",
+        "js_backend": "structural",
+        "focus_cwes": [
+          "CWE-862",
+          "CWE-639"
+        ]
+      },
+      "status": "queued"
+    },
+    {
+      "id": "py-manim-32689863",
+      "repo": "3b1b/manim",
+      "url": "https://github.com/3b1b/manim",
+      "language": "python",
+      "ref": "<pin_sha>",
+      "priority": "high",
+      "scan_profile": {
+        "severity_min": "high",
+        "js_backend": "structural",
+        "focus_cwes": [
+          "CWE-862",
+          "CWE-639"
+        ]
+      },
+      "status": "queued"
+    },
+    {
+      "id": "py-sherlock-162998479",
+      "repo": "sherlock-project/sherlock",
+      "url": "https://github.com/sherlock-project/sherlock",
+      "language": "python",
+      "ref": "<pin_sha>",
+      "priority": "high",
+      "scan_profile": {
+        "severity_min": "high",
+        "js_backend": "structural",
+        "focus_cwes": [
+          "CWE-862",
+          "CWE-639"
+        ]
+      },
+      "status": "queued"
+    },
+    {
+      "id": "py-devops-exercises-212639071",
+      "repo": "bregman-arie/devops-exercises",
+      "url": "https://github.com/bregman-arie/devops-exercises",
+      "language": "python",
+      "ref": "<pin_sha>",
+      "priority": "high",
+      "scan_profile": {
+        "severity_min": "high",
+        "js_backend": "structural",
+        "focus_cwes": [
+          "CWE-862",
+          "CWE-639"
+        ]
+      },
+      "status": "queued"
+    },
+    {
+      "id": "py-autoresearch-1174820787",
+      "repo": "karpathy/autoresearch",
+      "url": "https://github.com/karpathy/autoresearch",
+      "language": "python",
+      "ref": "<pin_sha>",
+      "priority": "high",
+      "scan_profile": {
+        "severity_min": "high",
+        "js_backend": "structural",
+        "focus_cwes": [
+          "CWE-862",
+          "CWE-639"
+        ]
+      },
+      "status": "queued"
+    },
+    {
+      "id": "py-funnlp-145553672",
+      "repo": "fighting41love/funNLP",
+      "url": "https://github.com/fighting41love/funNLP",
+      "language": "python",
+      "ref": "<pin_sha>",
+      "priority": "high",
+      "scan_profile": {
+        "severity_min": "high",
+        "js_backend": "structural",
+        "focus_cwes": [
+          "CWE-862",
+          "CWE-639"
+        ]
+      },
+      "status": "queued"
+    },
+    {
+      "id": "ja-react-10270250",
+      "repo": "facebook/react",
+      "url": "https://github.com/facebook/react",
+      "language": "javascript",
+      "ref": "<pin_sha>",
+      "priority": "high",
+      "scan_profile": {
+        "severity_min": "high",
+        "js_backend": "structural",
+        "focus_cwes": [
+          "CWE-862",
+          "CWE-639"
+        ]
+      },
+      "status": "queued"
+    },
+    {
+      "id": "ja-javascript-algorithms-126577260",
+      "repo": "trekhleb/javascript-algorithms",
+      "url": "https://github.com/trekhleb/javascript-algorithms",
+      "language": "javascript",
+      "ref": "<pin_sha>",
+      "priority": "high",
+      "scan_profile": {
+        "severity_min": "high",
+        "js_backend": "structural",
+        "focus_cwes": [
+          "CWE-862",
+          "CWE-639"
+        ]
+      },
+      "status": "queued"
+    },
+    {
+      "id": "ja-everything-claude-code-1136590548",
+      "repo": "affaan-m/everything-claude-code",
+      "url": "https://github.com/affaan-m/everything-claude-code",
+      "language": "javascript",
+      "ref": "<pin_sha>",
+      "priority": "high",
+      "scan_profile": {
+        "severity_min": "high",
+        "js_backend": "structural",
+        "focus_cwes": [
+          "CWE-862",
+          "CWE-639"
+        ]
+      },
+      "status": "queued"
+    },
+    {
+      "id": "ja-javaguide-132464395",
+      "repo": "Snailclimb/JavaGuide",
+      "url": "https://github.com/Snailclimb/JavaGuide",
+      "language": "javascript",
+      "ref": "<pin_sha>",
+      "priority": "high",
+      "scan_profile": {
+        "severity_min": "high",
+        "js_backend": "structural",
+        "focus_cwes": [
+          "CWE-862",
+          "CWE-639"
+        ]
+      },
+      "status": "queued"
+    },
+    {
+      "id": "ja-javascript-6498492",
+      "repo": "airbnb/javascript",
+      "url": "https://github.com/airbnb/javascript",
+      "language": "javascript",
+      "ref": "<pin_sha>",
+      "priority": "high",
+      "scan_profile": {
+        "severity_min": "high",
+        "js_backend": "structural",
+        "focus_cwes": [
+          "CWE-862",
+          "CWE-639"
+        ]
+      },
+      "status": "queued"
+    },
+    {
+      "id": "ja-next-js-70107786",
+      "repo": "vercel/next.js",
+      "url": "https://github.com/vercel/next.js",
+      "language": "javascript",
+      "ref": "<pin_sha>",
+      "priority": "high",
+      "scan_profile": {
+        "severity_min": "high",
+        "js_backend": "structural",
+        "focus_cwes": [
+          "CWE-862",
+          "CWE-639"
+        ]
+      },
+      "status": "queued"
+    },
+    {
+      "id": "ja-30-seconds-of-code-112507086",
+      "repo": "Chalarangelo/30-seconds-of-code",
+      "url": "https://github.com/Chalarangelo/30-seconds-of-code",
+      "language": "javascript",
+      "ref": "<pin_sha>",
+      "priority": "high",
+      "scan_profile": {
+        "severity_min": "high",
+        "js_backend": "structural",
+        "focus_cwes": [
+          "CWE-862",
+          "CWE-639"
+        ]
+      },
+      "status": "queued"
+    },
+    {
+      "id": "ja-node-27193779",
+      "repo": "nodejs/node",
+      "url": "https://github.com/nodejs/node",
+      "language": "javascript",
+      "ref": "<pin_sha>",
+      "priority": "high",
+      "scan_profile": {
+        "severity_min": "high",
+        "js_backend": "structural",
+        "focus_cwes": [
+          "CWE-862",
+          "CWE-639"
+        ]
+      },
+      "status": "queued"
+    },
+    {
+      "id": "ja-three-js-576201",
+      "repo": "mrdoob/three.js",
+      "url": "https://github.com/mrdoob/three.js",
+      "language": "javascript",
+      "ref": "<pin_sha>",
+      "priority": "high",
+      "scan_profile": {
+        "severity_min": "high",
+        "js_backend": "structural",
+        "focus_cwes": [
+          "CWE-862",
+          "CWE-639"
+        ]
+      },
+      "status": "queued"
+    },
+    {
+      "id": "ja-axios-23088740",
+      "repo": "axios/axios",
+      "url": "https://github.com/axios/axios",
+      "language": "javascript",
+      "ref": "<pin_sha>",
+      "priority": "high",
+      "scan_profile": {
+        "severity_min": "high",
+        "js_backend": "structural",
+        "focus_cwes": [
+          "CWE-862",
+          "CWE-639"
+        ]
+      },
+      "status": "queued"
+    },
+    {
+      "id": "ja-create-react-app-63537249",
+      "repo": "react/create-react-app",
+      "url": "https://github.com/react/create-react-app",
+      "language": "javascript",
+      "ref": "<pin_sha>",
+      "priority": "high",
+      "scan_profile": {
+        "severity_min": "high",
+        "js_backend": "structural",
+        "focus_cwes": [
+          "CWE-862",
+          "CWE-639"
+        ]
+      },
+      "status": "queued"
+    },
+    {
+      "id": "ja-material-ui-23083156",
+      "repo": "mui/material-ui",
+      "url": "https://github.com/mui/material-ui",
+      "language": "javascript",
+      "ref": "<pin_sha>",
+      "priority": "high",
+      "scan_profile": {
+        "severity_min": "high",
+        "js_backend": "structural",
+        "focus_cwes": [
+          "CWE-862",
+          "CWE-639"
+        ]
+      },
+      "status": "queued"
+    },
+    {
+      "id": "ja-web-dev-for-beginners-311525798",
+      "repo": "microsoft/Web-Dev-For-Beginners",
+      "url": "https://github.com/microsoft/Web-Dev-For-Beginners",
+      "language": "javascript",
+      "ref": "<pin_sha>",
+      "priority": "high",
+      "scan_profile": {
+        "severity_min": "high",
+        "js_backend": "structural",
+        "focus_cwes": [
+          "CWE-862",
+          "CWE-639"
+        ]
+      },
+      "status": "queued"
+    },
+    {
+      "id": "ja-clean-code-javascript-74791366",
+      "repo": "ryanmcdermott/clean-code-javascript",
+      "url": "https://github.com/ryanmcdermott/clean-code-javascript",
+      "language": "javascript",
+      "ref": "<pin_sha>",
+      "priority": "high",
+      "scan_profile": {
+        "severity_min": "high",
+        "js_backend": "structural",
+        "focus_cwes": [
+          "CWE-862",
+          "CWE-639"
+        ]
+      },
+      "status": "queued"
+    },
+    {
+      "id": "ja-uptime-kuma-382496361",
+      "repo": "louislam/uptime-kuma",
+      "url": "https://github.com/louislam/uptime-kuma",
+      "language": "javascript",
+      "ref": "<pin_sha>",
+      "priority": "high",
+      "scan_profile": {
+        "severity_min": "high",
+        "js_backend": "structural",
+        "focus_cwes": [
+          "CWE-862",
+          "CWE-639"
+        ]
+      },
+      "status": "queued"
+    },
+    {
+      "id": "ja-svelte-74293321",
+      "repo": "sveltejs/svelte",
+      "url": "https://github.com/sveltejs/svelte",
+      "language": "javascript",
+      "ref": "<pin_sha>",
+      "priority": "high",
+      "scan_profile": {
+        "severity_min": "high",
+        "js_backend": "structural",
+        "focus_cwes": [
+          "CWE-862",
+          "CWE-639"
+        ]
+      },
+      "status": "queued"
+    },
+    {
+      "id": "ja-github-readme-stats-278335273",
+      "repo": "anuraghazra/github-readme-stats",
+      "url": "https://github.com/anuraghazra/github-readme-stats",
+      "language": "javascript",
+      "ref": "<pin_sha>",
+      "priority": "high",
+      "scan_profile": {
+        "severity_min": "high",
+        "js_backend": "structural",
+        "focus_cwes": [
+          "CWE-862",
+          "CWE-639"
+        ]
+      },
+      "status": "queued"
+    },
+    {
+      "id": "ja-font-awesome-3470471",
+      "repo": "FortAwesome/Font-Awesome",
+      "url": "https://github.com/FortAwesome/Font-Awesome",
+      "language": "javascript",
+      "ref": "<pin_sha>",
+      "priority": "high",
+      "scan_profile": {
+        "severity_min": "high",
+        "js_backend": "structural",
+        "focus_cwes": [
+          "CWE-862",
+          "CWE-639"
+        ]
+      },
+      "status": "queued"
+    },
+    {
+      "id": "ja-json-server-14747598",
+      "repo": "typicode/json-server",
+      "url": "https://github.com/typicode/json-server",
+      "language": "javascript",
+      "ref": "<pin_sha>",
+      "priority": "high",
+      "scan_profile": {
+        "severity_min": "high",
+        "js_backend": "structural",
+        "focus_cwes": [
+          "CWE-862",
+          "CWE-639"
+        ]
+      },
+      "status": "queued"
+    },
+    {
+      "id": "ja-reveal-js-1861458",
+      "repo": "hakimel/reveal.js",
+      "url": "https://github.com/hakimel/reveal.js",
+      "language": "javascript",
+      "ref": "<pin_sha>",
+      "priority": "high",
+      "scan_profile": {
+        "severity_min": "high",
+        "js_backend": "structural",
+        "focus_cwes": [
+          "CWE-862",
+          "CWE-639"
+        ]
+      },
+      "status": "queued"
+    },
+    {
+      "id": "ja-express-237159",
+      "repo": "expressjs/express",
+      "url": "https://github.com/expressjs/express",
+      "language": "javascript",
+      "ref": "<pin_sha>",
+      "priority": "high",
+      "scan_profile": {
+        "severity_min": "high",
+        "js_backend": "structural",
+        "focus_cwes": [
+          "CWE-862",
+          "CWE-639"
+        ]
+      },
+      "status": "queued"
+    },
+    {
+      "id": "ja-anime-53809090",
+      "repo": "juliangarnier/anime",
+      "url": "https://github.com/juliangarnier/anime",
+      "language": "javascript",
+      "ref": "<pin_sha>",
+      "priority": "high",
+      "scan_profile": {
+        "severity_min": "high",
+        "js_backend": "structural",
+        "focus_cwes": [
+          "CWE-862",
+          "CWE-639"
+        ]
+      },
+      "status": "queued"
+    },
+    {
+      "id": "ja-chart-js-8843683",
+      "repo": "chartjs/Chart.js",
+      "url": "https://github.com/chartjs/Chart.js",
+      "language": "javascript",
+      "ref": "<pin_sha>",
+      "priority": "high",
+      "scan_profile": {
+        "severity_min": "high",
+        "js_backend": "structural",
+        "focus_cwes": [
+          "CWE-862",
+          "CWE-639"
+        ]
+      },
+      "status": "queued"
+    },
+    {
+      "id": "ja-33-js-concepts-147350463",
+      "repo": "leonardomso/33-js-concepts",
+      "url": "https://github.com/leonardomso/33-js-concepts",
+      "language": "javascript",
+      "ref": "<pin_sha>",
+      "priority": "high",
+      "scan_profile": {
+        "severity_min": "high",
+        "js_backend": "structural",
+        "focus_cwes": [
+          "CWE-862",
+          "CWE-639"
+        ]
+      },
+      "status": "queued"
+    },
+    {
+      "id": "ja-webpack-3678731",
+      "repo": "webpack/webpack",
+      "url": "https://github.com/webpack/webpack",
+      "language": "javascript",
+      "ref": "<pin_sha>",
+      "priority": "high",
+      "scan_profile": {
+        "severity_min": "high",
+        "js_backend": "structural",
+        "focus_cwes": [
+          "CWE-862",
+          "CWE-639"
+        ]
+      },
+      "status": "queued"
+    },
+    {
+      "id": "ja-ublock-33263118",
+      "repo": "gorhill/uBlock",
+      "url": "https://github.com/gorhill/uBlock",
+      "language": "javascript",
+      "ref": "<pin_sha>",
+      "priority": "high",
+      "scan_profile": {
+        "severity_min": "high",
+        "js_backend": "structural",
+        "focus_cwes": [
+          "CWE-862",
+          "CWE-639"
+        ]
+      },
+      "status": "queued"
+    },
+    {
+      "id": "ja-resume-github-com-1334369",
+      "repo": "resume/resume.github.com",
+      "url": "https://github.com/resume/resume.github.com",
+      "language": "javascript",
+      "ref": "<pin_sha>",
+      "priority": "high",
+      "scan_profile": {
+        "severity_min": "high",
+        "js_backend": "structural",
+        "focus_cwes": [
+          "CWE-862",
+          "CWE-639"
+        ]
+      },
+      "status": "queued"
+    },
+    {
+      "id": "ja-get-shit-done-1116260703",
+      "repo": "gsd-build/get-shit-done",
+      "url": "https://github.com/gsd-build/get-shit-done",
+      "language": "javascript",
+      "ref": "<pin_sha>",
+      "priority": "high",
+      "scan_profile": {
+        "severity_min": "high",
+        "js_backend": "structural",
+        "focus_cwes": [
+          "CWE-862",
+          "CWE-639"
+        ]
+      },
+      "status": "queued"
+    },
+    {
+      "id": "ja-lodash-3955647",
+      "repo": "lodash/lodash",
+      "url": "https://github.com/lodash/lodash",
+      "language": "javascript",
+      "ref": "<pin_sha>",
+      "priority": "high",
+      "scan_profile": {
+        "severity_min": "high",
+        "js_backend": "structural",
+        "focus_cwes": [
+          "CWE-862",
+          "CWE-639"
+        ]
+      },
+      "status": "queued"
+    },
+    {
+      "id": "ja-drawio-desktop-92443980",
+      "repo": "jgraph/drawio-desktop",
+      "url": "https://github.com/jgraph/drawio-desktop",
+      "language": "javascript",
+      "ref": "<pin_sha>",
+      "priority": "high",
+      "scan_profile": {
+        "severity_min": "high",
+        "js_backend": "structural",
+        "focus_cwes": [
+          "CWE-862",
+          "CWE-639"
+        ]
+      },
+      "status": "queued"
+    },
+    {
+      "id": "ja-caveman-1201173969",
+      "repo": "JuliusBrussee/caveman",
+      "url": "https://github.com/JuliusBrussee/caveman",
+      "language": "javascript",
+      "ref": "<pin_sha>",
+      "priority": "high",
+      "scan_profile": {
+        "severity_min": "high",
+        "js_backend": "structural",
+        "focus_cwes": [
+          "CWE-862",
+          "CWE-639"
+        ]
+      },
+      "status": "queued"
+    },
+    {
+      "id": "ja-markdown-here-4311796",
+      "repo": "adam-p/markdown-here",
+      "url": "https://github.com/adam-p/markdown-here",
+      "language": "javascript",
+      "ref": "<pin_sha>",
+      "priority": "high",
+      "scan_profile": {
+        "severity_min": "high",
+        "js_backend": "structural",
+        "focus_cwes": [
+          "CWE-862",
+          "CWE-639"
+        ]
+      },
+      "status": "queued"
+    },
+    {
+      "id": "ja-anything-llm-649170660",
+      "repo": "Mintplex-Labs/anything-llm",
+      "url": "https://github.com/Mintplex-Labs/anything-llm",
+      "language": "javascript",
+      "ref": "<pin_sha>",
+      "priority": "high",
+      "scan_profile": {
+        "severity_min": "high",
+        "js_backend": "structural",
+        "focus_cwes": [
+          "CWE-862",
+          "CWE-639"
+        ]
+      },
+      "status": "queued"
+    },
+    {
+      "id": "ty-freecodecamp-28457823",
+      "repo": "freeCodeCamp/freeCodeCamp",
+      "url": "https://github.com/freeCodeCamp/freeCodeCamp",
+      "language": "typescript",
+      "ref": "<pin_sha>",
+      "priority": "high",
+      "scan_profile": {
+        "severity_min": "high",
+        "js_backend": "structural",
+        "focus_cwes": [
+          "CWE-862",
+          "CWE-639"
+        ]
+      },
+      "status": "queued"
+    },
+    {
+      "id": "ty-openclaw-1103012935",
+      "repo": "openclaw/openclaw",
+      "url": "https://github.com/openclaw/openclaw",
+      "language": "typescript",
+      "ref": "<pin_sha>",
+      "priority": "high",
+      "scan_profile": {
+        "severity_min": "high",
+        "js_backend": "structural",
+        "focus_cwes": [
+          "CWE-862",
+          "CWE-639"
+        ]
+      },
+      "status": "queued"
+    },
+    {
+      "id": "ty-developer-roadmap-85077558",
+      "repo": "nilbuild/developer-roadmap",
+      "url": "https://github.com/nilbuild/developer-roadmap",
+      "language": "typescript",
+      "ref": "<pin_sha>",
+      "priority": "high",
+      "scan_profile": {
+        "severity_min": "high",
+        "js_backend": "structural",
+        "focus_cwes": [
+          "CWE-862",
+          "CWE-639"
+        ]
+      },
+      "status": "queued"
+    },
+    {
+      "id": "ty-vue-11730342",
+      "repo": "vuejs/vue",
+      "url": "https://github.com/vuejs/vue",
+      "language": "typescript",
+      "ref": "<pin_sha>",
+      "priority": "high",
+      "scan_profile": {
+        "severity_min": "high",
+        "js_backend": "structural",
+        "focus_cwes": [
+          "CWE-862",
+          "CWE-639"
+        ]
+      },
+      "status": "queued"
+    },
+    {
+      "id": "ty-n8n-193215554",
+      "repo": "n8n-io/n8n",
+      "url": "https://github.com/n8n-io/n8n",
+      "language": "typescript",
+      "ref": "<pin_sha>",
+      "priority": "high",
+      "scan_profile": {
+        "severity_min": "high",
+        "js_backend": "structural",
+        "focus_cwes": [
+          "CWE-862",
+          "CWE-639"
+        ]
+      },
+      "status": "queued"
+    },
+    {
+      "id": "ty-vscode-41881900",
+      "repo": "microsoft/vscode",
+      "url": "https://github.com/microsoft/vscode",
+      "language": "typescript",
+      "ref": "<pin_sha>",
+      "priority": "high",
+      "scan_profile": {
+        "severity_min": "high",
+        "js_backend": "structural",
+        "focus_cwes": [
+          "CWE-862",
+          "CWE-639"
+        ]
+      },
+      "status": "queued"
+    },
+    {
+      "id": "ty-opencode-975734319",
+      "repo": "anomalyco/opencode",
+      "url": "https://github.com/anomalyco/opencode",
+      "language": "typescript",
+      "ref": "<pin_sha>",
+      "priority": "high",
+      "scan_profile": {
+        "severity_min": "high",
+        "js_backend": "structural",
+        "focus_cwes": [
+          "CWE-862",
+          "CWE-639"
+        ]
+      },
+      "status": "queued"
+    },
+    {
+      "id": "ty-dify-626805178",
+      "repo": "langgenius/dify",
+      "url": "https://github.com/langgenius/dify",
+      "language": "typescript",
+      "ref": "<pin_sha>",
+      "priority": "high",
+      "scan_profile": {
+        "severity_min": "high",
+        "js_backend": "structural",
+        "focus_cwes": [
+          "CWE-862",
+          "CWE-639"
+        ]
+      },
+      "status": "queued"
+    },
+    {
+      "id": "ty-tech-interview-handbook-62607227",
+      "repo": "yangshun/tech-interview-handbook",
+      "url": "https://github.com/yangshun/tech-interview-handbook",
+      "language": "typescript",
+      "ref": "<pin_sha>",
+      "priority": "high",
+      "scan_profile": {
+        "severity_min": "high",
+        "js_backend": "structural",
+        "focus_cwes": [
+          "CWE-862",
+          "CWE-639"
+        ]
+      },
+      "status": "queued"
+    },
+    {
+      "id": "ty-excalidraw-231283452",
+      "repo": "excalidraw/excalidraw",
+      "url": "https://github.com/excalidraw/excalidraw",
+      "language": "typescript",
+      "ref": "<pin_sha>",
+      "priority": "high",
+      "scan_profile": {
+        "severity_min": "high",
+        "js_backend": "structural",
+        "focus_cwes": [
+          "CWE-862",
+          "CWE-639"
+        ]
+      },
+      "status": "queued"
+    },
+    {
+      "id": "ty-firecrawl-787076358",
+      "repo": "firecrawl/firecrawl",
+      "url": "https://github.com/firecrawl/firecrawl",
+      "language": "typescript",
+      "ref": "<pin_sha>",
+      "priority": "high",
+      "scan_profile": {
+        "severity_min": "high",
+        "js_backend": "structural",
+        "focus_cwes": [
+          "CWE-862",
+          "CWE-639"
+        ]
+      },
+      "status": "queued"
+    },
+    {
+      "id": "ty-clash-verge-rev-721767116",
+      "repo": "clash-verge-rev/clash-verge-rev",
+      "url": "https://github.com/clash-verge-rev/clash-verge-rev",
+      "language": "typescript",
+      "ref": "<pin_sha>",
+      "priority": "high",
+      "scan_profile": {
+        "severity_min": "high",
+        "js_backend": "structural",
+        "focus_cwes": [
+          "CWE-862",
+          "CWE-639"
+        ]
+      },
+      "status": "queued"
+    },
+    {
+      "id": "ty-iptv-157616880",
+      "repo": "iptv-org/iptv",
+      "url": "https://github.com/iptv-org/iptv",
+      "language": "typescript",
+      "ref": "<pin_sha>",
+      "priority": "high",
+      "scan_profile": {
+        "severity_min": "high",
+        "js_backend": "structural",
+        "focus_cwes": [
+          "CWE-862",
+          "CWE-639"
+        ]
+      },
+      "status": "queued"
+    },
+    {
+      "id": "ty-ui-585146387",
+      "repo": "shadcn-ui/ui",
+      "url": "https://github.com/shadcn-ui/ui",
+      "language": "typescript",
+      "ref": "<pin_sha>",
+      "priority": "high",
+      "scan_profile": {
+        "severity_min": "high",
+        "js_backend": "structural",
+        "focus_cwes": [
+          "CWE-862",
+          "CWE-639"
+        ]
+      },
+      "status": "queued"
+    },
+    {
+      "id": "ty-typescript-20929025",
+      "repo": "microsoft/TypeScript",
+      "url": "https://github.com/microsoft/TypeScript",
+      "language": "typescript",
+      "ref": "<pin_sha>",
+      "priority": "high",
+      "scan_profile": {
+        "severity_min": "high",
+        "js_backend": "structural",
+        "focus_cwes": [
+          "CWE-862",
+          "CWE-639"
+        ]
+      },
+      "status": "queued"
+    },
+    {
+      "id": "ty-gemini-cli-968197216",
+      "repo": "google-gemini/gemini-cli",
+      "url": "https://github.com/google-gemini/gemini-cli",
+      "language": "typescript",
+      "ref": "<pin_sha>",
+      "priority": "high",
+      "scan_profile": {
+        "severity_min": "high",
+        "js_backend": "structural",
+        "focus_cwes": [
+          "CWE-862",
+          "CWE-639"
+        ]
+      },
+      "status": "queued"
+    },
+    {
+      "id": "ty-supabase-214587193",
+      "repo": "supabase/supabase",
+      "url": "https://github.com/supabase/supabase",
+      "language": "typescript",
+      "ref": "<pin_sha>",
+      "priority": "high",
+      "scan_profile": {
+        "severity_min": "high",
+        "js_backend": "structural",
+        "focus_cwes": [
+          "CWE-862",
+          "CWE-639"
+        ]
+      },
+      "status": "queued"
+    },
+    {
+      "id": "ty-immich-455229168",
+      "repo": "immich-app/immich",
+      "url": "https://github.com/immich-app/immich",
+      "language": "typescript",
+      "ref": "<pin_sha>",
+      "priority": "high",
+      "scan_profile": {
+        "severity_min": "high",
+        "js_backend": "structural",
+        "focus_cwes": [
+          "CWE-862",
+          "CWE-639"
+        ]
+      },
+      "status": "queued"
+    },
+    {
+      "id": "ty-angular-24195339",
+      "repo": "angular/angular",
+      "url": "https://github.com/angular/angular",
+      "language": "typescript",
+      "ref": "<pin_sha>",
+      "priority": "high",
+      "scan_profile": {
+        "severity_min": "high",
+        "js_backend": "structural",
+        "focus_cwes": [
+          "CWE-862",
+          "CWE-639"
+        ]
+      },
+      "status": "queued"
+    },
+    {
+      "id": "ty-ant-design-34526884",
+      "repo": "ant-design/ant-design",
+      "url": "https://github.com/ant-design/ant-design",
+      "language": "typescript",
+      "ref": "<pin_sha>",
+      "priority": "high",
+      "scan_profile": {
+        "severity_min": "high",
+        "js_backend": "structural",
+        "focus_cwes": [
+          "CWE-862",
+          "CWE-639"
+        ]
+      },
+      "status": "queued"
+    },
+    {
+      "id": "ty-gstack-1179264259",
+      "repo": "garrytan/gstack",
+      "url": "https://github.com/garrytan/gstack",
+      "language": "typescript",
+      "ref": "<pin_sha>",
+      "priority": "high",
+      "scan_profile": {
+        "severity_min": "high",
+        "js_backend": "structural",
+        "focus_cwes": [
+          "CWE-862",
+          "CWE-639"
+        ]
+      },
+      "status": "queued"
+    },
+    {
+      "id": "ty-tailwindcss-106017343",
+      "repo": "tailwindlabs/tailwindcss",
+      "url": "https://github.com/tailwindlabs/tailwindcss",
+      "language": "typescript",
+      "ref": "<pin_sha>",
+      "priority": "high",
+      "scan_profile": {
+        "severity_min": "high",
+        "js_backend": "structural",
+        "focus_cwes": [
+          "CWE-862",
+          "CWE-639"
+        ]
+      },
+      "status": "queued"
+    },
+    {
+      "id": "ty-puppeteer-90796663",
+      "repo": "puppeteer/puppeteer",
+      "url": "https://github.com/puppeteer/puppeteer",
+      "language": "typescript",
+      "ref": "<pin_sha>",
+      "priority": "high",
+      "scan_profile": {
+        "severity_min": "high",
+        "js_backend": "structural",
+        "focus_cwes": [
+          "CWE-862",
+          "CWE-639"
+        ]
+      },
+      "status": "queued"
+    },
+    {
+      "id": "ty-storybook-54173593",
+      "repo": "storybookjs/storybook",
+      "url": "https://github.com/storybookjs/storybook",
+      "language": "typescript",
+      "ref": "<pin_sha>",
+      "priority": "high",
+      "scan_profile": {
+        "severity_min": "high",
+        "js_backend": "structural",
+        "focus_cwes": [
+          "CWE-862",
+          "CWE-639"
+        ]
+      },
+      "status": "queued"
+    },
+    {
+      "id": "ty-playwright-221981891",
+      "repo": "microsoft/playwright",
+      "url": "https://github.com/microsoft/playwright",
+      "language": "typescript",
+      "ref": "<pin_sha>",
+      "priority": "high",
+      "scan_profile": {
+        "severity_min": "high",
+        "js_backend": "structural",
+        "focus_cwes": [
+          "CWE-862",
+          "CWE-639"
+        ]
+      },
+      "status": "queued"
+    },
+    {
+      "id": "ty-mermaid-26066727",
+      "repo": "mermaid-js/mermaid",
+      "url": "https://github.com/mermaid-js/mermaid",
+      "language": "typescript",
+      "ref": "<pin_sha>",
+      "priority": "high",
+      "scan_profile": {
+        "severity_min": "high",
+        "js_backend": "structural",
+        "focus_cwes": [
+          "CWE-862",
+          "CWE-639"
+        ]
+      },
+      "status": "queued"
+    },
+    {
+      "id": "ty-nextchat-612344730",
+      "repo": "ChatGPTNextWeb/NextChat",
+      "url": "https://github.com/ChatGPTNextWeb/NextChat",
+      "language": "typescript",
+      "ref": "<pin_sha>",
+      "priority": "high",
+      "scan_profile": {
+        "severity_min": "high",
+        "js_backend": "structural",
+        "focus_cwes": [
+          "CWE-862",
+          "CWE-639"
+        ]
+      },
+      "status": "queued"
+    },
+    {
+      "id": "ty-servers-890668799",
+      "repo": "modelcontextprotocol/servers",
+      "url": "https://github.com/modelcontextprotocol/servers",
+      "language": "typescript",
+      "ref": "<pin_sha>",
+      "priority": "high",
+      "scan_profile": {
+        "severity_min": "high",
+        "js_backend": "structural",
+        "focus_cwes": [
+          "CWE-862",
+          "CWE-639"
+        ]
+      },
+      "status": "queued"
+    },
+    {
+      "id": "ty-realworld-52631841",
+      "repo": "realworld-apps/realworld",
+      "url": "https://github.com/realworld-apps/realworld",
+      "language": "typescript",
+      "ref": "<pin_sha>",
+      "priority": "high",
+      "scan_profile": {
+        "severity_min": "high",
+        "js_backend": "structural",
+        "focus_cwes": [
+          "CWE-862",
+          "CWE-639"
+        ]
+      },
+      "status": "queued"
+    },
+    {
+      "id": "ty-vite-257485422",
+      "repo": "vitejs/vite",
+      "url": "https://github.com/vitejs/vite",
+      "language": "typescript",
+      "ref": "<pin_sha>",
+      "priority": "high",
+      "scan_profile": {
+        "severity_min": "high",
+        "js_backend": "structural",
+        "focus_cwes": [
+          "CWE-862",
+          "CWE-639"
+        ]
+      },
+      "status": "queued"
+    },
+    {
+      "id": "ty-hoppscotch-203587744",
+      "repo": "hoppscotch/hoppscotch",
+      "url": "https://github.com/hoppscotch/hoppscotch",
+      "language": "typescript",
+      "ref": "<pin_sha>",
+      "priority": "high",
+      "scan_profile": {
+        "severity_min": "high",
+        "js_backend": "structural",
+        "focus_cwes": [
+          "CWE-862",
+          "CWE-639"
+        ]
+      },
+      "status": "queued"
+    },
+    {
+      "id": "ty-stirling-pdf-594155488",
+      "repo": "Stirling-Tools/Stirling-PDF",
+      "url": "https://github.com/Stirling-Tools/Stirling-PDF",
+      "language": "typescript",
+      "ref": "<pin_sha>",
+      "priority": "high",
+      "scan_profile": {
+        "severity_min": "high",
+        "js_backend": "structural",
+        "focus_cwes": [
+          "CWE-862",
+          "CWE-639"
+        ]
+      },
+      "status": "queued"
+    },
+    {
+      "id": "ty-code-server-172953845",
+      "repo": "coder/code-server",
+      "url": "https://github.com/coder/code-server",
+      "language": "typescript",
+      "ref": "<pin_sha>",
+      "priority": "high",
+      "scan_profile": {
+        "severity_min": "high",
+        "js_backend": "structural",
+        "focus_cwes": [
+          "CWE-862",
+          "CWE-639"
+        ]
+      },
+      "status": "queued"
+    }
+  ]
+}

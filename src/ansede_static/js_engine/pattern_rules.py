@@ -316,6 +316,22 @@ RULES: list[Rule] = [
         context_lines=20,
         negate_context=True,
     ),
+    Rule(
+        "JS-062", "CWE-94",
+        "CWE-94: Handlebars template compiled from user input at line {line}",
+        "Handlebars.compile() receives user-controlled template content at L{line}: `{snippet}`. Compiling attacker-controlled templates enables server-side template/code injection.",
+        "Never compile templates from request data. Keep templates static and pass user input only as escaped context variables.",
+        Severity.CRITICAL,
+        r'Handlebars\.compile\s*\([^\)]*req\.(?:body|query|params)',
+    ),
+    Rule(
+        "JS-063", "CWE-347",
+        "CWE-347: JWT verification allows 'none' algorithm at line {line}",
+        "JWT verify/decode options include `algorithms: ['none']` at L{line}: `{snippet}`. Unsigned tokens can be forged and accepted.",
+        "Disallow `none` and pin explicit strong algorithms (e.g. RS256/HS256) with key verification.",
+        Severity.CRITICAL,
+        r'jwt\.(?:verify|decode)\s*\([^\)]*algorithms\s*[:=]\s*\[\s*["\']none["\']\s*\]',
+    ),
     # ─── XML / XXE ────────────────────────────────────────────────────────────
     Rule(
         "JS-043", "CWE-611",

@@ -1,0 +1,21 @@
+version: "1.0"
+rules:
+  - id: "COMM-SSRF-001"
+    title: "HTTP client call with request-controlled URL"
+    description: "Detect URL fetched directly from request input without allowlist validation."
+    severity: "high"
+    cwe: "CWE-918"
+    category: "security"
+    languages: ["python", "javascript", "typescript"]
+    pattern: "(requests\\.(get|post|put|delete)|httpx\\.(get|post)|fetch\\().*(request\\.|req\\.)"
+    suggestion: "Validate scheme/host against allowlist and block internal targets."
+
+  - id: "COMM-REDIRECT-002"
+    title: "Redirect target from user-controlled parameter"
+    description: "Detect open redirect where redirect target comes from query/body directly."
+    severity: "high"
+    cwe: "CWE-601"
+    category: "security"
+    languages: ["python", "javascript", "typescript"]
+    pattern: "(redirect|res\\.redirect)\\s*\\(.*(request\\.|req\\.)"
+    suggestion: "Allowlist redirect destinations and block external domains."

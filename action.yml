@@ -2,6 +2,10 @@ name: 'ansede-static'
 description: 'Zero-dependency SAST scanner — detects IDOR, auth bypass, SQLi, path traversal, and 20+ categories. No GPU, no API keys.'
 author: 'mattybellx'
 
+branding:
+  icon: 'shield'
+  color: 'blue'
+
 inputs:
   path:
     description: 'File or directory to scan (default: current directory)'
@@ -45,6 +49,10 @@ inputs:
     default: ''
   output-dir:
     description: 'Path to a directory to output multiple formats simultaneously in a single scan pass.'
+    required: false
+    default: ''
+  license-key:
+    description: 'ansede-static Pro license key for SARIF/SBOM features'
     required: false
     default: ''
 

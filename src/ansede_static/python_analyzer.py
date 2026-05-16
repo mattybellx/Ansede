@@ -206,8 +206,9 @@ TAINT_SINKS: dict[str, _SinkInfo] = {
     # XSS — CWE-79
     "render_template_string":     ("CWE-79", "Cross-Site Scripting (template injection)"),
     "Markup":                     ("CWE-79", "Cross-Site Scripting (unescaped HTML)"),
-    "jinja2.Template":            ("CWE-79", "Server-Side Template Injection (SSTI)"),
-    "Environment.from_string":    ("CWE-79", "Server-Side Template Injection (SSTI)"),
+    "jinja2.Template":            ("CWE-79", "Cross-Site Scripting (template injection)"),
+    "Environment.from_string":    ("CWE-94", "Server-Side Template Injection (SSTI)"),
+    "from_string":               ("CWE-94", "SSTI via Jinja2 Environment.from_string"),
     # Log injection — CWE-117
     "logging.info":               ("CWE-117", "Log Injection"),
     "logging.warning":            ("CWE-117", "Log Injection"),
@@ -224,13 +225,20 @@ TAINT_SINKS: dict[str, _SinkInfo] = {
     "gql":                        ("CWE-89", "GraphQL Injection (gql())"),
     # NoSQL Injection — CWE-943
     "collection.find":            ("CWE-943", "NoSQL Injection (MongoDB find)"),
+    "find":                       ("CWE-943", "NoSQL Injection (MongoDB find)"),
     "collection.aggregate":       ("CWE-943", "NoSQL Injection (MongoDB aggregate)"),
+    "aggregate":                  ("CWE-943", "NoSQL Injection (MongoDB aggregate)"),
     "collection.update_one":      ("CWE-943", "NoSQL Injection (MongoDB update)"),
+    "update_one":                 ("CWE-943", "NoSQL Injection (MongoDB update)"),
     "collection.delete_one":      ("CWE-943", "NoSQL Injection (MongoDB delete)"),
+    "delete_one":                 ("CWE-943", "NoSQL Injection (MongoDB delete)"),
     # LDAP Injection — CWE-90
     "ldap.search":                ("CWE-90", "LDAP Injection"),
     "ldap.search_s":              ("CWE-90", "LDAP Injection"),
     "ldap.search_ext":            ("CWE-90", "LDAP Injection"),
+    "search":                     ("CWE-90", "LDAP Injection"),
+    "search_s":                   ("CWE-90", "LDAP Injection"),
+    "search_ext":                 ("CWE-90", "LDAP Injection"),
     # XPath Injection — CWE-643
     "tree.xpath":                 ("CWE-643", "XPath Injection (lxml)"),
     "etree.XPath":                ("CWE-643", "XPath Injection (lxml)"),
@@ -357,6 +365,12 @@ BROKEN_AUTH_PATTERNS: list[tuple[str, str, str, str]] = [
         "JWT verification disabled",
         "JWT token verification is disabled. An attacker can forge arbitrary tokens.",
         "CWE-345",
+    ),
+    (
+        r'(?:jwt\.(?:decode|verify)|(?:decode|verify)\s*\().*(?:algorithms\s*=\s*\[\s*["\']none["\']\s*\]|["\']algorithms["\']\s*:\s*\[\s*["\']none["\']\s*\])',
+        "JWT none-algorithm acceptance",
+        "JWT verification configuration allows the `none` algorithm. Attackers can forge unsigned tokens.",
+        "CWE-347",
     ),
     (
         r'session\[.+?\]\s*=\s*(?:True|request\.\w+)',
@@ -2118,6 +2132,7 @@ _PY_TAINT_RULE_IDS: dict[str, str] = {
 _PY_BROKEN_AUTH_RULE_IDS: dict[str, str] = {
     "CWE-287": "PY-014",
     "CWE-345": "PY-015",
+    "CWE-347": "PY-015",
     "CWE-384": "PY-016",
 }
 
@@ -2680,9 +2695,10 @@ def _rule_07(ctx: _Ctx) -> list[Finding]:
 
 def _rule_08(ctx: _Ctx) -> list[Finding]:
     findings: list[Finding] = []
-    sans = ctx.sans
+    raw_lines = ctx.lines
     # ── Rule 8: Broken authentication patterns ────────────────────────────
-    for lineno, line_text in enumerate(sans, 1):  # string-blanked
+    # Use raw lines (not string-blanked) so patterns like algorithms=["none"] are visible
+    for lineno, line_text in enumerate(raw_lines, 1):
         if line_text.strip().startswith("#"):
             continue
         for pattern, title, desc, cwe in BROKEN_AUTH_PATTERNS:
@@ -5535,7 +5551,7 @@ def _rule_31(ctx: _Ctx) -> list[Finding]:
             continue
         if _DEBUG_ENABLE_RE.search(stripped):
             findings.append(Finding(
-                category="security", severity=Severity.MEDIUM,
+                category="security", severity=Severity.HIGH,
                 title=f"CWE-200: debug=True may expose tracebacks at line {lineno}",
                 description=f"Debug mode enabled at L{lineno}; production errors can leak stack traces, configuration details, and other internal information.",
                 line=lineno,
@@ -5996,6 +6012,97 @@ def _rule_45(ctx: _Ctx) -> list[Finding]:
     return findings
 
 
+def _rule_46(ctx: _Ctx) -> list[Finding]:
+    """Supplemental CVE heuristics for supply-chain, TOCTOU, and cloud ACL misconfigurations."""
+    findings: list[Finding] = []
+    lines = ctx.lines
+    code_text = "\n".join(lines)
+
+    _S3_PUBLIC_ACL_RE = re.compile(r'\b(?:ACL|acl)\s*=\s*["\']public-(?:read|read-write)["\']', re.IGNORECASE)
+    _MKTEMP_RE = re.compile(r'\btempfile\.mktemp\s*\(', re.IGNORECASE)
+    _EXISTS_OPEN_RE = re.compile(r'if\s+os\.path\.exists\s*\(([^\)]+)\)\s*:\s*[\s\S]{0,220}?open\s*\(\s*\1\s*,', re.IGNORECASE)
+    _SETUP_SHELL_RE = re.compile(r'\b(?:os\.system|subprocess\.(?:run|Popen|call|check_call|check_output))\s*\(', re.IGNORECASE)
+    # LDAP filter string concatenation — CWE-90
+    _LDAP_FILTER_CONCAT_RE = re.compile(
+        r'(?:search_filter|filter_str|ldap_filter|dn_filter)\s*=\s*["\'][^"\']*["\'\)]\s*\+\s*\w+|'
+        r'["\'][^"\']*(?:uid=|cn=|sAMAccountName=|mail=)["\'\)]\s*\+\s*\w+|'
+        r'f["\'][^"\']*(?:uid=|cn=|sAMAccountName=|mail=)\{',
+        re.IGNORECASE,
+    )
+    _LDAP_SEARCH_RE = re.compile(r'\b(?:conn|ldap_conn|c|connection)\s*\.\s*search_s?\b', re.IGNORECASE)
+
+    for lineno, line in enumerate(lines, 1):
+        stripped = line.strip()
+        if stripped.startswith("#"):
+            continue
+
+        if _S3_PUBLIC_ACL_RE.search(stripped):
+            findings.append(Finding(
+                category="security", severity=Severity.HIGH,
+                title=f"CWE-732: S3 bucket/object ACL set to public at line {lineno}",
+                description="S3 ACL is configured as public-read/public-read-write, which can expose sensitive bucket contents to unauthenticated users.",
+                line=lineno,
+                suggestion="Use private ACLs and explicit IAM policies; avoid public ACLs unless explicitly required.",
+                rule_id="PY-055", cwe="CWE-732", agent="python-analyzer",
+            ))
+
+        if _MKTEMP_RE.search(stripped):
+            findings.append(Finding(
+                category="security", severity=Severity.HIGH,
+                title=f"CWE-377: tempfile.mktemp() race-prone temporary file creation at line {lineno}",
+                description="`tempfile.mktemp()` returns a filename without atomically creating the file, enabling symlink race attacks.",
+                line=lineno,
+                suggestion="Use `tempfile.NamedTemporaryFile(delete=False)` or `tempfile.mkstemp()` instead of `mktemp()`.",
+                rule_id="PY-056", cwe="CWE-377", agent="python-analyzer",
+            ))
+
+        is_setup_script = (
+            "setup.py" in (ctx.filename or "").lower()
+            or "from setuptools import" in code_text
+            or "import setuptools" in code_text
+        )
+        if is_setup_script and _SETUP_SHELL_RE.search(stripped):
+            findings.append(Finding(
+                category="security", severity=Severity.HIGH,
+                title=f"CWE-494: setup.py executes shell command at line {lineno}",
+                description="Package setup script executes a shell command during install/build, which can enable supply-chain code execution.",
+                line=lineno,
+                suggestion="Remove install-time shell execution from setup scripts; keep build metadata side-effect free.",
+                rule_id="PY-057", cwe="CWE-494", agent="python-analyzer",
+            ))
+
+    # LDAP filter string-concat injection (function-param taint not tracked by engine)
+    if _LDAP_FILTER_CONCAT_RE.search(code_text) and _LDAP_SEARCH_RE.search(code_text):
+        # Find the line with the filter concatenation
+        for lidx, ltext in enumerate(lines, 1):
+            if _LDAP_FILTER_CONCAT_RE.search(ltext):
+                findings.append(Finding(
+                    category="security", severity=Severity.HIGH,
+                    title=f"CWE-90: LDAP filter built via string concatenation at line {lidx}",
+                    description=(
+                        f"LDAP search filter constructed by string concatenation with an unescaped variable at L{lidx}. "
+                        "An attacker can inject LDAP metacharacters (e.g. `*)(uid=*`) to bypass authentication or dump the directory."
+                    ),
+                    line=lidx,
+                    suggestion="Use an LDAP escaping helper (e.g. `ldap.filter.escape_filter_chars()`) on all user-supplied values before incorporating them in filter strings.",
+                    rule_id="PY-059", cwe="CWE-90", agent="python-analyzer",
+                ))
+                break
+
+    for match in _EXISTS_OPEN_RE.finditer(code_text):
+        line = code_text.count("\n", 0, match.start()) + 1
+        findings.append(Finding(
+            category="security", severity=Severity.HIGH,
+            title=f"CWE-362: TOCTOU race via exists() check before open() at line {line}",
+            description="Code checks `os.path.exists()` and then opens the same path, allowing a race window for attacker-controlled file substitution.",
+            line=line,
+            suggestion="Use atomic file operations and avoid check-then-open patterns on attacker-influenced paths.",
+            rule_id="PY-058", cwe="CWE-362", agent="python-analyzer",
+        ))
+
+    return findings
+
+
 def _rule_44(ctx: _Ctx) -> list[Finding]:
     """CWE-434: File upload without type/content validation."""
     findings: list[Finding] = []
@@ -6112,6 +6219,7 @@ def _detect(code: str, filename: str = "", global_graph: object = None) -> list[
         _rule_31, _rule_32, _rule_33, _rule_34, _rule_35,
         _rule_36, _rule_37, _rule_38, _rule_39, _rule_40,
         _rule_41, _rule_42, _rule_43, _rule_44, _rule_45,
+        _rule_46,
     ):
         findings.extend(rule_fn(ctx))
 

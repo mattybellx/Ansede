@@ -94,6 +94,8 @@ def test_load_real_world_manifest_has_curated_git_entries():
         "nodegoat-full-repo",
         "flask-login-full-repo",
         "dvna-full-repo",
+        "gin-full-repo",
+        "aspnetcore-security-subtree",
     }
     assert all(entry.source.kind == "git" for entry in manifest.entries)
     assert {entry.source.repo for entry in manifest.entries} == {
@@ -102,6 +104,8 @@ def test_load_real_world_manifest_has_curated_git_entries():
         "https://github.com/WebGoat/WebGoat.git",
         "https://github.com/maxcountryman/flask-login.git",
         "https://github.com/appsecco/dvna.git",
+        "https://github.com/gin-gonic/gin.git",
+        "https://github.com/dotnet/aspnetcore.git",
     }
     assert all(len(entry.source.ref) == 40 for entry in manifest.entries)
     assert all(entry.js_backend == "structural" for entry in manifest.entries if entry.language == "javascript")

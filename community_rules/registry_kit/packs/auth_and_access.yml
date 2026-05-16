@@ -1,0 +1,21 @@
+version: "1.0"
+rules:
+  - id: "COMM-AUTH-001"
+    title: "Flask admin route missing auth decorator"
+    description: "Detect Flask admin endpoints without explicit auth decorator."
+    severity: "high"
+    cwe: "CWE-862"
+    category: "security"
+    languages: ["python"]
+    pattern: "@app\\.route\\(.*admin.*\\)(?s).*def\\s+\\w+\\(.*\\):"
+    suggestion: "Add @login_required / @admin_required and enforce authorization checks."
+
+  - id: "COMM-ACCESS-002"
+    title: "Potential object lookup without ownership scope"
+    description: "Potential IDOR when retrieving records by ID without owner/user scope."
+    severity: "high"
+    cwe: "CWE-639"
+    category: "security"
+    languages: ["python", "javascript", "typescript"]
+    pattern: "(findByPk|get\\s*\\(|query\\.get\\().*(id|userId|postId|orderId)"
+    suggestion: "Scope lookup by owner/principal before returning or mutating objects."

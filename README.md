@@ -39,20 +39,26 @@ ansede-static src/
 - [Quality and performance harnesses](#quality-and-performance-harnesses)
 - [Benchmarks and public proof](BENCHMARKS.md)
 - [CI integration](#ci-integration)
+- [Zero-friction rollout playbook](docs/zero-friction-ci-rollout.md)
+- [Responsible disclosure rubric](docs/responsible-disclosure-rubric.md)
+- [Native parser roadmap](docs/native-language-parser-roadmap.md)
+- [Language fidelity audit (May 2026)](docs/language-fidelity-audit-may16.md)
+- [Community rule conversion guide](docs/community-rule-conversion-guide.md)
 - [Contributing](#contributing)
 
-## Latest validation snapshot (v2.1.0 — May 2026)
+## Latest validation snapshot (v2.1.8 — May 2026)
 
 | Benchmark | Result |
 |---|---|
-| Full regression suite | **675 passed** (0 regressions) |
-| NVD CVE corpus | **66/66 (100% recall)** — Python 35/35, JS 24/24, Go 3/3, Java 2/2, C# 2/2 |
-| Web-wild 500-file stress test | **100% recall · 95.65% precision · 97.78% F1 · 4.35% FP rate** |
-| Quality checks | **41/41 (100%)** |
-| External real-world corpus | **19/19 (100%)** |
+| Full regression suite | **919 passed** (4 warnings) |
+| NVD CVE corpus | **81/82 (98.78% recall, 3.57% FP rate)** |
+| Web-wild stress test | **100% recall · 95% precision · 97.44% F1 · 0.861 noise quotient** |
+| External real-world corpus | **15/15 cases, 30/30 checks (100%)** |
 | Multi-language support | Python · JavaScript · TypeScript · Go · Java · C# |
+| Raw engine speed | **~0.02s per 100k LOC** |
+| World-Best Audit | ✅ All quality gates passed — [Full Report](.tmp/world_best_audit_2026-05-16.md) |
 
-Full artifacts: [`web_wild_stress_may12.json`](web_wild_stress_may12.json) · [`BENCHMARKS.md`](BENCHMARKS.md)
+Full artifacts: [`BENCHMARKS.md`](BENCHMARKS.md) · [World-Best Audit](.tmp/world_best_audit_2026-05-16.md)
 
 ## Definitive world-best validation
 
@@ -508,12 +514,23 @@ python -m benchmarks.perf_benchmark --iterations 10
 
 See [`docs/QUALITY.md`](docs/QUALITY.md) for scope, caveats, and extension guidance.
 
+For phased enterprise rollout with baseline-first adoption patterns, see [`docs/zero-friction-ci-rollout.md`](docs/zero-friction-ci-rollout.md).
+
 The external corpus runner also supports **pinned git-backed manifests** for larger repo-shaped fixtures.
 Use `--cache-dir` to control where repositories are cached, `--refresh` to re-fetch them, and
 `--offline` to re-run against an existing cache without touching the network.
 
 The repository now ships an opt-in curated manifest at `benchmarks/real_world_manifest.json`
 with pinned NodeGoat route files selected to avoid vendor noise and keep expectations stable.
+
+Campaign artifacts:
+
+- Target inventory template: [`benchmarks/campaign_targets_top100.example.json`](benchmarks/campaign_targets_top100.example.json)
+- Generated target inventory: [`benchmarks/campaign_targets_top100.json`](benchmarks/campaign_targets_top100.json)
+- Campaign runbook: [`benchmarks/campaign_runbook.md`](benchmarks/campaign_runbook.md)
+- Disclosure ledger template: [`benchmarks/disclosure_campaign_ledger.example.json`](benchmarks/disclosure_campaign_ledger.example.json)
+- Target generator: [`tools/generate_campaign_targets.py`](tools/generate_campaign_targets.py)
+- Refresh/offline drift comparator: [`tools/compare_external_runs.py`](tools/compare_external_runs.py)
 
 ---
 
@@ -711,6 +728,11 @@ The full implementation is in this repository under [`src/ansede_static/`](src/a
 Benchmark corpus: [`benchmarks/cve_corpus.py`](benchmarks/cve_corpus.py)
 
 Public scorecards and reproducible benchmark runs: [`BENCHMARKS.md`](BENCHMARKS.md)
+
+Responsible disclosure campaign ledger template: [`benchmarks/disclosure_campaign_ledger.example.json`](benchmarks/disclosure_campaign_ledger.example.json)
+
+Community registry starter kit for the dedicated `ansede-community-rules` repository:
+[`community_rules/registry_kit/`](community_rules/registry_kit/)
 
 ---
 

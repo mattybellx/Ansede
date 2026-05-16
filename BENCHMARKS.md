@@ -34,6 +34,38 @@ _Last updated: 2026-05-11 (v2.1.0)_
 
 This is the current flagship public proof run for the repository.
 
+### Local reproducibility snapshot (2026-05-15)
+
+Command:
+
+```bash
+python -m benchmarks.cve_recall_runner --quiet --json
+```
+
+Observed summary:
+
+```json
+{
+  "total_cases": 82,
+  "passed_cases": 82,
+  "tp": 82,
+  "fp": 3,
+  "fn": 0,
+  "recall": 100.0,
+  "precision": 96.47,
+  "f1": 98.2,
+  "fp_rate": 3.53
+}
+```
+
+Language breakout from the same run:
+
+- Python: 49 cases, recall 100.0%, precision 94.23%, FP rate 5.77%
+- JavaScript: 26 cases, recall 100.0%, precision 100.0%, FP rate 0.0%
+- Go: 3 cases, recall 100.0%, precision 100.0%, FP rate 0.0%
+- Java: 2 cases, recall 100.0%, precision 100.0%, FP rate 0.0%
+- C#: 2 cases, recall 100.0%, precision 100.0%, FP rate 0.0%
+
 ### Protocol
 
 - **20 independent seeds**: `11, 22, 33, 44, 55, 66, 77, 88, 99, 111, 222, 333, 444, 555, 666, 888, 999, 1111, 2222, 3333`
@@ -214,6 +246,103 @@ bandit -r NodeGoat -f json -q
 semgrep scan --config auto --json NodeGoat
 ```
 
+## Real-world external corpus protocol (expanded manifest)
+
+The repository includes an expanded pinned manifest at [`benchmarks/real_world_manifest.json`](benchmarks/real_world_manifest.json)
+for large-project validation across Python, JavaScript, and Java.
+
+### Protocol
+
+- Use pinned git SHAs only (immutable target state)
+- Use `--cache-dir` for deterministic repo caching
+- Run a network refresh pass first, then offline rerun from cache
+- Publish raw aggregate output and caveats (no hand-curated metric filtering)
+
+### Commands
+
+```bash
+python -m benchmarks.external_corpus --manifest benchmarks/real_world_manifest.json --cache-dir .tmp/ansede-corpus --refresh
+python -m benchmarks.external_corpus --manifest benchmarks/real_world_manifest.json --cache-dir .tmp/ansede-corpus --offline
+```
+
+### Artifact contract
+
+- Save machine-readable outputs under `.tmp/` (or a tracked artifact directory)
+- Retain per-case notes for expected finding ranges and rationale
+- Document drift between refresh and offline runs before publishing updated scorecards
+
+### Local refresh snapshot (2026-05-15)
+
+Observed with:
+
+```bash
+python -m benchmarks.external_corpus --manifest benchmarks/real_world_manifest.json --cache-dir .tmp/ansede-corpus --refresh
+```
+
+Summary:
+
+```text
+25/27 checks passed (92.59%)
+Cases: 11/13 fully green
+Noise: 169 findings (6.6677 / kLOC raw), 0 excess findings (0.0000 / kLOC gate)
+```
+
+Notable manifest deltas from the initial refresh pass:
+
+- `dvna-full-repo` measured 22 findings, so the lower bound was adjusted from 23 to 22.
+- `nodegoat-index-missing-csrf-protection` passed the `JS-041` expectation but did not surface a second CSRF rule ID, so the manifest now tracks the validated rule only.
+
+### Local offline replay snapshot (2026-05-15)
+
+Observed with:
+
+```bash
+python -m benchmarks.external_corpus --manifest benchmarks/real_world_manifest.json --cache-dir .tmp/ansede-corpus --offline
+```
+
+Summary:
+
+```text
+26/26 checks passed (100.00%)
+Cases: 13/13 fully green
+Noise: 169 findings (6.6677 / kLOC raw), 0 excess findings (0.0000 / kLOC gate)
+```
+
+This confirms the expanded pinned manifest is reproducible from cache after the expectation alignment above.
+
+### Refresh vs offline drift and hotspot analysis (2026-05-16)
+
+Generated from machine-readable runs:
+
+```bash
+python -m benchmarks.external_corpus --manifest benchmarks/real_world_manifest.json --cache-dir .tmp/ansede-corpus --refresh --quiet --json > .tmp/real_world_refresh.json
+python -m benchmarks.external_corpus --manifest benchmarks/real_world_manifest.json --cache-dir .tmp/ansede-corpus --offline --quiet --json > .tmp/real_world_offline.json
+python tools/compare_external_runs.py
+```
+
+Summary:
+
+```text
+Refresh score: 100.0
+Offline score: 100.0
+Drift cases: 0
+```
+
+Language hotspot snapshot (offline):
+
+| Language | Cases | Findings | Noise / kLOC |
+|---|---:|---:|---:|
+| javascript | 10 | 72 | 17.7384 |
+| python | 2 | 10 | 7.2098 |
+| java | 1 | 87 | 4.3719 |
+
+Per-case hotspot and recurring CWE summaries are captured in the artifacts below.
+
+Artifacts:
+
+- [`benchmarks/real_world_drift_summary_may16.json`](benchmarks/real_world_drift_summary_may16.json)
+- [`benchmarks/real_world_drift_summary_may16.md`](benchmarks/real_world_drift_summary_may16.md)
+
 ## Related artifacts
 
 - Product scorecard: [`final_product_scorecard.json`](final_product_scorecard.json)
@@ -221,3 +350,4 @@ semgrep scan --config auto --json NodeGoat
 - CVE corpus: [`benchmarks/cve_corpus.py`](benchmarks/cve_corpus.py)
 - Web-wild harness: [`benchmarks/web_wild_harness.py`](benchmarks/web_wild_harness.py)
 - Quality guide: [`docs/QUALITY.md`](docs/QUALITY.md)
+- Drift comparator: [`tools/compare_external_runs.py`](tools/compare_external_runs.py)

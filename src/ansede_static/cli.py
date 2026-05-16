@@ -38,6 +38,14 @@ from ansede_static import _PYTHON_EXTS, _JS_EXTS, _GO_EXTS, _JAVA_EXTS, _CSHARP_
 
 from ansede_static.ir.global_graph import GlobalGraph
 from ansede_static.engine.triage import run_ai_triage
+from ansede_static.licensing import (
+    LicenseFeatureGate,
+    LicenseRequiredError,
+    load_license,
+    save_license_key,
+    _license_file_path,
+    format_license_status,
+)
 
 try:
     from rich.console import Console
@@ -611,6 +619,53 @@ def _handle_baseline_command(args: list[str]) -> None:
         sys.exit(2)
 
 
+def _handle_license_command(args: list[str]) -> None:
+    """Handle ``ansede license`` — view status, activate a key, or show pricing."""
+    if not args:
+        # Show current license status
+        info = load_license()
+        print("ansede-static License Status")
+        print("=" * 40)
+        print(format_license_status(info))
+        return
+
+    cmd = args[0]
+    if cmd == "activate":
+        if len(args) < 2:
+            print("Usage: ansede license activate <license-key>", file=sys.stderr)
+            sys.exit(2)
+        key = args[1]
+        result = save_license_key(key)
+        if result:
+            print(f"✅ License activated successfully!")
+            print(f"   Tier: {result.tier_display_name}")
+            print(f"   Licensee: {result.licensee}")
+            if result.expires_at > 0:
+                print(f"   Expires in: {result.days_remaining} days")
+        else:
+            print("❌ Invalid or expired license key.", file=sys.stderr)
+            sys.exit(2)
+    elif cmd == "deactivate":
+        lic_path = _license_file_path()
+        if lic_path.exists():
+            lic_path.unlink()
+            print("✅ License deactivated. Free tier restored.")
+        else:
+            print("No license file found. Already on free tier.")
+    elif cmd in ("--help", "-h", "help"):
+        print("Usage: ansede license [command]")
+        print()
+        print("Commands:")
+        print("  (no args)          Show current license status")
+        print("  activate <key>     Activate a license key")
+        print("  deactivate         Remove license and revert to free tier")
+        print()
+        print("Visit https://ansede.dev/pricing to purchase a license.")
+    else:
+        print(f"Unknown license command: {cmd}", file=sys.stderr)
+        sys.exit(2)
+
+
 def _handle_migrate_config_command(args: list[str]) -> None:
     """Handle ``ansede migrate-config`` — converts v1 to v2 configuration format."""
     if not args or args[0] == "--help":
@@ -873,6 +928,9 @@ def _build_feedback_parser() -> argparse.ArgumentParser:
 
 
 def _get_version_str() -> str:
+    # Nuitka standalone builds embed __compiled__; use the hardcoded version
+    if getattr(sys, "frozen", False) or hasattr(sys, "_MEIPASS"):
+        return "ansede-static 2.2.0"
     try:
         from importlib.metadata import PackageNotFoundError
     except ImportError:
@@ -881,7 +939,7 @@ def _get_version_str() -> str:
         from importlib.metadata import version
         v = version("ansede-static")
     except (ImportError, PackageNotFoundError):
-        v = "dev"
+        v = "2.2.0"
     return f"ansede-static {v}"
 
 
@@ -1125,11 +1183,33 @@ def _main_impl() -> None:
         _handle_feedback(fb_args)
         sys.exit(0)
 
+    if len(sys.argv) >= 2 and sys.argv[1] == "license":
+        _handle_license_command(sys.argv[2:])
+        sys.exit(0)
+
     if len(sys.argv) >= 2 and sys.argv[1] == "registry":
         from ansede_static.registry import handle_registry_command
         sys.exit(handle_registry_command(sys.argv[2:], workspace_root=Path.cwd()))
 
     args = parser.parse_args()
+
+    # ── License feature gating ──────────────────────────────────────────
+    gate = LicenseFeatureGate()
+    try:
+        if args.format == "sarif":
+            gate.require_or_raise("sarif", "SARIF output")
+        if args.format == "ciso":
+            gate.require_or_raise("sarif", "CISO report")
+        if args.format == "html":
+            gate.require_or_raise("sarif", "HTML dashboard")
+        if getattr(args, "sbom", None):
+            gate.require_or_raise("sbom", "SBOM generation")
+    except LicenseRequiredError as exc:
+        if console:
+            console.print(f"[bold red]{exc}[/bold red]")
+        else:
+            print(str(exc), file=sys.stderr)
+        sys.exit(5)
 
     if args.output and args.output_dir:
         parser.error("--output and --output-dir are mutually exclusive")

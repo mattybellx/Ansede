@@ -3,6 +3,29 @@
 All notable changes to ansede-static are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [2.2.0] — 2026-05-16
+
+### Added — Commercial Licensing & Standalone Builds
+- **Offline license key system** (`src/ansede_static/licensing.py`) — HMAC-signed JWT-like keys, verified entirely offline. Four tiers: Free, Pro, Team, Enterprise.
+- **`ansede license` CLI command** — `activate`, `deactivate`, and status display with upgrade path.
+- **Pro feature gating** — SARIF, SBOM, HTML dashboard, and CI recipes require Pro+. Free tier includes unlimited text/JSON scanning with 500 scans/day.
+- **Standalone `.exe` builds** via Nuitka (`build_exe.py`) — produces `ansede-static.exe` (~20 MB) and `ansede-static-lsp.exe` (~13 MB) with zero Python dependency.
+- **License key generator** (`tools/generate_license.py`) — generate Pro/Team/Enterprise keys for distribution.
+- **GitHub Actions release pipeline** (`.github/workflows/build-release.yml`) — auto-builds Windows/macOS/Linux on tag push, publishes VS Code extension, creates GitHub Release.
+- **`.ansedeignore`** — gitignore-compatible exclusion file for scanning.
+
+### Improved
+- VS Code extension updated to v2.2.0 with license key configuration option.
+- GitHub Action (`action.yml`) now supports `license-key` input for CI SARIF uploads.
+- Version detection handles standalone/frozen builds correctly.
+
+### Validated
+- Full test suite: **919 passed**, 4 warnings.
+- CVE recall: **98.78%** (81/82), FP rate: **3.57%**.
+- Web-wild stress: **100% recall**, **95% precision**, **0.861 noise quotient**.
+- External corpus: **15/15 cases, 30/30 checks (100%)**, zero drift.
+- Standalone `.exe`: builds and scans correctly on Windows x64.
+
 ## [2.1.8] — 2026-05-14
 
 ### Added — 1000-rule registry milestone

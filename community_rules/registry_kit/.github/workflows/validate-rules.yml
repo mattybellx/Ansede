@@ -1,0 +1,36 @@
+name: validate-community-rules
+
+on:
+  pull_request:
+  push:
+    branches: [ main, master ]
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install jsonschema
+        run: python -m pip install jsonschema pyyaml
+      - name: Validate JSON packs
+        run: |
+          python - <<'PY'
+          import glob
+          import json
+          import yaml
+          from jsonschema import validate
+
+          schema = json.load(open('rule-pack.schema.json', 'r', encoding='utf-8'))
+          for path in glob.glob('packs/**/*.json', recursive=True):
+              data = json.load(open(path, 'r', encoding='utf-8'))
+              validate(instance=data, schema=schema)
+              print('validated', path)
+
+          for path in glob.glob('packs/**/*.yml', recursive=True) + glob.glob('packs/**/*.yaml', recursive=True):
+              data = yaml.safe_load(open(path, 'r', encoding='utf-8'))
+              validate(instance=data, schema=schema)
+              print('validated', path)
+          PY
