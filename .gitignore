@@ -9,6 +9,8 @@ build/
 dist/
 *.egg-info/
 *.sarif
+*.zip
+*.exe
 
 # Virtual environments
 .env
