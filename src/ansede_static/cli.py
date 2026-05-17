@@ -45,6 +45,8 @@ from ansede_static.licensing import (
     save_license_key,
     _license_file_path,
     format_license_status,
+    maybe_show_upgrade_prompt,
+    bump_scan_count,
 )
 
 try:
@@ -1887,6 +1889,16 @@ def _main_impl() -> None:
                 )
 
     # ── Exit code ───────────────────────────────────────────────────────────
+
+    # Track daily scan count (free tier) and show upgrade prompt when approaching limit
+    bump_scan_count()
+    upgrade_prompt = maybe_show_upgrade_prompt()
+    if upgrade_prompt:
+        if console:
+            console.print(f"[bold yellow]{upgrade_prompt}[/bold yellow]")
+        else:
+            print(upgrade_prompt, file=sys.stderr)
+
     if args.fail_on != "never" and _should_fail(results, args.fail_on):
         sys.exit(1)
     sys.exit(0)

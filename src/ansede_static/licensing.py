@@ -31,10 +31,19 @@ import base64
 import hashlib
 import hmac
 import json
+import os
 import time
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+
+# ── Stripe payment links ─────────────────────────────────────────────────
+_STRIPE_ONE_TIME = "https://buy.stripe.com/8x24gygGW6JueVJ4U61oI00"
+_STRIPE_PRO_YEARLY = "https://buy.stripe.com/4gM14m9eu2te00P86i1oI01"
+_LICENSE_SERVER = os.environ.get("ANSEDE_LICENSE_SERVER", "https://ansede.dev")
+_FREE_DAILY_LIMIT = 500
+_SHOW_PAYMENT_AT = 450
 
 # ── Embedded public key (Ed25519) ──────────────────────────────────────────
 # This is the OFFICIAL ansede-static licensing public key.
@@ -350,3 +359,94 @@ def get_license_gate() -> LicenseFeatureGate:
     if _gate is None:
         _gate = LicenseFeatureGate()
     return _gate
+
+
+# ── Daily scan tracking & upgrade prompt ─────────────────────────────────
+
+def _scan_count_file() -> Path:
+    return Path.home() / ".ansede" / "scan_count.json"
+
+
+def _check_scans_today() -> int:
+    count_file = _scan_count_file()
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    try:
+        if count_file.exists():
+            data = json.loads(count_file.read_text())
+            return data.get(today, 0)
+    except Exception:
+        pass
+    return 0
+
+
+def _increment_scan_count() -> int:
+    count_file = _scan_count_file()
+    count_file.parent.mkdir(parents=True, exist_ok=True)
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    data: dict[str, int] = {}
+    if count_file.exists():
+        try:
+            data = json.loads(count_file.read_text())
+        except Exception:
+            pass
+    data[today] = data.get(today, 0) + 1
+    count_file.write_text(json.dumps(data))
+    return data[today]
+
+
+_UPGRADE_BANNER = """
+╔═══════════════════════════════════════════════════════════════════════╗
+║                                                                       ║
+║   🚀  You've scanned {count} files today — free tier limit is {limit}.      ║
+║                                                                       ║
+║   Upgrade to Pro for unlimited scans, SARIF, SBOM & more:            ║
+║                                                                       ║
+║   💸  One-time £4.99:  {one_time}   ║
+║   ⭐  Pro £49/yr:      {pro_yearly}   ║
+║                                                                       ║
+║   Your license key is shown instantly after payment.                  ║
+║                                                                       ║
+╚═══════════════════════════════════════════════════════════════════════╝
+""".format(
+    one_time=_STRIPE_ONE_TIME,
+    pro_yearly=_STRIPE_PRO_YEARLY,
+    count="{count}",
+    limit="{limit}",
+).replace("{count}", "{count}").replace("{limit}", "{limit}")
+
+
+def maybe_show_upgrade_prompt() -> str | None:
+    """Check if approaching free tier limit. Returns upgrade message or None."""
+    try:
+        lic = load_license()
+        if lic.tier != "free":
+            return None
+    except Exception:
+        return None
+
+    count = _check_scans_today()
+    if count >= _SHOW_PAYMENT_AT:
+        return _UPGRADE_BANNER.format(count=count, limit=_FREE_DAILY_LIMIT)
+    return None
+
+
+def bump_scan_count() -> int:
+    """Increment today's scan count. Call after each scan invocation."""
+    try:
+        lic = load_license()
+        if lic.tier == "free":
+            return _increment_scan_count()
+    except Exception:
+        pass
+    return 0
+
+
+def is_over_free_limit() -> bool:
+    """Return True if free user has exceeded daily scan limit."""
+    try:
+        lic = load_license()
+        if lic.tier != "free":
+            return False
+    except Exception:
+        return False
+    return _check_scans_today() >= _FREE_DAILY_LIMIT
