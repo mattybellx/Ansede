@@ -11,6 +11,7 @@ dist/
 *.sarif
 *.zip
 *.exe
+*.spec
 
 # Virtual environments
 .env
@@ -21,12 +22,30 @@ venv/
 .py*embed/
 .ansede/
 .tmp/
+.continue/
 
 # IDE
 .idea/
 .vscode/
 *.swp
 *~
+
+# Scratch / prototype files
+production_auth.py
+real_flask_auth.py
+test_cross_*.py
+P16.md.txt
+NodeGoat/
+internet_code_samples/
+*.png
+*.jpg
+
+# Embedded Python distributions
+.ci312/
+.ci313/
+.ciwsl/
+.py311embed/
+.py39embed/
 
 # Editor integration build artifacts
 intellij-plugin/.gradle/
