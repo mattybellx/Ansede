@@ -1,0 +1,61 @@
+{
+  "kind": "ansede-final-scorecard",
+  "version": 2,
+  "generated_utc": "2026-05-18T11:22:39Z",
+  "engine_version": "2.2.0",
+  "metrics": {
+    "cve": {
+      "recall_pct": 98.78,
+      "precision_pct": 96.43,
+      "f1_pct": 97.59,
+      "fp_rate_pct": 3.57,
+      "tp": 81,
+      "fp": 3,
+      "fn": 1,
+      "passed_cases": 81,
+      "total_cases": 82,
+      "corpus": "NVD CVEs (Python/JS/Java/C#/Go)"
+    },
+    "tests": {
+      "passed": 919,
+      "failed": 0,
+      "total": 919
+    },
+    "noise_quotient": {
+      "unit": "findings_per_1k_loc",
+      "value": 0.861,
+      "target": "< 1.0",
+      "target_met": true,
+      "note": "Post-incident-clustering (Phase 1)"
+    },
+    "engine_speed": {
+      "per_100k_loc_seconds": 0.02,
+      "target": "< 10s",
+      "target_met": true
+    },
+    "languages": [
+      "python",
+      "javascript",
+      "typescript",
+      "java",
+      "csharp"
+    ],
+    "features": [
+      "interprocedural_taint_analysis",
+      "incident_clustering_union_find",
+      "symbolic_guard_suppression",
+      "source_map_vlq_resolver",
+      "shadow_detectors_nosql_debug",
+      "SARIF_SBOM_HTML_output",
+      "offline_license_pro_activation",
+      "Nuitka_standalone_exe_build"
+    ]
+  },
+  "targets": {
+    "fp_rate_below_10_pct": true,
+    "recall_above_90_pct": true,
+    "noise_quotient_below_1_per_1k_loc": true,
+    "engine_speed_below_10s_per_100k_loc": true,
+    "all_targets_met": true
+  }
+}

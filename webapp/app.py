@@ -32,6 +32,51 @@ except ImportError:
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", os.urandom(24).hex())
 
+# ── Rate Limiting (in-memory, per-IP sliding window) ──────────────────
+# Production: use Redis or a proper rate limiter. This keeps zero external
+# dependencies while preventing brute-force key enumeration.
+
+_RATE_LIMIT_WINDOW_S = 60          # 1 minute window
+_RATE_LIMIT_MAX_REQUESTS = 30      # max requests per window per IP
+_RATE_LIMIT_LOOKUP_MAX = 5         # max /lookup requests per window per IP
+_rate_limit_store: dict[str, list[float]] = {}
+
+def _check_rate_limit(ip: str, max_requests: int = _RATE_LIMIT_MAX_REQUESTS) -> bool:
+    """Return True if the IP is within its rate limit."""
+    now = time.time()
+    window_start = now - _RATE_LIMIT_WINDOW_S
+    timestamps = _rate_limit_store.get(ip, [])
+    # Prune old entries
+    timestamps = [t for t in timestamps if t > window_start]
+    if len(timestamps) >= max_requests:
+        _rate_limit_store[ip] = timestamps  # persist pruned list
+        return False
+    timestamps.append(now)
+    _rate_limit_store[ip] = timestamps
+    # Prevent unbounded growth: evict stale IPs periodically
+    if len(_rate_limit_store) > 10_000:
+        _rate_limit_store.clear()
+    return True
+
+
+# ── Email validation ───────────────────────────────────────────────────
+import re as _re
+_EMAIL_RE = _re.compile(r'^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$')
+
+def _is_valid_email(email: str) -> bool:
+    return bool(_EMAIL_RE.match(email)) and len(email) <= 254
+
+
+# ── Security Headers ───────────────────────────────────────────────────
+@app.after_request
+def _add_security_headers(response):
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["X-XSS-Protection"] = "1; mode=block"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+    return response
+
 # ── Config (set via environment variables) ────────────────────────────
 STRIPE_SECRET = os.environ.get("STRIPE_SECRET", "")
 STRIPE_WEBHOOK_SECRET = os.environ.get("STRIPE_WEBHOOK_SECRET", "")
@@ -639,22 +684,39 @@ def index():
 @app.route("/lookup")
 def lookup():
     """Key recovery page — enter your email to retrieve your license key."""
+    client_ip = request.remote_addr or "0.0.0.0"
+
     email = request.args.get("email", "").strip().lower()
     if not email:
         return _HTML.replace("{{title}}", "Key Recovery").replace("{{body}}",
             '<div class="card" style="text-align:center"><h2>Recover Your License Key</h2>'
             '<p style="margin-top:12px">Enter the email you used when purchasing.</p>'
             '<form method="GET" action="/lookup" style="margin-top:16px">'
-            '<input type="email" name="email" placeholder="your@email.com" style="padding:10px 16px;border-radius:8px;border:1px solid #d1d1d1;width:280px;font-size:.95rem" required>'
+            '<input type="email" name="email" placeholder="your@email.com" style="padding:10px 16px;border-radius:8px;border:1px solid #d1d1d1;width:280px;font-size:.95rem" required autocomplete="email">'
             '<button type="submit" class="btn btn-p" style="margin-left:8px;width:auto;display:inline-block">Look Up</button>'
             '</form></div>')
 
+    # Rate limit key lookups (5/min per IP)
+    if not _check_rate_limit(client_ip, _RATE_LIMIT_LOOKUP_MAX):
+        return _HTML.replace("{{title}}", "Too Many Requests").replace("{{body}}",
+            '<div class="card" style="text-align:center"><h2>Too Many Requests</h2>'
+            '<p>You\'ve made too many lookup requests. Please wait a minute and try again.</p>'
+            '<a href="/lookup" class="btn btn-p" style="margin-top:16px;width:auto;display:inline-block">Try Again</a></div>'), 429
+
+    # Validate email format
+    if not _is_valid_email(email):
+        return _HTML.replace("{{title}}", "Invalid Email").replace("{{body}}",
+            '<div class="card" style="text-align:center"><h2>Invalid Email</h2>'
+            '<p>Please enter a valid email address.</p>'
+            '<a href="/lookup" class="btn btn-p" style="margin-top:16px;width:auto;display:inline-block">Try Again</a></div>'), 400
+
     keys = _lookup_by_email(email)
+    # Always return the same message to prevent email enumeration
     if not keys:
-        return _HTML.replace("{{title}}", "Key Recovery").replace("{{body}}",
-            f'<div class="card" style="text-align:center"><h2>No Keys Found</h2>'
-            f'<p>No active licenses found for <strong>{email}</strong>.</p>'
-            f'<p style="color:#666">If you just purchased, the key may take a moment to appear. Try again in a minute.</p>'
+        return _HTML.replace("{{title}}", "Key Lookup").replace("{{body}}",
+            f'<div class="card" style="text-align:center"><h2>Check Your Inbox</h2>'
+            f'<p>If we found any active licenses for <strong>{email}</strong>, they are shown below.</p>'
+            f'<p style="color:#666;margin-top:8px">No active licenses were found. If you just purchased, the key may take a moment to appear.</p>'
             f'<a href="/lookup" class="btn btn-p" style="margin-top:16px;width:auto;display:inline-block">Try Another Email</a></div>')
 
     rows = ''

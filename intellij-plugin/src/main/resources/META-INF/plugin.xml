@@ -15,9 +15,15 @@
   </extensions>
 
   <actions>
-    <action id="Ansede.ScanCurrentFile"
-            class="com.ansede.intellij.ScanCurrentFileAction"
-            text="Scan Current File with Ansede"
-            description="Run ansede-static against the active editor buffer" />
+    <group id="Ansede.Actions" text="Ansede Static" icon="AllIcons.Actions.Find">
+      <action id="Ansede.ScanCurrentFile"
+              class="com.ansede.intellij.ScanCurrentFileAction"
+              text="Scan Current File with Ansede"
+              description="Run ansede-static SAST against the active editor file">
+        <add-to-group group-id="EditorPopupMenu" anchor="last" />
+        <add-to-group group-id="ToolsMenu" anchor="last" />
+        <keyboard-shortcut keymap="$default" first-keystroke="ctrl alt S" />
+      </action>
+    </group>
   </actions>
 </idea-plugin>
