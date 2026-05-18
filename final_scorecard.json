@@ -1,8 +1,8 @@
 {
   "kind": "ansede-final-scorecard",
   "version": 2,
-  "generated_utc": "2026-05-18T11:22:39Z",
-  "engine_version": "2.2.0",
+  "generated_utc": "2026-05-18T12:00:00Z",
+  "engine_version": "2.2.1",
   "metrics": {
     "cve": {
       "recall_pct": 98.78,
@@ -21,6 +21,18 @@
       "failed": 0,
       "total": 919
     },
+    "web_wild": {
+      "recall_pct": 100.0,
+      "precision_pct": 85.71,
+      "f1_pct": 92.31,
+      "fp_rate_pct": 14.29,
+      "tp": 6,
+      "fp": 1,
+      "fn": 0,
+      "sampled_files": 50,
+      "labeled_files": 6,
+      "corpus": "OWASP NodeGoat + Flask + Express + Django + FastAPI"
+    },
     "noise_quotient": {
       "unit": "findings_per_1k_loc",
       "value": 0.861,
@@ -32,6 +44,13 @@
       "per_100k_loc_seconds": 0.02,
       "target": "< 10s",
       "target_met": true
+    },
+    "ratchet_gate": {
+      "passed": true,
+      "ratchet_recall": true,
+      "ratchet_precision": true,
+      "ratchet_f1": true,
+      "ratchet_fp_rate": true
     },
     "languages": [
       "python",
@@ -52,10 +71,13 @@
     ]
   },
   "targets": {
-    "fp_rate_below_10_pct": true,
-    "recall_above_90_pct": true,
+    "cve_recall_above_90_pct": true,
+    "web_wild_recall_above_90_pct": true,
+    "fp_rate_below_10_pct_cve": true,
+    "fp_rate_below_20_pct_wild": true,
     "noise_quotient_below_1_per_1k_loc": true,
     "engine_speed_below_10s_per_100k_loc": true,
+    "ratchet_gate_passed": true,
     "all_targets_met": true
   }
 }

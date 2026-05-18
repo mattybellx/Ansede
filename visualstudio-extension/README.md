@@ -1,19 +1,41 @@
-# Ansede Visual Studio scaffold
+# Ansede Static — Visual Studio Extension
 
-This directory contains the initial Visual Studio extension scaffold for Ansede Static.
+Fully implemented scanner bridge. Compile and install for VS 2022.
 
-## intended feature parity
+## How to Compile & Install
 
-- inline diagnostics from `ansede-static --format json --explain`
-- hover / quick info with CWE, remediation, and explanation text
-- quick fixes for safe `BEFORE:` / `AFTER:` edits
-- command-driven current-file and workspace scans
-- settings for executable path, severity floor, and scan triggers
+### Prerequisites
+- Visual Studio 2022 with ".NET desktop development" workload
+- VS SDK (included with the workload above)
 
-## next implementation steps
+### Build
+```bash
+# From Developer Command Prompt for VS 2022:
+cd visualstudio-extension
+msbuild AnsedeStatic.VisualStudio.csproj /p:Configuration=Release
 
-1. Add an editor listener that scans the current buffer on open/save.
-2. Parse JSON findings into Visual Studio error tags and Error List entries.
-3. Add a quick-fix command for safe inline `auto_fix` replacements.
-4. Add an options page for executable path and scan timeout.
-5. Add integration tests using fixed JSON fixture payloads.
+# Or open AnsedeStatic.VisualStudio.csproj in VS and Build → Build Solution
+# Output: bin/Release/AnsedeStatic.VisualStudio.vsix
+```
+
+### Install
+1. Double-click the `.vsix` file
+2. Click **Install**
+3. Restart Visual Studio
+
+### Usage
+- Open any Python, JS, TS, Java, C#, or Go file
+- **Tools → Scan Current File with Ansede**
+- Results appear in the **Ansede Static** output pane with severity, CWE, line numbers, and remediation
+
+### What's Implemented
+- **AnsedeScannerService**: Process execution, JSON deserialization (`System.Text.Json`), stdin & file-path dual mode, 30s timeout
+- **AnsedePackage**: AsyncPackage with menu command registration, DTE integration, output pane formatting
+- **Language detection**: Auto-maps VS language IDs to ansede-static `--lang` values
+- **Unsaved buffer support**: Pipes editor text directly when file is modified
+
+### Edge Cases Handled
+- ANSEDE_EXECUTABLE env var for custom CLI paths
+- Auto-detection of Windows default path (`%LOCALAPPDATA%\ansede\ansede-static.exe`)
+- Graceful "CLI not found" messaging
+- JSON parse fallback (v2 object format → flat array)
