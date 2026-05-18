@@ -762,6 +762,10 @@ def build_parser() -> argparse.ArgumentParser:
               0   No findings at or above --fail-on severity (default: high)
               1   One or more findings at or above --fail-on severity
               2   Usage error or no files found
+
+            Upgrade to Pro for SARIF, SBOM & HTML dashboards:
+              ansede-static license activate YOUR_KEY
+              Get a key: https://ansede.onrender.com
         """),
     )
     parser.add_argument(
