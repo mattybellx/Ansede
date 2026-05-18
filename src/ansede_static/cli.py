@@ -942,7 +942,7 @@ def _build_feedback_parser() -> argparse.ArgumentParser:
 def _get_version_str() -> str:
     # Nuitka standalone builds embed __compiled__; use the hardcoded version
     if getattr(sys, "frozen", False) or hasattr(sys, "_MEIPASS"):
-        return "ansede-static 2.2.0"
+        return "ansede-static 2.2.1"
     try:
         from importlib.metadata import PackageNotFoundError
     except ImportError:
@@ -951,7 +951,7 @@ def _get_version_str() -> str:
         from importlib.metadata import version
         v = version("ansede-static")
     except (ImportError, PackageNotFoundError):
-        v = "2.2.0"
+        v = "2.2.1"
     return f"ansede-static {v}"
 
 
