@@ -73,7 +73,8 @@ class LicenseInfo:
     def is_expired(self) -> bool:
         if self.expires_at == 0:
             return False
-        return time.time() > self.expires_at
+        # Use tamper-resistant time to prevent clock-rollback bypass
+        return _read_system_time() > self.expires_at
 
     @property
     def is_valid(self) -> bool:
@@ -83,7 +84,7 @@ class LicenseInfo:
     def days_remaining(self) -> int:
         if self.expires_at == 0:
             return 99999
-        remaining = self.expires_at - int(time.time())
+        remaining = self.expires_at - int(_read_system_time())
         return max(0, remaining // 86400)
 
     @property
@@ -254,12 +255,51 @@ def load_license() -> LicenseInfo:
 
 
 def save_license_key(key: str) -> LicenseInfo | None:
-    """Save a license key to the license file. Returns parsed info or None."""
+    """Save a license key to the license file. Returns parsed info or None.
+
+    Includes brute-force protection: after 5 invalid attempts within 10 minutes,
+    further attempts are blocked for 30 minutes.
+    """
+    # ── Rate limiting: prevent brute-force key guessing ──────────────────
+    rate_file = _license_file_path().parent / ".activate_ratelimit"
+    now = _read_system_time()
+    window = 600  # 10 minutes
+    max_attempts = 5
+    cooldown = 1800  # 30 minutes
+
+    rate_data: dict[str, Any] = {}
+    try:
+        if rate_file.exists():
+            rate_data = json.loads(rate_file.read_text())
+    except Exception:
+        pass
+
+    attempts: list[float] = rate_data.get("attempts", [])
+    cooldown_until: float = rate_data.get("cooldown_until", 0)
+
+    if now < cooldown_until:
+        remaining = int(cooldown_until - now)
+        print(f"ansede-static: too many activation attempts. Try again in {remaining // 60}m {remaining % 60}s.", file=__import__('sys').stderr)
+        return None
+
+    # Clean old attempts outside window
+    attempts = [t for t in attempts if now - t < window]
+
     parsed = parse_license_key(key)
-    if parsed is None:
+    if parsed is None or not parsed.is_valid:
+        attempts.append(now)
+        if len(attempts) >= max_attempts:
+            rate_data["cooldown_until"] = now + cooldown
+            rate_data["attempts"] = []
+        else:
+            rate_data["attempts"] = attempts
+        rate_file.parent.mkdir(parents=True, exist_ok=True)
+        rate_file.write_text(json.dumps(rate_data))
         return None
-    if not parsed.is_valid:
-        return None
+
+    # Valid key — clear rate limit
+    if rate_file.exists():
+        rate_file.unlink()
 
     lic_path = _license_file_path()
     lic_path.parent.mkdir(parents=True, exist_ok=True)
@@ -363,16 +403,68 @@ def get_license_gate() -> LicenseFeatureGate:
 
 # ── Daily scan tracking & upgrade prompt ─────────────────────────────────
 
+_SCAN_COUNT_SALT = b"ansede-scan-counter-v2"
+
+
 def _scan_count_file() -> Path:
     return Path.home() / ".ansede" / "scan_count.json"
 
 
+def _scan_hash_file() -> Path:
+    """Hidden companion file with HMAC of scan count to detect tampering."""
+    return Path.home() / ".ansede" / ".scan_integrity"
+
+
+def _scan_monotonic_file() -> Path:
+    """Hidden file tracking last known UTC timestamp for clock-rollback detection."""
+    return Path.home() / ".ansede" / ".scan_clock"
+
+
+def _scan_count_hash(data: str) -> str:
+    return hmac.new(_PUBLIC_KEY, data.encode(), hashlib.sha256).hexdigest()[:16]
+
+
+def _read_system_time() -> float:
+    """Return current UTC time, verified against monotonic clock drift."""
+    now = time.time()
+    mono_file = _scan_monotonic_file()
+    mono_file.parent.mkdir(parents=True, exist_ok=True)
+
+    try:
+        if mono_file.exists():
+            last_recorded = float(mono_file.read_text().strip())
+            # If time went backwards more than 1 hour, reject — clock was rolled back
+            if now < last_recorded - 3600:
+                return last_recorded  # Use last known-good time
+    except (ValueError, OSError):
+        pass
+
+    # Record current time for next check
+    try:
+        mono_file.write_text(str(now))
+    except OSError:
+        pass
+
+    return now
+
+
 def _check_scans_today() -> int:
     count_file = _scan_count_file()
+    hash_file = _scan_hash_file()
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+
     try:
         if count_file.exists():
             data = json.loads(count_file.read_text())
+
+            # Verify integrity: check hash chain
+            if hash_file.exists():
+                stored_hash = hash_file.read_text().strip()
+                computed = _scan_count_hash(json.dumps(data, sort_keys=True))
+                if stored_hash != computed:
+                    # Tampering detected — reset to 0 and flag
+                    return 0
+
             return data.get(today, 0)
     except Exception:
         pass
@@ -381,17 +473,49 @@ def _check_scans_today() -> int:
 
 def _increment_scan_count() -> int:
     count_file = _scan_count_file()
+    hash_file = _scan_hash_file()
     count_file.parent.mkdir(parents=True, exist_ok=True)
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     data: dict[str, int] = {}
-    if count_file.exists():
-        try:
+
+    try:
+        if count_file.exists():
             data = json.loads(count_file.read_text())
-        except Exception:
-            pass
+    except Exception:
+        pass
+
     data[today] = data.get(today, 0) + 1
-    count_file.write_text(json.dumps(data))
+
+    # Write atomically via temp file
+    tmp = count_file.with_suffix(".tmp")
+    serialized = json.dumps(data, sort_keys=True)
+    tmp.write_text(serialized)
+    tmp.replace(count_file)
+
+    # Write integrity hash
+    hash_file.write_text(_scan_count_hash(serialized))
+
     return data[today]
+
+
+def _verify_system_integrity() -> bool:
+    """Check for tampering: clock rollback, file deletion, etc."""
+    try:
+        # Clock check
+        _read_system_time()
+
+        # Hash chain check
+        count_file = _scan_count_file()
+        hash_file = _scan_hash_file()
+        if count_file.exists() and hash_file.exists():
+            data = count_file.read_text()
+            stored_hash = hash_file.read_text().strip()
+            computed = _scan_count_hash(json.dumps(json.loads(data), sort_keys=True))
+            if stored_hash != computed:
+                return False
+        return True
+    except Exception:
+        return True  # Don't block legitimate use on edge cases
 
 
 _UPGRADE_BANNER = """
