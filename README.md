@@ -65,8 +65,8 @@ GitHub PR Security Squiggles: Pro unlocks SARIF 2.1.0 output. Instead of forcing
 Automated Compliance: Generate complete SBOMs (CycloneDX / SPDX) for your entire project with a single --sbom command.
 Security Observability: Generate interactive HTML dashboards (--format html) for security teams to track vulnerability reduction and noise quotients over time.
 Stop wasting engineering hours on manual remediation and pipeline bottlenecks.
-Upgrade to Ansede Pro →
 
+**[Upgrade to Pro →](https://ansede.onrender.com)**
 ## What makes it different
 
 Existing SAST tools detect `subprocess(shell=True)`. They miss the bugs that actually appear in CVE databases:
