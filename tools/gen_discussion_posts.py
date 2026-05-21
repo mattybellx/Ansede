@@ -1,4 +1,10 @@
-"""Generate discussion posts for each repo with confirmed vulns."""
+"""Generate private advisory files (NOT public posts) for repos with confirmed vulns.
+
+IMPORTANT — Responsible Disclosure:
+    Security vulnerabilities MUST be reported PRIVATELY via GitHub Security
+    Advisories. This tool generates advisory files for MANUAL submission.
+    NEVER post security findings as public GitHub Issues.
+"""
 import json
 from pathlib import Path
 

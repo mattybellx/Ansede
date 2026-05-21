@@ -3,26 +3,31 @@
 Responsible Disclosure Automation Tool
 ───────────────────────────────────────
 Reads scan results and generates:
-  1. A formatted responsible disclosure report (markdown)
-  2. A GitHub Discussion template post
-  3. CVE-style summary for each confirmed finding
-  4. SARIF output for GitHub Code Scanning integration
+  1. A private CVE-style advisory for manual submission
+  2. A SARIF report for GitHub Code Scanning
+  3. A summary JSON with only validated, high-confidence findings
 
-Usage:
-    python tools/responsible_disclosure.py --results tmp/triage/results_latest.json
-    python tools/responsible_disclosure.py --results tmp/triage/results_latest.json --publish  # if GITHUB_TOKEN is set
+USAGE — SAFE (recommended):
+    python tools/responsible_disclosure.py --results results.json
+    # Generates advisory files in tmp/disclosure/ — submit manually via Security tab
 
-Output:
-    tmp/disclosure/advisory_{timestamp}.md    — Full advisory report
-    tmp/disclosure/discussion_{timestamp}.md  — GitHub Discussion post template
-    tmp/disclosure/summary_{timestamp}.json   — Machine-readable summary
+USAGE — UNSAFE (not recommended for security issues):
+    python tools/responsible_disclosure.py --results results.json --post
+    # Posts findings as public issues — only use for non-security findings
+
+POLICY:
+    Security vulnerabilities MUST be reported PRIVATELY via GitHub Security
+    Advisories (https://github.com/{owner}/{repo}/security/advisories/new)
+    or the project's SECURITY.md contact method.
+    NEVER post security findings as public GitHub Issues.
 """
+
 from __future__ import annotations
 
 import json
 import os
+import re
 import sys
-import time
 import textwrap
 from collections import defaultdict
 from datetime import datetime, timezone
