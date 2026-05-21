@@ -209,6 +209,100 @@ async function sendWebhook(req) {
     descriptions = "\n".join(f.description for f in js002_findings)
     assert "first.ts:1" in descriptions or "second.ts:1" in descriptions
 
+  def test_sourcemap_remap_sets_original_file_field(self, tmp_path):
+    """Source-mapped findings must carry the original file path in original_file."""
+    bundle_file = tmp_path / "bundle.js"
+    map_file = tmp_path / "bundle.js.map"
+
+    bundle_file.write_text(
+      "document.write(req.query.html);\n//# sourceMappingURL=bundle.js.map\n",
+      encoding="utf-8",
+    )
+    map_file.write_text(
+      json.dumps({
+        "version": 3,
+        "file": "bundle.js",
+        "sources": ["src/app.ts"],
+        "names": [],
+        "mappings": "AAAA",
+      }),
+      encoding="utf-8",
+    )
+
+    result = analyze_js_ast(bundle_file.read_text(encoding="utf-8"), filename=str(bundle_file))
+    finding = next(f for f in result.findings if f.rule_id == "JS-002")
+
+    assert "[source-mapped]" in finding.title
+    assert finding.original_file.endswith("app.ts")
+    d = finding.as_dict()
+    assert "original_file" in d
+    assert d["original_file"].endswith("app.ts")
+
+  def test_sourcemap_remap_sets_trace_frame_file_path(self, tmp_path):
+    """Source-mapped trace frames must carry file_path for the original source."""
+    from ansede_static._types import Finding, TraceFrame, Severity
+    from ansede_static.js_engine.source_map_resolver import remap_findings_to_source_map
+
+    map_file = tmp_path / "bundle.js.map"
+    map_file.write_text(
+      json.dumps({
+        "version": 3,
+        "file": "bundle.js",
+        "sources": ["src/views.ts"],
+        "names": [],
+        "mappings": "AAAA",
+      }),
+      encoding="utf-8",
+    )
+    bundle_file = tmp_path / "bundle.js"
+    bundle_file.write_text(
+      "document.write(req.query.html);\n//# sourceMappingURL=bundle.js.map\n",
+      encoding="utf-8",
+    )
+
+    # Use a finding that has trace frames (as produced by the structural checker)
+    finding = Finding(
+      category="security",
+      severity=Severity.CRITICAL,
+      title="XSS via document.write()",
+      description="test",
+      line=1,
+      rule_id="JS-002",
+      cwe="CWE-79",
+      agent="js-ast-analyzer",
+      confidence=0.96,
+      analysis_kind="syntax-ast",
+      trace=(
+        TraceFrame(kind="source", label="source `req.query.html`", line=1),
+        TraceFrame(kind="sink", label="sink `document.write()`", line=1),
+      ),
+    )
+
+    remapped = remap_findings_to_source_map([finding], str(bundle_file))
+    assert len(remapped) == 1
+    f = remapped[0]
+    assert "[source-mapped]" in f.title
+    assert f.original_file.endswith("views.ts")
+
+    # Every trace frame at the remapped line must carry the original file path
+    frame_paths = [frame.file_path for frame in f.trace if frame.file_path]
+    assert len(frame_paths) >= 1
+    assert all(p.endswith("views.ts") for p in frame_paths)
+
+    # as_dict() must expose file_path when set
+    frame_dicts = [frame.as_dict() for frame in f.trace]
+    assert any("file_path" in fd for fd in frame_dicts)
+
+  def test_non_sourcemapped_finding_has_empty_original_file(self):
+    """Non-minified findings with no source map must have empty original_file."""
+    code = "document.write(req.query.html);\n"
+    result = analyze_js_ast(code)
+    finding = next((f for f in result.findings if f.rule_id == "JS-002"), None)
+    if finding:
+      assert finding.original_file == ""
+      d = finding.as_dict()
+      assert "original_file" not in d  # omitted when empty
+
     def test_react_create_element_dangerous_html_detected_structurally(self):
         code = """
 function UserBio(props) {
@@ -744,3 +838,74 @@ app.get('/admin/users', async (req, res) => {
         result = analyze_js_ast(code)
 
         assert not any(finding.cwe == "CWE-79" for finding in result.findings)
+
+  def test_sarif_codeflow_uses_source_mapped_file_path(self, tmp_path):
+    """End-to-end: after source-map remapping, SARIF codeFlow locations must
+    reference the original source file, not the bundle path."""
+    import json as _json
+    from ansede_static._types import Finding, TraceFrame, Severity, AnalysisResult
+    from ansede_static.js_engine.source_map_resolver import remap_findings_to_source_map
+    from ansede_static.reporters import format_sarif
+
+    bundle_file = tmp_path / "bundle.js"
+    map_file = tmp_path / "bundle.js.map"
+    bundle_file.write_text(
+      "document.write(req.query.html);\n//# sourceMappingURL=bundle.js.map\n",
+      encoding="utf-8",
+    )
+    map_file.write_text(
+      _json.dumps({
+        "version": 3,
+        "file": "bundle.js",
+        "sources": ["src/views.ts"],
+        "names": [],
+        "mappings": "AAAA",
+      }),
+      encoding="utf-8",
+    )
+
+    # Build a structural finding with both source and sink trace frames
+    finding = Finding(
+      category="security",
+      severity=Severity.CRITICAL,
+      title="XSS via document.write()",
+      description="Unsanitized user input flows to document.write()",
+      line=1,
+      rule_id="JS-002",
+      cwe="CWE-79",
+      agent="js-ast-analyzer",
+      confidence=0.96,
+      analysis_kind="syntax-ast",
+      trace=(
+        TraceFrame(kind="source", label="source `req.query.html`", line=1),
+        TraceFrame(kind="sink", label="sink `document.write()`", line=1),
+      ),
+    )
+
+    remapped = remap_findings_to_source_map([finding], str(bundle_file))
+    assert remapped, "Source-map remapping produced no findings"
+    assert remapped[0].trace, "Remapped finding must have trace frames"
+
+    # Wrap in AnalysisResult for format_sarif
+    result = AnalysisResult(file_path=str(bundle_file), language="javascript", findings=remapped)
+
+    # Format as SARIF
+    sarif_output = format_sarif([result])
+    sarif = _json.loads(sarif_output)
+
+    run = sarif["runs"][0]
+    result_obj = run["results"][0]
+    assert "codeFlows" in result_obj, "SARIF result must contain codeFlows"
+
+    thread_flow = result_obj["codeFlows"][0]["threadFlows"][0]
+    locations = thread_flow["locations"]
+    assert len(locations) >= 1
+
+    uris = [
+      loc["location"]["physicalLocation"]["artifactLocation"]["uri"]
+      for loc in locations
+    ]
+    # Every codeFlow location must resolve to the source file, not the bundle
+    assert all("views.ts" in uri for uri in uris), (
+      f"Expected all codeFlow URIs to reference 'views.ts', got: {uris}"
+    )

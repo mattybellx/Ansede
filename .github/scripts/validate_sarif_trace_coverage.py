@@ -1,0 +1,81 @@
+#!/usr/bin/env python3
+"""Validate SARIF trace coverage meets the minimum threshold.
+
+Called by CI after a full scan of the NodeGoat corpus.  Asserts that at
+least 80% of findings include codeFlows (trace frames), which ensures
+the ``frame.file_path`` → SARIF ``artifactLocation.uri`` pipeline is
+working end-to-end.
+
+Exit codes:
+  0 — gate passed (trace_coverage_pct >= 80%)
+  1 — gate failed
+"""
+from __future__ import annotations
+
+import json
+import subprocess
+import sys
+from pathlib import Path
+
+
+REPO_ROOT = Path(__file__).resolve().parent.parent.parent
+MIN_TRACE_COVERAGE_PCT = 80.0
+
+
+def main() -> int:
+    # Run ansede-static on NodeGoat in SARIF mode
+    nodegoat = REPO_ROOT / "NodeGoat"
+    if not nodegoat.is_dir():
+        print(f"SKIP: NodeGoat directory not found at {nodegoat}")
+        return 0
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "ansede_static.cli",
+            str(nodegoat),
+            "--format",
+            "sarif",
+            "--fail-on",
+            "never",
+        ],
+        capture_output=True,
+        text=True,
+        timeout=180,
+    )
+
+    if result.returncode != 0:
+        print(f"ERROR: ansede-static scan failed (exit {result.returncode})")
+        print(result.stderr[:2000])
+        return 1
+
+    try:
+        sarif = json.loads(result.stdout)
+    except json.JSONDecodeError as exc:
+        print(f"ERROR: failed to parse SARIF output: {exc}")
+        print(result.stdout[:1000])
+        return 1
+
+    # Validate trace coverage
+    from ansede_static.sarif_validator import SARIFValidator  # noqa: F811
+
+    validator = SARIFValidator(sarif)
+    metrics = validator.validate()
+
+    pct = metrics.trace_coverage_pct
+    print(f"Trace coverage: {pct:.1f}% ({metrics.findings_with_trace}/{metrics.total_results} findings with codeFlows)")
+
+    if pct < MIN_TRACE_COVERAGE_PCT:
+        print(
+            f"FAIL: trace coverage {pct:.1f}% < {MIN_TRACE_COVERAGE_PCT:.0f}%  "
+            f"({metrics.total_results - metrics.findings_with_trace} findings missing codeFlows)",
+        )
+        return 1
+
+    print(f"PASS: trace coverage {pct:.1f}% >= {MIN_TRACE_COVERAGE_PCT:.0f}%")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

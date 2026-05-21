@@ -581,6 +581,13 @@ def _check_dynamic_require(calls: list[JsCall]) -> list[Finding]:
 
 
 
+# ── URL-route patterns to exclude from path traversal detection ────────────
+# These are URL route fragments, not file-system paths
+_URL_ROUTE_RE = re.compile(
+    r"^\s*['\"`]/|/\(?::\w+|\?\w+=|#\w+",
+)
+
+
 def _check_path_traversal(
     calls: list[JsCall],
     taint_traces: dict[str, tuple[TraceFrame, ...]],
@@ -591,6 +598,10 @@ def _check_path_traversal(
         if short not in PATH_CALLEE_PARTS or not call.arguments:
             continue
         expr = call.arguments[0]
+        # Skip URL route patterns (e.g., '/install/step/' + step) — these are not file paths
+        raw_arg = call.raw[call.raw.find(call.arguments[0]):] if call.arguments else ""
+        if _URL_ROUTE_RE.match(raw_arg):
+            continue
         trace = _flow_trace(expr, taint_traces, line=call.line, allow_generic_dynamic=False)
         if not trace:
             continue

@@ -107,6 +107,17 @@ TAINT_SOURCES: dict[str, str] = {
     "request.get_json":       "parsed HTTP JSON body (Flask get_json())",
     "request.values":         "merged GET+POST values (Flask)",
     "request.stream":         "raw HTTP body stream (Flask/FastAPI)",
+    # Tornado web framework request sources
+    "self.get_argument":      "Tornado HTTP request argument",
+    "self.get_query_argument": "Tornado query string argument",
+    "self.get_body_argument": "Tornado request body argument",
+    "self.request.body":      "Tornado raw HTTP body",
+    "self.request.arguments": "Tornado multi-value request arguments",
+    # aiohttp server request sources
+    "request.rel_url":        "aiohttp request URL (path + query)",
+    "request.match_info":     "aiohttp route path parameters",
+    "request.text":           "aiohttp request body as text",
+    "request.post":           "aiohttp form data",
     "request.url":            "request URL",
     "request.path":           "request path",
     "request.host":           "request Host header",
@@ -1714,7 +1725,7 @@ def _record_function_summaries_in_global_graph(
     summary_dependencies: dict[str, tuple[str, ...]],
 ) -> None:
     """Publish local Python summaries into the shared GlobalGraph IFDS store."""
-    from ansede_static.ir.global_graph import FunctionSummary
+    from ansede_static.ir.global_graph import FunctionSummary, IDETaintLevel
 
     for function_name, summary in func_summaries.items():
         parameters = list(summary.parameters)
@@ -1732,6 +1743,19 @@ def _record_function_summaries_in_global_graph(
             side_effect_symbols=(),
             depends_on=summary_dependencies.get(function_name, ()),
         ))
+        # Record IDE lattice facts: functions that return a tainted source value
+        # are marked TAINTED so callers can have their confidence adjusted.
+        if summary.source and hasattr(global_graph, "set_taint_with_access_path"):
+            try:
+                global_graph.set_taint_with_access_path(
+                    file_path=filename or "<stdin>",
+                    function_name=function_name,
+                    value_label="$ret",
+                    level=IDETaintLevel.TAINTED,
+                    sources=(summary.source,),
+                )
+            except Exception:
+                pass
     global_graph.save_summaries()
 
 
@@ -1941,6 +1965,45 @@ def _code_sans_strings_and_comments(code: str) -> list[str]:
 # ──────────────────────────────────────────────────────────────────────────────
 
 
+@dataclass(frozen=True)
+class FrameworkFingerprint:
+    """Detect which web frameworks a Python source file uses.
+
+    Used to scope route-specific and auth-specific rules to files
+    that actually contain framework route definitions, reducing FP
+    rate on pure-utility modules.
+    """
+
+    flask: bool = False
+    fastapi: bool = False
+    django: bool = False
+    aiohttp: bool = False
+    tornado: bool = False
+    starlette: bool = False
+
+    @property
+    def is_web_app(self) -> bool:
+        """True if any web framework is detected."""
+        return any([self.flask, self.fastapi, self.django,
+                    self.aiohttp, self.tornado, self.starlette])
+
+    @classmethod
+    def from_source(cls, source: str) -> "FrameworkFingerprint":
+        """Scan the first 200 lines for framework import patterns."""
+        head = "\n".join(source.splitlines()[:200]).lower()
+        return cls(
+            flask="from flask" in head or "import flask" in head,
+            fastapi="from fastapi" in head or "import fastapi" in head,
+            django=(
+                "from django" in head or "import django" in head
+                or "django.db" in head or "models.model" in head
+            ),
+            aiohttp="from aiohttp" in head or "import aiohttp" in head,
+            tornado="from tornado" in head or "import tornado" in head,
+            starlette="from starlette" in head or "import starlette" in head,
+        )
+
+
 @dataclass
 class _Ctx:
     """Shared context passed to every detection-rule function."""
@@ -1959,6 +2022,8 @@ class _Ctx:
     fastapi_guarded_receivers: set[str] = None  # type: ignore[assignment]
     # FastAPI auth alias names (oauth2_scheme, get_current_user, etc.).
     fastapi_auth_aliases: set[str] = None  # type: ignore[assignment]
+    # Framework fingerprint for scope-narrowing route/auth rules.
+    framework: FrameworkFingerprint = None  # type: ignore[assignment]
 
 
 _FRAMEWORK_INTERNAL_PY_MARKERS: tuple[str, ...] = (
@@ -5074,6 +5139,8 @@ def _rule_27(ctx: _Ctx) -> list[Finding]:
 
 def _rule_36(ctx: _Ctx) -> list[Finding]:
     """CWE-862: Django CBV get/post methods without auth-enforcing mixins or decorators."""
+    if not (ctx.framework and ctx.framework.django):
+        return []
     findings: list[Finding] = []
 
     for cls in (ctx.class_defs or {}).values():
@@ -5125,6 +5192,8 @@ def _rule_36(ctx: _Ctx) -> list[Finding]:
 
 def _rule_37(ctx: _Ctx) -> list[Finding]:
     """CWE-639: Django Detail/Update/Delete CBVs missing user-scoped get_queryset()."""
+    if not (ctx.framework and ctx.framework.django):
+        return []
     findings: list[Finding] = []
 
     for cls in (ctx.class_defs or {}).values():
@@ -5161,6 +5230,8 @@ def _rule_37(ctx: _Ctx) -> list[Finding]:
 
 def _rule_38(ctx: _Ctx) -> list[Finding]:
     """CWE-285: Django Update/Delete CBVs whose get_queryset() lacks ownership scope."""
+    if not (ctx.framework and ctx.framework.django):
+        return []
     findings: list[Finding] = []
 
     for cls in (ctx.class_defs or {}).values():
@@ -5199,6 +5270,8 @@ def _rule_38(ctx: _Ctx) -> list[Finding]:
 
 def _rule_39(ctx: _Ctx) -> list[Finding]:
     """CWE-287: FastAPI routes with Depends/Security hooks that do not perform auth."""
+    if not (ctx.framework and ctx.framework.fastapi):
+        return []
     findings: list[Finding] = []
     auth_aliases = ctx.fastapi_auth_aliases or set()
     guarded_receivers = ctx.fastapi_guarded_receivers or set()
@@ -5243,6 +5316,8 @@ def _rule_39(ctx: _Ctx) -> list[Finding]:
 
 def _rule_40(ctx: _Ctx) -> list[Finding]:
     """CWE-862: FastAPI PUT/DELETE routes with no dependency-based auth at all."""
+    if not (ctx.framework and ctx.framework.fastapi):
+        return []
     findings: list[Finding] = []
     guarded_receivers = ctx.fastapi_guarded_receivers or set()
 
@@ -6207,6 +6282,7 @@ def _detect(code: str, filename: str = "", global_graph: object = None) -> list[
         class_defs=class_defs, func_to_class=func_to_class,
         fastapi_guarded_receivers=fastapi_guarded_receivers,
         fastapi_auth_aliases=fastapi_auth_aliases,
+        framework=FrameworkFingerprint.from_source(code),
     )
     findings: list[Finding] = []
     for rule_fn in (
@@ -6471,6 +6547,72 @@ def analyze_python(code: str, filename: str = "", global_graph=None) -> Analysis
             ))
     except Exception:
         pass
+
+    # ── IDE lattice confidence adjustment (mirrors the JS taint_checks path) ──
+    # Functions whose return value is tracked as TAINTED in the GlobalGraph IDE
+    # lattice have their findings' confidence boosted; CLEAN facts suppress it.
+    if global_graph is not None and hasattr(global_graph, "adjust_confidence_from_ide"):
+        adjusted_findings: list[Finding] = []
+        for finding in findings:
+            try:
+                adjusted = global_graph.adjust_confidence_from_ide(
+                    file_path=filename or "<stdin>",
+                    function_name="<module>",
+                    value_label="$ret",
+                    base_confidence=finding.confidence,
+                )
+                if adjusted != finding.confidence:
+                    finding = Finding(
+                        category=finding.category,
+                        severity=finding.severity,
+                        title=finding.title,
+                        description=finding.description,
+                        line=finding.line,
+                        suggestion=finding.suggestion,
+                        rule_id=finding.rule_id,
+                        cwe=finding.cwe,
+                        agent=finding.agent,
+                        confidence=adjusted,
+                        auto_fix=finding.auto_fix,
+                        explanation=finding.explanation,
+                        trace=finding.trace,
+                        analysis_kind=finding.analysis_kind,
+                        triggering_code=finding.triggering_code,
+                    )
+            except Exception:
+                pass
+            adjusted_findings.append(finding)
+        findings = adjusted_findings
+
+    # ── STIR emission ─────────────────────────────────────────────────────
+    # Populate the Shared Taint IR with sources and sinks from findings
+    # so the IFDS solver can operate on a language-agnostic fact graph.
+    try:
+        from ansede_static.ir.stir import emit_python_stir
+
+        stir_sources: list[tuple[str, str, int]] = []
+        stir_sinks: list[tuple[str, str, int, str]] = []
+        for f in findings:
+            line = f.line or 1
+            if f.trace:
+                for frame in f.trace:
+                    if frame.kind == "source":
+                        stir_sources.append(("http_request" if "request" in frame.label.lower() else "user_input", frame.label[:60], line))
+                    elif frame.kind == "sink":
+                        stir_sinks.append(("code_exec" if "exec" in frame.label.lower() else "sql_query" if "sql" in frame.label.lower() else "sink", frame.label[:60], line, f.cwe or "CWE-unknown"))
+            if f.cwe:
+                stir_sinks.append(("pattern_match", f.title[:60], line, f.cwe))
+
+        if stir_sources or stir_sinks:
+            stir_model = emit_python_stir(
+                code, filename,
+                sources=stir_sources if stir_sources else None,
+                sinks=stir_sinks if stir_sinks else None,
+            )
+            if global_graph is not None and hasattr(global_graph, "absorb_stir"):
+                global_graph.absorb_stir(stir_model)
+    except Exception:
+        pass  # STIR emission is best-effort
 
     result.findings = findings
     return result

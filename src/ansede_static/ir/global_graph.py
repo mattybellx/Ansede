@@ -368,6 +368,43 @@ class GlobalGraph:
         self.function_summaries[key] = normalized_summary
         self._rebuild_reverse_dependencies_for(key, normalized_summary)
 
+    def absorb_stir(self, stir_model: object) -> None:
+        """Absorb a STIR model into this GlobalGraph's function summaries.
+
+        Called by language analyzers after detection to populate the
+        inter-procedural fact graph with STIR sources, sinks, and flows.
+        Best-effort — failures are silently ignored.
+        """
+        try:
+            from ansede_static.ir.stir import StirModel
+
+            if not isinstance(stir_model, StirModel):
+                return
+
+            # Record each source as a FunctionSummary
+            for src in stir_model.sources:
+                fname = src.name.split(".")[0]
+                summary = FunctionSummary(
+                    file_path=stir_model.file_path,
+                    function_name=f"stir_{fname}",
+                    return_from_source=True,
+                    depends_on=(),
+                )
+                self.record_function_summary(summary)
+
+            # Record each sink as a FunctionSummary
+            for sink in stir_model.sinks:
+                fname = sink.name.split(".")[0]
+                summary = FunctionSummary(
+                    file_path=stir_model.file_path,
+                    function_name=f"stir_{fname}",
+                    args_to_sink=(1,),
+                    depends_on=(),
+                )
+                self.record_function_summary(summary)
+        except Exception:
+            pass
+
     def record_call_dependency(
         self,
         *,

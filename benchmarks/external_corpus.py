@@ -33,13 +33,13 @@ if hasattr(sys.stdout, "reconfigure"):
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
-from ansede_static import _CSHARP_EXTS, _GO_EXTS, _JAVA_EXTS, _JS_EXTS, _PYTHON_EXTS, scan_file
+from ansede_static import _CSHARP_EXTS, _GO_EXTS, _JAVA_EXTS, _JS_EXTS, _PYTHON_EXTS, _RUBY_EXTS, _PHP_EXTS, scan_file
 
 
 _GIT_KIND = "git"
 _PATH_KIND = "path"
 _SAFE_NAME_RE = re.compile(r"[^A-Za-z0-9_.-]+")
-_SUPPORTED_LANGUAGES = ("python", "javascript", "go", "java", "csharp")
+_SUPPORTED_LANGUAGES = ("python", "javascript", "go", "java", "csharp", "ruby", "php")
 
 
 class OfflineCacheMissError(FileNotFoundError):
@@ -188,10 +188,15 @@ def _normalize_languages(item: dict[str, Any]) -> tuple[str, ...]:
     if not isinstance(raw_languages, list):
         raise ValueError("external corpus entry `languages` must be an array")
     languages = tuple(str(value).strip().lower() for value in raw_languages if str(value).strip())
-    unknown = sorted({value for value in languages if value not in _SUPPORTED_LANGUAGES})
+    # Normalize aliases: typescript is analyzed by the JavaScript engine
+    normalized = tuple(
+        "javascript" if lang in ("typescript", "ts", "jsx", "tsx") else lang
+        for lang in languages
+    )
+    unknown = sorted({value for value in normalized if value not in _SUPPORTED_LANGUAGES})
     if unknown:
         raise ValueError(f"unsupported external corpus languages: {', '.join(unknown)}")
-    return languages
+    return normalized
 
 
 def _parse_expected_findings(item: dict[str, Any]) -> ExpectedFindingRange:
@@ -320,7 +325,7 @@ def load_manifest(manifest_path: str | Path) -> ExternalCorpusManifest:
 def _supported_file(path: Path, languages: tuple[str, ...]) -> bool:
     suffix = path.suffix.lower()
     if not languages:
-        return suffix in _PYTHON_EXTS or suffix in _JS_EXTS or suffix in _GO_EXTS or suffix in _JAVA_EXTS or suffix in _CSHARP_EXTS
+        return suffix in _PYTHON_EXTS or suffix in _JS_EXTS or suffix in _GO_EXTS or suffix in _JAVA_EXTS or suffix in _CSHARP_EXTS or suffix in _RUBY_EXTS or suffix in _PHP_EXTS
     allowed_suffixes: set[str] = set()
     if "python" in languages:
         allowed_suffixes.update(_PYTHON_EXTS)
@@ -332,6 +337,10 @@ def _supported_file(path: Path, languages: tuple[str, ...]) -> bool:
         allowed_suffixes.update(_JAVA_EXTS)
     if "csharp" in languages:
         allowed_suffixes.update(_CSHARP_EXTS)
+    if "ruby" in languages:
+        allowed_suffixes.update(_RUBY_EXTS)
+    if "php" in languages:
+        allowed_suffixes.update(_PHP_EXTS)
     return suffix in allowed_suffixes
 
 

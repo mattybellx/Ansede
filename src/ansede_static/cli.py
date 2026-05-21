@@ -15,6 +15,7 @@ from __future__ import annotations
 import argparse
 from datetime import datetime, timezone
 import gc
+import re
 import json
 import sys
 import textwrap
@@ -34,7 +35,7 @@ from ansede_static.js_engine.backends import (
 from ansede_static.reporters import format_text_multi, format_json, format_sarif, format_ciso_report, format_html
 from ansede_static.rules import describe_rule, list_rule_contracts
 from ansede_static.schema import FINGERPRINT_VERSION
-from ansede_static import _PYTHON_EXTS, _JS_EXTS, _GO_EXTS, _JAVA_EXTS, _CSHARP_EXTS
+from ansede_static import _PYTHON_EXTS, _JS_EXTS, _GO_EXTS, _JAVA_EXTS, _CSHARP_EXTS, _RUBY_EXTS, _PHP_EXTS
 
 from ansede_static.ir.global_graph import GlobalGraph
 from ansede_static.engine.triage import run_ai_triage
@@ -71,6 +72,10 @@ def _detect_language(path: Path) -> str | None:
         return "java"
     if ext in _CSHARP_EXTS:
         return "csharp"
+    if ext in _RUBY_EXTS:
+        return "ruby"
+    if ext in _PHP_EXTS:
+        return "php"
     return None
 
 
@@ -200,6 +205,7 @@ def _analyze_file(
     experimental_js_ast: bool = False,
     global_graph: GlobalGraph | None = None,
     cache_store: Any | None = None,
+    engine: str = "auto",
 ) -> AnalysisResult:
     lang = _detect_language(path)
     try:
@@ -207,6 +213,18 @@ def _analyze_file(
     except OSError as exc:
         result = AnalysisResult(file_path=str(path), language=lang or "unknown")
         result.parse_error = str(exc)
+        return result
+
+    # ── v2 engine dispatch ─────────────────────────────────────────────
+    if engine == "v2" and lang in ("python", "javascript"):
+        from ansede_static.v2.engine import Engine
+        eng = Engine()
+        v2_findings = eng.scan_source(code, file_path=str(path), language=lang)
+        result = AnalysisResult(file_path=str(path), language=lang)
+        for v2f in v2_findings:
+            v1 = v2f.to_v1()
+            result.findings.append(v1)
+        result.lines_scanned = code.count("\n") + 1
         return result
 
     # ── File-level result cache (skip re-analysis if file unchanged) ──────
@@ -230,13 +248,19 @@ def _analyze_file(
         )
     elif lang == "go":
         from ansede_static.go_engine.go_analyzer import run_go_analysis
-        result = run_go_analysis(code, filename=str(path))
+        result = run_go_analysis(code, filename=str(path), global_graph=global_graph)
     elif lang == "java":
         from ansede_static.java_analyzer import analyze_java
         result = analyze_java(code, filename=str(path))
     elif lang == "csharp":
         from ansede_static.csharp_analyzer import analyze_csharp
         result = analyze_csharp(code, filename=str(path))
+    elif lang == "ruby":
+        from ansede_static.ruby_analyzer import analyze_ruby
+        result = analyze_ruby(code, filename=str(path))
+    elif lang == "php":
+        from ansede_static.php_analyzer import analyze_php
+        result = analyze_php(code, filename=str(path))
     else:
         result = AnalysisResult(file_path=str(path), language="unknown")
 
@@ -790,6 +814,10 @@ def build_parser() -> argparse.ArgumentParser:
         help="Show the contract for a stable rule ID like PY-020 or a CWE like CWE-862.",
     )
     parser.add_argument(
+        "--explain-cwe", metavar="CWE-ID",
+        help="Print the offline explanation for a CWE ID (e.g. CWE-89) and exit.",
+    )
+    parser.add_argument(
         "--list-js-backends", action="store_true",
         help="Print the available JS/TS analysis backends and exit.",
     )
@@ -798,8 +826,16 @@ def build_parser() -> argparse.ArgumentParser:
         help="Initialize a new ansede.json configuration file in the current directory.",
     )
     parser.add_argument(
-        "--lang", choices=["python", "javascript", "go", "java", "csharp"],
+        "--lang", choices=["python", "javascript", "go", "java", "csharp", "ruby", "php"],
         help="Force language detection (useful with --stdin).",
+    )
+    parser.add_argument(
+        "--engine", choices=["v1", "v2", "auto"], default="auto",
+        help=(
+            "Select the analysis engine. v1 = production hybrid analyzers (default when auto). "
+            "v2 = next-generation single-pass rule engine. "
+            "auto = v1 for now (v2 will become default after migration stabilises)."
+        ),
     )
     parser.add_argument(
         "--format", "-f", choices=["text", "json", "sarif", "ciso", "html"], default="text",
@@ -927,6 +963,32 @@ def build_parser() -> argparse.ArgumentParser:
         "--diagnostics-output", type=Path, default=None, metavar="FILE",
         help="Write standalone diagnostics JSON report to FILE (implies --diagnostics).",
     )
+    parser.add_argument(
+        "--watch", action="store_true",
+        help=(
+            "Watch scanned paths for file changes and re-scan modified files automatically. "
+            "Uses stdlib polling (no extra dependencies). Ctrl+C to stop."
+        ),
+    )
+    parser.add_argument(
+        "--watch-interval", type=float, default=1.5, dest="watch_interval", metavar="SECONDS",
+        help="Polling interval in seconds for --watch mode (default: 1.5).",
+    )
+    parser.add_argument(
+        "--audit-suppressions", action="store_true", dest="audit_suppressions",
+        help=(
+            "Audit all `# ansede: ignore` comments in the scanned paths. "
+            "Classifies each as VALIDATED (finding still fires), STALE "
+            "(no finding fires \u2014 safe to remove), or BROAD (no rule ID scoped)."
+        ),
+    )
+    parser.add_argument(
+        "--baseline-update", action="store_true", dest="baseline_update",
+        help=(
+            "Re-save the current scan state as the new baseline file "
+            "(requires --baseline). Incorporates current findings into the accepted baseline."
+        ),
+    )
     return parser
 
 
@@ -992,6 +1054,7 @@ def _analyze_file_with_timeout(
     experimental_js_ast: bool = False,
     timeout_seconds: float = 30.0,
     global_graph: GlobalGraph | None = None,
+    engine: str = "auto",
 ) -> AnalysisResult:
     """Run _analyze_file with a hard per-file timeout.
 
@@ -1015,6 +1078,7 @@ def _analyze_file_with_timeout(
                     requested_js_backend=requested_js_backend,
                     experimental_js_ast=experimental_js_ast,
                     global_graph=global_graph,
+                    engine=engine,
                 )
         except Exception as exc:  # noqa: BLE001
             r = AnalysisResult(file_path=str(path), language=_detect_language(path) or "unknown")
@@ -1041,6 +1105,7 @@ def _analyze_file_with_timeout(
             experimental_js_ast=experimental_js_ast,
             timeout_seconds=timeout_seconds,
             global_graph=global_graph,
+            engine=engine,
         )
 
 
@@ -1074,6 +1139,7 @@ def _analyze_file_streaming_fallback(
     experimental_js_ast: bool,
     timeout_seconds: float,
     global_graph: GlobalGraph | None = None,
+    engine: str = "auto",
 ) -> AnalysisResult:
     """Fallback analysis mode for files that exceed hard timeout.
 
@@ -1180,6 +1246,156 @@ def _handle_graceful_shutdown() -> None:
     sys.exit(130)
 
 
+_SUPPRESSION_COMMENT_RE = re.compile(
+    r"#\s*ansede\s*:\s*ignore(?:\[([^\]]*)\])?", re.IGNORECASE
+)
+
+
+def _run_watch_mode(paths: list[Path], *, args: argparse.Namespace, interval: float = 1.5) -> None:
+    """Poll scanned paths for file changes and re-scan modified files. Ctrl+C to stop."""
+    import time as _time
+
+    _extra = [
+        ".venv", "node_modules", "__pycache__", ".git",
+        "site-packages", "dist", "build", ".tox",
+        "public", "vendor", "static", "assets", "bower_components",
+    ] + list(args.exclude)
+    all_files = _collect_files(paths, _extra)
+    mtimes: dict[str, float] = {}
+    for f in all_files:
+        try:
+            mtimes[str(f)] = f.stat().st_mtime
+        except OSError:
+            pass
+    _label = ", ".join(str(p) for p in paths)
+    _msg = f"ansede --watch: watching {len(all_files)} file(s) in {_label}. Ctrl+C to stop."
+    if console:
+        console.print(f"[bold cyan]{_msg}[/bold cyan]")
+    else:
+        print(_msg, file=sys.stderr)
+    global_graph = GlobalGraph()
+    while True:
+        _time.sleep(interval)
+        current_files = _collect_files(paths, _extra)
+        current_set = {str(f) for f in current_files}
+        changed: list[Path] = []
+        for f in current_files:
+            key = str(f)
+            try:
+                mtime = f.stat().st_mtime
+            except OSError:
+                continue
+            if key not in mtimes or mtimes[key] != mtime:
+                mtimes[key] = mtime
+                changed.append(f)
+        for key in list(mtimes):
+            if key not in current_set:
+                del mtimes[key]
+        if not changed:
+            continue
+        colour = args.colour and sys.stdout.isatty()
+        for fpath in changed:
+            result = _analyze_file_with_timeout(
+                fpath,
+                requested_js_backend=args.js_backend,
+                experimental_js_ast=args.experimental_js_ast,
+                timeout_seconds=args.timeout_per_file,
+                global_graph=global_graph,
+                engine=getattr(args, "engine", "auto"),
+            )
+            if console:
+                console.print(f"\n[bold dim]\u27f3  {fpath.name} changed \u2014 re-scanned[/bold dim]")
+            if result.findings:
+                output = format_text_multi([result], colour=colour, verbose=args.verbose)
+                if output:
+                    print(output)
+            else:
+                if console:
+                    console.print("  [dim]\u2713  No issues found[/dim]")
+                else:
+                    print(f"  OK  No issues found ({result.lines_scanned} lines)")
+
+
+def _run_audit_suppressions(paths: list[Path], *, exclude: list[str]) -> None:
+    """Audit all # ansede: ignore suppression comments in scanned files.
+
+    Classifies each as:
+      VALIDATED  — the finding still fires; the suppression is justified
+      STALE      — no finding fires; the comment is safe to remove
+      BROAD      — no rule ID specified; suppresses all rules on that line
+    """
+    _extra = [
+        ".venv", "node_modules", "__pycache__", ".git",
+        "site-packages", "dist", "build", ".tox",
+        "public", "vendor", "static", "assets", "bower_components",
+    ] + list(exclude)
+    files = _collect_files(paths, _extra)
+    validated: list[tuple[str, int, str]] = []
+    stale: list[tuple[str, int, str]] = []
+    broad: list[tuple[str, int]] = []
+    global_graph = GlobalGraph()
+    for fpath in files:
+        try:
+            source = fpath.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        lines = source.splitlines()
+        suppressed: dict[int, list[str]] = {}
+        for lineno, line in enumerate(lines, start=1):
+            m = _SUPPRESSION_COMMENT_RE.search(line)
+            if not m:
+                continue
+            ids_raw = m.group(1) or ""
+            rule_ids = [r.strip() for r in ids_raw.split(",") if r.strip()]
+            suppressed[lineno] = rule_ids
+        if not suppressed:
+            continue
+        result = _analyze_file(fpath, global_graph=global_graph)
+        firing_lines: set[int] = {f.line for f in result.findings if f.line}
+        for lineno, rule_ids in suppressed.items():
+            ids_str = ", ".join(rule_ids) if rule_ids else ""
+            if not rule_ids:
+                broad.append((str(fpath), lineno))
+            elif lineno in firing_lines:
+                validated.append((str(fpath), lineno, ids_str))
+            else:
+                stale.append((str(fpath), lineno, ids_str))
+    sep = "\u2550" * 72
+    print()
+    if console:
+        console.print("[bold]Suppression Audit Report[/bold]")
+        console.print(sep)
+    else:
+        print("Suppression Audit Report")
+        print(sep)
+    print()
+    for fp, ln, ids in validated:
+        tag = f"# ansede: ignore[{ids}]"
+        if console:
+            console.print(f"  {fp}:{ln}  [bold green]VALIDATED[/bold green]  {tag}  (finding still fires)")
+        else:
+            print(f"  {fp}:{ln}  VALIDATED  {tag}  (finding still fires)")
+    for fp, ln, ids in stale:
+        tag = f"# ansede: ignore[{ids}]"
+        if console:
+            console.print(f"  {fp}:{ln}  [bold yellow]STALE[/bold yellow]     {tag}  (no finding \u2014 safe to remove)")
+        else:
+            print(f"  {fp}:{ln}  STALE     {tag}  (no finding \u2014 safe to remove)")
+    for fp, ln in broad:
+        if console:
+            console.print(f"  {fp}:{ln}  [bold red]BROAD[/bold red]     # ansede: ignore  (no rule ID \u2014 consider specifying one)")
+        else:
+            print(f"  {fp}:{ln}  BROAD     # ansede: ignore  (no rule ID \u2014 consider specifying one)")
+    total = len(validated) + len(stale) + len(broad)
+    print()
+    _summary = f"Summary: {total} suppression(s) \u2014 {len(validated)} validated, {len(stale)} stale, {len(broad)} broad"
+    if console:
+        console.print(f"[bold]{_summary}[/bold]")
+    else:
+        print(_summary)
+    print()
+
+
 def _main_impl() -> None:
     parser = build_parser()
 
@@ -1206,6 +1422,11 @@ def _main_impl() -> None:
     if len(sys.argv) >= 2 and sys.argv[1] == "registry":
         from ansede_static.registry import handle_registry_command
         sys.exit(handle_registry_command(sys.argv[2:], workspace_root=Path.cwd()))
+
+    if len(sys.argv) >= 2 and sys.argv[1] == "audit-suppressions":
+        _audit_paths = [Path(p) for p in sys.argv[2:] if not p.startswith("-")] or [Path(".")]
+        _run_audit_suppressions(_audit_paths, exclude=[])
+        sys.exit(0)
 
     args = parser.parse_args()
 
@@ -1270,6 +1491,18 @@ def _main_impl() -> None:
         print(rendered)
         sys.exit(0)
 
+    if getattr(args, "explain_cwe", None):
+        from ansede_static.engine.explain import EXPLANATIONS
+        cwe_id = str(args.explain_cwe).strip().upper()
+        if not cwe_id.startswith("CWE-"):
+            cwe_id = f"CWE-{cwe_id}"
+        explanation = EXPLANATIONS.get(cwe_id)
+        if explanation is None:
+            print(f"ansede-static: no explanation available for {cwe_id}", file=sys.stderr)
+            sys.exit(2)
+        print(explanation)
+        sys.exit(0)
+
     if getattr(args, "list_js_backends", False):
         print(_render_js_backend_catalog(args.format == "json"))
         sys.exit(0)
@@ -1312,6 +1545,18 @@ def _main_impl() -> None:
 }
 ''')
         print(f"✅ Created a starter configuration file at {init_file}")
+        sys.exit(0)
+
+    # ── Watch mode ────────────────────────────────────────────────────────────
+    if getattr(args, "watch", False):
+        _watch_paths = list(args.paths) if args.paths else [Path(".")]
+        _run_watch_mode(_watch_paths, args=args, interval=getattr(args, "watch_interval", 1.5))
+        sys.exit(0)
+
+    # ── Audit suppressions flag ───────────────────────────────────────────────
+    if getattr(args, "audit_suppressions", False):
+        _audit_paths = list(args.paths) if args.paths else [Path(".")]
+        _run_audit_suppressions(_audit_paths, exclude=list(args.exclude))
         sys.exit(0)
 
     # Disable colour if not a tty or explicitly disabled
@@ -1554,6 +1799,7 @@ def _main_impl() -> None:
                     experimental_js_ast=args.experimental_js_ast,
                     timeout_seconds=args.timeout_per_file,
                     global_graph=global_graph,
+                    engine=getattr(args, "engine", "auto"),
                 )
 
             use_parallel = getattr(args, "parallel", False) or getattr(args, "workers", None)
@@ -1700,8 +1946,23 @@ def _main_impl() -> None:
             else:
                 print(f"ansede-static: baseline file not found: {args.baseline}", file=sys.stderr)
             sys.exit(2)
+        _pre_baseline = list(results) if getattr(args, "baseline_update", False) else None
         baseline_fps = _load_baseline(args.baseline)
         results = _apply_baseline(results, baseline_fps)
+        if getattr(args, "baseline_update", False) and _pre_baseline is not None:
+            try:
+                new_bl_text = format_json(_pre_baseline, execution={})
+                args.baseline.write_text(new_bl_text, encoding="utf-8")
+                _bl_msg = f"ansede-static: baseline updated \u2192 {args.baseline}"
+                if console:
+                    console.print(f"[bold green]{_bl_msg}[/bold green]")
+                else:
+                    print(_bl_msg, file=sys.stderr)
+            except OSError as exc:
+                print(f"ansede-static: could not write baseline: {exc}", file=sys.stderr)
+    elif getattr(args, "baseline_update", False):
+        print("ansede-static: --baseline-update requires --baseline FILE", file=sys.stderr)
+        sys.exit(2)
 
     # ── AI Triage (Zero-False-Positive Phase) ──────────────────────────────
     if getattr(args, "ai_triage", False) and not args.stdin:

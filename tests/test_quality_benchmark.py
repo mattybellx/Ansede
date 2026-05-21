@@ -17,3 +17,13 @@ def test_perf_benchmark_returns_positive_metrics():
     assert report["cases_per_iteration"] > 0
     assert report["avg_ms"] > 0
     assert report["cases_per_second"] > 0
+
+
+def test_perf_benchmark_within_timing_budget():
+    report = run_perf_benchmark(iterations=1, quiet=True)
+    n = max(1, report["cases_per_iteration"])
+    per_case_ms = report["avg_ms"] / n
+    assert per_case_ms < 30_000, (
+        f"Performance regression: {per_case_ms:.1f} ms per case "
+        f"(budget: 30 000 ms/case). Total for {n} cases: {report['avg_ms']:.1f} ms."
+    )

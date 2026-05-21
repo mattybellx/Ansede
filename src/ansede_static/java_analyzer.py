@@ -18,15 +18,21 @@ from ansede_static._types import AnalysisResult, Finding, Severity
 
 
 _ROUTE_ANNOTATIONS = {
-    "GetMapping",
-    "PostMapping",
-    "PutMapping",
-    "DeleteMapping",
-    "PatchMapping",
-    "RequestMapping",
+    # Spring
+    "GetMapping", "PostMapping", "PutMapping", "DeleteMapping", "PatchMapping", "RequestMapping",
+    # JAX-RS / Jakarta REST
+    "GET", "POST", "PUT", "DELETE", "PATCH", "Path",
+    # Micronaut
+    "Get", "Post", "Put", "Delete", "Patch",
+    # Quarkus RESTEasy Reactive
+    "GET", "POST", "PUT", "DELETE", "PATCH",
 }
-_MUTATING_ROUTE_ANNOTATIONS = {"PostMapping", "PutMapping", "DeleteMapping", "PatchMapping"}
-_AUTH_ANNOTATIONS = {"PreAuthorize", "Secured", "RolesAllowed"}
+_MUTATING_ROUTE_ANNOTATIONS = {"PostMapping", "PutMapping", "DeleteMapping", "PatchMapping",
+                                "POST", "PUT", "DELETE", "PATCH",
+                                "Post", "Put", "Delete", "Patch"}
+_AUTH_ANNOTATIONS = {"PreAuthorize", "Secured", "RolesAllowed",
+                     "Authenticated", "PermitAll", "DenyAll",
+                     "RolesAllowed", "AllowedRoles"}
 _PUBLIC_ROUTE_RE = re.compile(r"/(?:login|logout|register|signup|health|ready|status|public|docs|swagger|openapi)", re.IGNORECASE)
 _SECURITY_CONTEXT_RE = re.compile(r"SecurityContextHolder|getAuthentication\(|isAuthenticated\(|hasRole\(|hasAuthority\(|principal\b", re.IGNORECASE)
 _OWNERSHIP_RE = re.compile(r"userId|ownerId|accountId|tenantId|currentUser|getCurrentUser|principal\.|authentication\.getName|findByIdAndUserId|where\s*\(|filter\s*\(", re.IGNORECASE)
@@ -287,11 +293,159 @@ def _generate_auto_fix(finding: Finding, lines: list[str]) -> str:
     return ""
 
 
-def analyze_java(source: str, filename: str = "<input>") -> AnalysisResult:
+_JAVAC_SCRIPT = r"""
+import com.github.javaparser.*;
+import com.github.javaparser.ast.*;
+import com.github.javaparser.ast.body.*;
+import com.github.javaparser.ast.expr.*;
+import java.util.*;
+import java.util.stream.*;
+
+// Parse Java source and extract annotations, method signatures, and class structure
+public class JavaStructParser {
+    public static void main(String[] args) throws Exception {
+        var code = new String(System.in.readAllBytes());
+        var cu = StaticJavaParser.parse(code);
+        var json = new StringBuilder();
+        json.append("{\"classes\":[");
+        boolean first = true;
+        for (var type : cu.getTypes()) {
+            if (!(type instanceof ClassOrInterfaceDeclaration klass)) continue;
+            if (!first) json.append(","); first = false;
+            json.append("{\"name\":\"").append(esc(klass.getNameAsString())).append("\",");
+            json.append("\"annotations\":[");
+            annots(klass.getAnnotations(), json);
+            json.append("],");
+            json.append("\"methods\":[");
+            boolean mf = true;
+            for (var m : klass.getMethods()) {
+                if (!mf) json.append(","); mf = false;
+                json.append("{\"name\":\"").append(esc(m.getNameAsString())).append("\",");
+                json.append("\"line\":").append(m.getBegin().map(p -> p.line).orElse(0)).append(",");
+                json.append("\"annotations\":[");
+                annots(m.getAnnotations(), json);
+                json.append("],");
+                json.append("\"params\":[");
+                boolean pf = true;
+                for (var p : m.getParameters()) {
+                    if (!pf) json.append(","); pf = false;
+                    json.append("{\"name\":\"").append(esc(p.getNameAsString())).append("\"}");
+                }
+                json.append("]");
+                json.append("}");
+            }
+            json.append("]");
+            json.append("}");
+        }
+        json.append("]}");
+        System.out.println(json);
+    }
+    static void annots(NodeList<AnnotationExpr> list, StringBuilder sb) {
+        boolean f = true;
+        for (var a : list) {
+            if (!f) sb.append(","); f = false;
+            sb.append("{\"name\":\"").append(esc(a.getNameAsString())).append("\",");
+            sb.append("\"args\":\"\"}");
+        }
+    }
+    static String esc(String s) { return s.replace("\\", "\\\\").replace("\"", "\\\""); }
+}
+"""
+
+
+def _parse_with_javac(source: str) -> dict | None:
+    """Parse Java source using javac + JavaParser (subprocess).
+
+    Returns a dict with class/method/annotation structure, or None if
+    javac is not available or parsing fails.
+
+    Graceful degradation: returns None silently on any error.
+    """
+    import subprocess
+    import tempfile
+    import os
+
+    # Check if javac is available
+    try:
+        subprocess.run(["javac", "--version"], capture_output=True, timeout=5)
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return None
+
+    # Write the parser source to a temp file and compile + run
+    try:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            parser_file = os.path.join(tmpdir, "JavaStructParser.java")
+            with open(parser_file, "w") as f:
+                f.write(_JAVAC_SCRIPT)
+
+            # Compile
+            compile_result = subprocess.run(
+                ["javac", "-cp", ".", parser_file],
+                capture_output=True, text=True, timeout=15,
+            )
+            if compile_result.returncode != 0:
+                return None
+
+            # Run on the source code
+            run_result = subprocess.run(
+                ["java", "-cp", tmpdir, "JavaStructParser"],
+                input=source, capture_output=True, text=True, timeout=15,
+            )
+            if run_result.returncode != 0:
+                return None
+
+            import json
+            return json.loads(run_result.stdout)
+    except Exception:
+        return None
+
+
+def _enrich_with_javac(findings: list[Finding], source: str) -> list[Finding]:
+    """Enrich findings with structural data from javac parsing.
+
+    Currently adjusts confidence based on annotation presence.
+    """
+    parsed = _parse_with_javac(source)
+    if parsed is None:
+        return findings
+
+    # Build set of annotated methods from the parse tree
+    annotated_methods: dict[str, set[str]] = {}  # class_name -> {annotation_names}
+    for cls in parsed.get("classes", []):
+        cls_name = cls.get("name", "")
+        cls_annots = {a.get("name", "") for a in cls.get("annotations", [])}
+        for method in cls.get("methods", []):
+            m_name = method.get("name", "")
+            m_annots = {a.get("name", "") for a in method.get("annotations", [])}
+            # Merge class-level annotations
+            all_annots = cls_annots | m_annots
+            annotated_methods[f"{cls_name}.{m_name}"] = all_annots
+
+    for finding in findings:
+        if finding.rule_id in ("JV-001", "JV-002"):
+            # Check if structural parse confirms the finding
+            for key, annots in annotated_methods.items():
+                if finding.rule_id == "JV-001" and any(
+                    a in annots for a in _AUTH_ANNOTATIONS
+                ):
+                    # Structural parser found auth annotation — downgrade confidence
+                    finding.confidence = 0.3
+                    finding.analysis_kind = "javac-augmented"
+                    break
+
+    return findings
+
+
+def analyze_java(
+    source: str,
+    filename: str = "<input>",
+    *,
+    use_javac: bool = False,
+    global_graph: object | None = None,
+) -> AnalysisResult:
     result = AnalysisResult(file_path=filename, language="java")
     lines = source.splitlines()
     result.lines_scanned = len(lines)
-
     methods = _collect_methods(source)
     findings: list[Finding] = []
 
@@ -303,77 +457,57 @@ def analyze_java(source: str, filename: str = "<input>") -> AnalysisResult:
 
         if _has_route(method) and not _is_public_route(method) and not _has_auth(method):
             findings.append(Finding(
-                category="security",
-                severity=Severity.HIGH,
+                category="security", severity=Severity.HIGH,
                 title=f"CWE-862: Spring route `{method.name}()` missing authentication guard",
                 description="Mapped Spring controller method lacks @PreAuthorize/@Secured/@RolesAllowed and no SecurityContext check was found in the body.",
                 line=method.start_line,
                 suggestion="Protect the handler with @PreAuthorize/@Secured or verify the authenticated principal before returning sensitive data.",
-                rule_id="JV-001",
-                cwe="CWE-862",
-                agent="java-analyzer",
-                confidence=0.88,
-                analysis_kind="route_heuristic",
+                rule_id="JV-001", cwe="CWE-862", agent="java-analyzer",
+                confidence=0.88, analysis_kind="route_heuristic",
             ))
 
         if _has_route(method) and _has_id_route(method) and re.search(r"\b(?:findById|findOne|getOne)\s*\(", method.body) and not _has_ownership_guard(method.body):
             findings.append(Finding(
-                category="security",
-                severity=Severity.CRITICAL,
+                category="security", severity=Severity.CRITICAL,
                 title=f"CWE-639: Route `{method.name}()` loads resource by id without ownership scope",
                 description="A path-bound controller method performs a repository lookup by id with no visible owner/user restriction.",
                 line=_first_matching_line(method.body, re.compile(r"\b(?:findById|findOne|getOne)\s*\(", re.IGNORECASE), method.start_line),
                 suggestion="Scope the lookup by both resource id and current user/tenant, for example findByIdAndUserId(...).",
-                rule_id="JV-002",
-                cwe="CWE-639",
-                agent="java-analyzer",
-                confidence=0.9,
-                analysis_kind="route_heuristic",
+                rule_id="JV-002", cwe="CWE-639", agent="java-analyzer",
+                confidence=0.9, analysis_kind="route_heuristic",
             ))
 
         if annotation_names & _MUTATING_ROUTE_ANNOTATIONS and re.search(r"\.(?:save|delete|deleteById)\s*\(", method.body) and not _has_ownership_guard(method.body):
             findings.append(Finding(
-                category="security",
-                severity=Severity.HIGH,
+                category="security", severity=Severity.HIGH,
                 title=f"CWE-285: Mutating route `{method.name}()` missing authorization or ownership check",
                 description="A state-changing Spring route performs save/delete behavior with no visible ownership or permission check.",
                 line=_first_matching_line(method.body, re.compile(r"\.(?:save|delete|deleteById)\s*\(", re.IGNORECASE), method.start_line),
                 suggestion="Verify owner/tenant scope or role permissions before mutating the entity.",
-                rule_id="JV-003",
-                cwe="CWE-285",
-                agent="java-analyzer",
-                confidence=0.84,
-                analysis_kind="route_heuristic",
+                rule_id="JV-003", cwe="CWE-285", agent="java-analyzer",
+                confidence=0.84, analysis_kind="route_heuristic",
             ))
 
         if _SQLI_RE.search(method.body):
             findings.append(Finding(
-                category="security",
-                severity=Severity.CRITICAL,
+                category="security", severity=Severity.CRITICAL,
                 title=f"CWE-89: Dynamic SQL construction in `{method.name}()`",
                 description="SQL execution appears to use string concatenation or String.format instead of bind parameters.",
                 line=_first_matching_line(method.body, _SQLI_RE, method.start_line),
                 suggestion="Use prepared statements, named parameters, or ORM bind variables instead of building SQL text dynamically.",
-                rule_id="JV-004",
-                cwe="CWE-89",
-                agent="java-analyzer",
-                confidence=0.95,
-                analysis_kind="taint_flow",
+                rule_id="JV-004", cwe="CWE-89", agent="java-analyzer",
+                confidence=0.95, analysis_kind="taint_flow",
             ))
 
         if re.search(r"ObjectInputStream\s*\w*\s*=|ObjectInputStream\s*\(", method.body) and re.search(r"\.readObject\s*\(", method.body):
             findings.append(Finding(
-                category="security",
-                severity=Severity.CRITICAL,
+                category="security", severity=Severity.CRITICAL,
                 title=f"CWE-502: Unsafe Java deserialization in `{method.name}()`",
                 description="ObjectInputStream.readObject() can instantiate attacker-controlled objects and lead to remote code execution.",
                 line=_first_matching_line(method.body, re.compile(r"\.readObject\s*\(", re.IGNORECASE), method.start_line),
                 suggestion="Avoid Java native serialization for untrusted data; prefer JSON/XML DTO parsing with strict schemas.",
-                rule_id="JV-005",
-                cwe="CWE-502",
-                agent="java-analyzer",
-                confidence=0.98,
-                analysis_kind="pattern",
+                rule_id="JV-005", cwe="CWE-502", agent="java-analyzer",
+                confidence=0.98, analysis_kind="pattern",
             ))
 
         tainted_names = _collect_tainted_names(method)
@@ -381,35 +515,46 @@ def analyze_java(source: str, filename: str = "<input>") -> AnalysisResult:
             for name in sorted(tainted_names):
                 if re.search(rf"(?:new\s+File(?:InputStream)?\s*\([^)]*\b{name}\b|Paths\.get\s*\([^)]*\b{name}\b)", method.body):
                     findings.append(Finding(
-                        category="security",
-                        severity=Severity.HIGH,
+                        category="security", severity=Severity.HIGH,
                         title=f"CWE-22: User-controlled path reaches file API in `{method.name}()`",
-                        description="A request-derived parameter is passed into File/Paths APIs without visible path normalization or confinement.",
+                        description="A request-derived parameter is passed into File/Paths APIs without visible path normalization.",
                         line=_first_matching_line(method.body, re.compile(rf"\b{name}\b"), method.start_line),
                         suggestion="Normalize the path against a trusted base directory and reject any path that escapes it.",
-                        rule_id="JV-007",
-                        cwe="CWE-22",
-                        agent="java-analyzer",
-                        confidence=0.82,
-                        analysis_kind="taint_flow",
+                        rule_id="JV-007", cwe="CWE-22", agent="java-analyzer",
+                        confidence=0.82, analysis_kind="taint_flow",
                     ))
                     break
 
     for lineno, line in enumerate(source.splitlines(), start=1):
         if _HARDCODED_SECRET_RE.search(line):
             findings.append(Finding(
-                category="security",
-                severity=Severity.HIGH,
+                category="security", severity=Severity.HIGH,
                 title="CWE-798: Hardcoded credential in Java source",
                 description="A password/apiKey/secret literal is assigned directly in code.",
                 line=lineno,
                 suggestion="Move credentials to environment variables or a secrets manager and rotate the exposed value.",
-                rule_id="JV-006",
-                cwe="CWE-798",
-                agent="java-analyzer",
-                confidence=0.96,
-                analysis_kind="pattern",
+                rule_id="JV-006", cwe="CWE-798", agent="java-analyzer",
+                confidence=0.96, analysis_kind="pattern",
             ))
+
+    # Javac structural enrichment (optional, graceful degradation)
+    if use_javac:
+        findings = _enrich_with_javac(findings, source)
+
+    # FunctionSummary recording via GlobalGraph
+    if global_graph is not None:
+        try:
+            from ansede_static.ir.global_graph import FunctionSummary
+            for f in findings:
+                summary = FunctionSummary(
+                    file_path=filename,
+                    function_name=f"java_{f.rule_id}_line{f.line}",
+                    is_sink=bool(f.cwe),
+                    taint_sinks=[f.cwe] if f.cwe else [],
+                )
+                global_graph.record_function_summary(summary)
+        except Exception:
+            pass
 
     result.findings = _dedupe(findings)
     for finding in result.findings:

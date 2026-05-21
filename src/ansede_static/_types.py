@@ -35,14 +35,18 @@ class TraceFrame:
     label: str
     line: int | None = None
     start_column: int = 1
+    file_path: str = ""  # original source file (populated after source-map remapping)
 
     def as_dict(self) -> dict[str, Any]:
-        return {
+        result: dict[str, Any] = {
             "kind": self.kind,
             "label": self.label,
             "line": self.line,
             "start_column": self.start_column,
         }
+        if self.file_path:
+            result["file_path"] = self.file_path
+        return result
 
 
 @dataclass
@@ -63,6 +67,31 @@ class Finding:
     trace: tuple[TraceFrame, ...] = ()
     analysis_kind: str = "pattern"
     triggering_code: str = ""  # source line that triggered the finding
+    original_file: str = ""    # original source file (populated after source-map remapping)
+
+    @property
+    def confidence_label(self) -> str:
+        """Label indicating analysis certainty level.
+
+        - ``structural`` — AST/parse-tree based taint analysis, syntax-aware
+        - ``heuristic`` — regex or pattern-based detection with limited context
+        - ``augmented`` — regex base enriched by structural data (e.g. Ripper)
+
+        Derived from ``analysis_kind`` and ``confidence``.
+        """
+        structural_kinds = {"syntax-ast", "go-ast-taint", "go-ast-auth", "go-ast-xss",
+                            "go-ast-sink", "template-ast", "taint-flow", "taint"}
+        heuristic_kinds = {"pattern", "pattern-taint", "route-heuristic",
+                           "route_heuristic", "decorator_heuristic"}
+        if self.analysis_kind in structural_kinds:
+            return "structural"
+        if self.analysis_kind in heuristic_kinds:
+            return "heuristic"
+        if "augmented" in self.analysis_kind or "ripper" in self.analysis_kind:
+            return "augmented"
+        if self.confidence >= 0.9 and self.trace:
+            return "structural"
+        return "heuristic"
 
     @property
     def finding_class(self) -> str:
@@ -91,6 +120,7 @@ class Finding:
             "finding_class": self.finding_class,
             "agent": self.agent,
             "confidence": self.confidence,
+            "confidence_label": self.confidence_label,
             "auto_fix": self.auto_fix,
             "explanation": self.explanation,
             "analysis_kind": self.analysis_kind,
@@ -103,6 +133,7 @@ class Finding:
                 severity=self.severity.value,
                 language=language,
             ),
+            **({"original_file": self.original_file} if self.original_file else {}),
         }
 
 

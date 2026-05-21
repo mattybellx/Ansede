@@ -27,7 +27,8 @@
           "CWE-639"
         ]
       },
-      "status": "queued"
+      "status": "scanned",
+      "scanned_at": "2026-05-21T08:21:15Z"
     },
     {
       "id": "py-free-programming-books-13491895",
@@ -44,7 +45,8 @@
           "CWE-639"
         ]
       },
-      "status": "queued"
+      "status": "scanned",
+      "scanned_at": "2026-05-21T08:21:15Z"
     },
     {
       "id": "py-system-design-primer-83222441",

@@ -42,6 +42,8 @@ _JS_EXTS = frozenset({".js", ".mjs", ".cjs", ".ts", ".tsx", ".jsx"})
 _GO_EXTS = frozenset({".go"})
 _JAVA_EXTS = frozenset({".java"})
 _CSHARP_EXTS = frozenset({".cs"})
+_RUBY_EXTS = frozenset({".rb", ".rake", ".gemspec"})
+_PHP_EXTS = frozenset({".php", ".phtml", ".php3", ".php4", ".php5", ".php7", ".phps"})
 
 
 def _apply_runtime_and_registry_rules(

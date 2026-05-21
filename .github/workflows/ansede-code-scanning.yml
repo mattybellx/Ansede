@@ -1,0 +1,44 @@
+# ansede-static — GitHub Code Scanning Integration
+# Upload SARIF results to the Security > Code Scanning tab.
+# For full documentation see docs/github-code-scanning-sarif-integration.md
+name: Ansede Code Scanning
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+  schedule:
+    - cron: '0 6 * * 1'  # weekly: Monday 06:00 UTC
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  scan:
+    name: Ansede static analysis
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install ansede-static
+        run: pip install ansede-static
+
+      - name: Run ansede scan
+        run: |
+          ansede scan . \
+            --format sarif \
+            --output results.sarif \
+            --fail-on high \
+            --verbose \
+            --exclude node_modules \
+            --exclude .venv \
+            --exclude __pycache__
+
+      - name: Upload SARIF to GitHub
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: results.sarif
+          category: ansede-static

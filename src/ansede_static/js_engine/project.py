@@ -1398,6 +1398,10 @@ def _trace_helper_return_expression(
 			function_def.lookup_key or function_def.name,
 			global_graph=global_graph,
 		)
+		# Arg indexes whose return flow is already covered by the GlobalGraph IFDS
+		# path below.  We skip them in the local return_effects loop to prevent
+		# emitting duplicate parallel traces for the same data-flow edge.
+		globally_handled_arg_indexes: set[int] = set()
 		if global_graph is not None and hasattr(global_graph, "propagate_js_call_facts"):
 			tainted_arg_indexes: set[int] = set()
 			for idx, argument in enumerate(call.arguments):
@@ -1417,9 +1421,24 @@ def _trace_helper_return_expression(
 				if ret_hit and return_trace:
 					trace = append_trace(return_trace, "helper", f"through `{call.callee}()`", line=line)
 					traces.append(trace)
+					# Determine which specific arg indexes GlobalGraph handled so
+					# we can delegate return-flow authority to it for those args.
+					try:
+						gs = global_graph.get_function_summary(
+							resolved_file,
+							function_def.lookup_key or function_def.name,
+						)
+						if gs is not None:
+							globally_handled_arg_indexes = tainted_arg_indexes & set(gs.args_to_return)
+					except Exception:
+						pass
 			except Exception:
 				pass
 		for return_effect in summary.return_effects:
+			if return_effect.param_index in globally_handled_arg_indexes:
+				# GlobalGraph IFDS already emitted an authoritative trace for
+				# this arg — skip local analysis to prevent a duplicate trace.
+				continue
 			if return_effect.param_index >= len(call.arguments):
 				continue
 			argument = call.arguments[return_effect.param_index]

@@ -22,6 +22,12 @@ from typing import Callable, Iterator
 from ansede_static.v2.model import SemanticModel
 from ansede_static.v2.nodes import ASTNode
 from ansede_static.v2.rule_protocol import Finding, REGISTRY, RuleRegistry
+
+# Import all rule packages to trigger @REGISTRY.register decorators.
+# Each package's __init__.py imports the individual rule modules.
+import ansede_static.v2.rules.python  # noqa: F401, E402
+import ansede_static.v2.rules.javascript  # noqa: F401, E402
+import ansede_static.v2.rules.shared  # noqa: F401, E402
 from ansede_static.v2.normalizer import normalize_file, normalize_source
 
 _log = logging.getLogger(__name__)

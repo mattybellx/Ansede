@@ -76,10 +76,11 @@ rules:
   - id: registry/knex/dos/no-limit
     title: "Knex query without pagination limit"
     cwe: CWE-400
-    severity: medium
+    severity: low
     pattern_type: regex
-    regex: "\\.select\\([^)]*\\)(?!.*\\.limit)"
+    regex: "\.select\([^)]*\)(?!.*\.limit)"
     suggestion: "Add .limit() to all list queries: .select('*').limit(100)"
+    confidence: 0.35
 
   - id: registry/knex/sqli/tablename-user
     title: "SQL Injection via user-controlled table name in knex()"

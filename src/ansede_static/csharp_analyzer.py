@@ -393,6 +393,74 @@ def analyze_csharp(source: str, filename: str = "<input>") -> AnalysisResult:
                 analysis_kind="pattern",
             ))
 
+        # ── CS-008: ASP.NET Core XSS via HttpContext.Response.WriteAsync ──
+        _XSS_WRITE_RE = re.compile(
+            r'HttpContext\.Response\.WriteAsync\s*\([^)]*\)|'
+            r'Context\.Response\.WriteAsync\s*\([^)]*\)',
+            re.IGNORECASE,
+        )
+        if _has_route(method) and _XSS_WRITE_RE.search(method.body):
+            # Check for HTML encoding or sanitization nearby
+            _XSS_SAFE_RE = re.compile(
+                r'HtmlEncoder|UrlEncoder|WebUtility\.HtmlEncode|AntiXss|Server\.HtmlEncode|'
+                r'TagBuilder|RenderBody|Html\.Raw',
+                re.IGNORECASE,
+            )
+            if not _XSS_SAFE_RE.search(method.body):
+                findings.append(Finding(
+                    category="security",
+                    severity=Severity.HIGH,
+                    title=f"CWE-79: Unencoded response write in `{method.name}()`",
+                    description=(
+                        "Response.WriteAsync is called in a routed action without "
+                        "visible HTML encoding. Attackers can inject scripts via request data."
+                    ),
+                    line=_first_matching_line(method.body, _XSS_WRITE_RE, method.start_line),
+                    suggestion=(
+                        "Encode output with WebUtility.HtmlEncode() or use Razor views "
+                        "which auto-encode by default."
+                    ),
+                    rule_id="CS-008",
+                    cwe="CWE-79",
+                    agent="csharp-analyzer",
+                    confidence=0.72,
+                    analysis_kind="pattern",
+                ))
+
+        # ── CS-009: ASP.NET Core CSRF on mutating actions ────────────────
+        if attr_names & _MUTATING_ATTRIBUTES and _has_route(method):
+            _CSRF_PROTECTION_RE = re.compile(
+                r'ValidateAntiForgeryToken|AutoValidateAntiforgeryToken|'
+                r'__RequestVerificationToken|AntiforgeryTokenSet',
+                re.IGNORECASE,
+            )
+            if not _CSRF_PROTECTION_RE.search(method.body):
+                # Also check for controller-level [AutoValidateAntiforgeryToken]
+                controller_has_csrf = any(
+                    'AutoValidateAntiforgeryToken' in attr or 'ValidateAntiForgeryToken' in attr
+                    for attr in method.class_attributes
+                )
+                if not controller_has_csrf:
+                    findings.append(Finding(
+                        category="security",
+                        severity=Severity.MEDIUM,
+                        title=f"CWE-352: CSRF on mutating action `{method.name}()`",
+                        description=(
+                            "A PUT/DELETE action has no [ValidateAntiForgeryToken] "
+                            "and no controller-level antiforgery attribute was detected."
+                        ),
+                        line=method.start_line,
+                        suggestion=(
+                            "Add [ValidateAntiForgeryToken] to the action or apply "
+                            "[AutoValidateAntiforgeryToken] at the controller level."
+                        ),
+                        rule_id="CS-009",
+                        cwe="CWE-352",
+                        agent="csharp-analyzer",
+                        confidence=0.75,
+                        analysis_kind="route_heuristic",
+                    ))
+
     for lineno, line in enumerate(source.splitlines(), start=1):
         if _HARDCODED_CONN_RE.search(line):
             findings.append(Finding(

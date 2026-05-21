@@ -57,6 +57,8 @@ class CustomRule:
     test_negative: str = ""
     source_path: str = ""
     is_community: bool = False
+    confidence: float | None = None  # If set, overrides the default 0.7 confidence
+    path_exclude: re.Pattern[str] | None = None  # Regex: if file path matches, skip this rule
 
     def matches_language(self, language: str) -> bool:
         if not self.languages:
@@ -324,6 +326,26 @@ def _parse_rule_entry(
     test_positive = str(test_block.get("positive", "")).rstrip()
     test_negative = str(test_block.get("negative", "")).rstrip()
 
+    # Optional per-rule confidence override
+    raw_confidence = entry.get("confidence")
+    confidence: float | None = None
+    if raw_confidence is not None:
+        try:
+            val = float(raw_confidence)
+            if 0.0 <= val <= 1.0:
+                confidence = val
+        except (ValueError, TypeError):
+            pass
+
+    # Optional path exclusion regex
+    raw_path_exclude = entry.get("path_exclude", "")
+    path_exclude: re.Pattern[str] | None = None
+    if isinstance(raw_path_exclude, str) and raw_path_exclude.strip():
+        try:
+            path_exclude = re.compile(raw_path_exclude.strip())
+        except re.error:
+            pass
+
     if not is_community:
         pattern_str = str(entry.get("pattern", "")).strip()
         if not pattern_str:
@@ -348,6 +370,8 @@ def _parse_rule_entry(
             maturity=maturity,
             tags=tags,
             source_path=source_label,
+            confidence=confidence,
+            path_exclude=path_exclude,
         )
 
     pattern_data = entry.get("pattern", {})
@@ -418,6 +442,8 @@ def _parse_rule_entry(
         test_negative=test_negative,
         source_path=source_label,
         is_community=True,
+        confidence=confidence,
+        path_exclude=path_exclude,
     )
 
 
@@ -577,6 +603,7 @@ def _line_suppresses_rule(line: str, rule: CustomRule) -> bool:
 
 
 def _build_custom_finding(rule: CustomRule, *, line: int, line_text: str) -> Finding:
+    confidence = rule.confidence if rule.confidence is not None else 0.7
     return Finding(
         category=rule.category,
         severity=rule.severity,
@@ -587,7 +614,7 @@ def _build_custom_finding(rule: CustomRule, *, line: int, line_text: str) -> Fin
         rule_id=rule.rule_id,
         cwe=rule.cwe,
         agent="community-rules" if rule.is_community else "custom-rules",
-        confidence=0.7,
+        confidence=confidence,
         auto_fix=rule.auto_fix,
         analysis_kind="route_heuristic" if rule.pattern_type == "ast_structural" else "custom-pattern",
         triggering_code=line_text.strip(),

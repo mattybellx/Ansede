@@ -75,12 +75,13 @@ rules:
   - id: registry/drf/idor/get-queryset-no-owner
     title: "IDOR via get_queryset without user scoping"
     cwe: CWE-639
-    severity: high
+    severity: medium
     pattern_type: taint_sink
     sinks:
       - return queryset
       - return self.model.objects.all()
     suggestion: "Scope queryset to the current user: queryset.filter(user=self.request.user)"
+    confidence: 0.35
 
   - id: registry/drf/pagination/no-max-limit
     title: "Pagination without max page size limit"
@@ -114,13 +115,14 @@ rules:
   - id: registry/drf/viewset/unsafe-http-method
     title: "DELETE endpoint without explicit permission check"
     cwe: CWE-284
-    severity: high
+    severity: medium
     pattern_type: ast_structural
     route_decorator: "def destroy"
     missing_decorators:
       - "permission_classes"
       - "IsAdminUser"
     suggestion: "Add IsAdminUser or custom permission to destroy actions"
+    confidence: 0.4
 
   - id: registry/drf/throttle/missing-rate-limit
     title: "API view missing throttle_classes (rate limiting)"

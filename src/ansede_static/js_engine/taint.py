@@ -31,6 +31,7 @@ _SANITIZER_PATTERNS: dict[str, tuple[re.Pattern[str], ...]] = {
         re.compile(r'^(?:path\.)?basename$', re.IGNORECASE),
         re.compile(r'(?:safe|secure|clean)\w*path', re.IGNORECASE),
         re.compile(r'(?:safe|secure)Join$', re.IGNORECASE),
+        re.compile(r'^TextDecoder\.decode$', re.IGNORECASE),
     ),
     'redirect': (
         re.compile(r'(?:safe|allow(?:list|listed)|trusted|validate)\w*redirect', re.IGNORECASE),

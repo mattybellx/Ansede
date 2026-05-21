@@ -236,6 +236,8 @@ class GoSecurityWalker:
         self._struct_methods: Dict[str, Dict[str, GoFuncDecl]] = defaultdict(dict)
         # Track HTTP handler registrations
         self._handlers: List[Tuple[str, str, str, bool, int]] = []  # (method, path, handler, hasAuth, line)
+        # Track middleware chains registered via r.Use(), router.Use(), etc.
+        self._middleware_chains: List[Tuple[str, int]] = []  # (middleware_fn, line)
         # Taint tracking
         self._var_initializers: Dict[str, GoExpr] = {}
         self._tainted_vars: Set[str] = set()
@@ -319,6 +321,23 @@ class GoSecurityWalker:
                 has_auth = _is_auth_pattern(handler_name)
                 self._handlers.append((method, path, handler_name, has_auth, call.loc[0]))
                 return
+
+        # Detect middleware registration: r.Use(...), router.Use(...), ginRouter.Use(...)
+        if func_name and func_name.endswith(".Use") and len(call.args) >= 1:
+            for arg in call.args:
+                mw_name = _resolve_expr_name(arg)
+                if mw_name:
+                    self._middleware_chains.append((mw_name, call.loc[0]))
+            return
+
+        # Detect gin/echo/chi group middleware: group.Use(...)
+        if func_name and func_name.endswith(".Group") and len(call.args) >= 2:
+            # router.Group("/admin", middlewareFn) — middleware as extra args
+            for arg in call.args[1:]:
+                mw_name = _resolve_expr_name(arg)
+                if mw_name:
+                    self._middleware_chains.append((mw_name, call.loc[0]))
+            return
 
         # Check for dangerous sink with tainted args
         sink_info = _is_dangerous_sink(call.func)
@@ -458,16 +477,37 @@ class GoSecurityWalker:
                     pass
 
     def _check_missing_auth(self) -> None:
-        """Flag HTTP handlers without auth on sensitive paths."""
+        """Flag HTTP handlers without auth on sensitive paths.
+
+        Checks both per-handler auth patterns AND global middleware chains
+        registered via r.Use() / router.Use() / ginRouter.Use().
+        """
+        # Build the set of auth middleware names available in the chain
+        chain_auth = any(_is_auth_pattern(mw) for mw, _ in self._middleware_chains)
+
         sensitive_prefixes = ("/admin", "/api/admin", "/manage", "/dashboard", "/config", "/secret", "/users", "/internal")
         for method, path, handler, has_auth, line in self._handlers:
-            if has_auth:
+            if has_auth or chain_auth:
                 continue
             path_lower = path.lower().strip('"')
             if not any(path_lower.startswith(p) for p in sensitive_prefixes):
                 continue
             if path_lower in ("/login", "/signup", "/register", "/health", "/ready", "/status"):
                 continue
+
+            # Build trace frames that show the middleware chain context
+            trace_frames = [
+                TraceFrame(kind="route", label=f"{method} {path}", line=line),
+            ]
+            if self._middleware_chains:
+                mw_list = ", ".join(mw for mw, _ in self._middleware_chains)
+                trace_frames.append(
+                    TraceFrame(kind="middleware", label=f"Middleware chain present: [{mw_list}]", line=0),
+                )
+            trace_frames.append(
+                TraceFrame(kind="auth", label="No auth middleware detected", line=0),
+            )
+
             self.findings.append(Finding(
                 category="security",
                 severity=Severity.HIGH,
@@ -478,10 +518,7 @@ class GoSecurityWalker:
                 rule_id="GO-862",
                 cwe="CWE-862",
                 confidence=0.78,
-                trace=(
-                    TraceFrame(kind="route", label=f"{method} {path}", line=0),
-                    TraceFrame(kind="auth", label="No auth middleware detected", line=0),
-                ),
+                trace=tuple(trace_frames),
                 analysis_kind="go-ast-auth",
             ))
 
@@ -490,12 +527,20 @@ def run_go_analysis(
     code: str,
     *,
     filename: str = "<input>",
+    global_graph: Optional[Any] = None,
 ) -> AnalysisResult:
     """Run security analysis on Go source code.
 
     Returns an AnalysisResult containing findings from walking the parsed AST.
+
+    When *global_graph* is provided, detected HTTP handler functions are
+    recorded as ``FunctionSummary`` entries for cross-language inter-procedural
+    analysis.
     """
     result = AnalysisResult(file_path=filename, language="go")
+    # Skip test files — Go test helpers often write files safely
+    if filename.endswith("_test.go"):
+        return result
     result.lines_scanned = len(code.splitlines())
 
     try:
@@ -522,4 +567,49 @@ def run_go_analysis(
             if not finding.auto_fix:
                 finding.auto_fix = _generate_go_auto_fix(finding, lines)
 
+    # ── Record FunctionSummary for detected handlers ─────────────────────
+    if global_graph is not None:
+        try:
+            _record_go_function_summaries(global_graph, filename, result.findings)
+        except Exception:
+            pass  # non-blocking — summary recording is best-effort
+
     return result
+
+
+def _record_go_function_summaries(
+    global_graph: Any,
+    file_path: str,
+    findings: List[Finding],
+) -> None:
+    """Record Go handler findings as FunctionSummary entries for cross-language taint."""
+    from ansede_static.ir.global_graph import FunctionSummary
+
+    # Group findings by handler function (extracted from rule_id + line)
+    handler_signatures: Dict[str, List[Finding]] = {}
+    for f in findings:
+        key = f"{f.rule_id}:{f.line}"
+        handler_signatures.setdefault(key, []).append(f)
+
+    for key, group in handler_signatures.items():
+        rule_id = key.split(":")[0]
+        handler_name = f"go_handler_{rule_id}_line{group[0].line}"
+        sinks = []
+        sources = []
+        for f in group:
+            if f.cwe:
+                sinks.append(f.cwe)
+            for frame in (f.trace or ()):
+                if frame.kind == "source":
+                    sources.append(frame.label)
+        summary = FunctionSummary(
+            file_path=file_path,
+            function_name=handler_name,
+            parameter_names=[],
+            return_type="*",
+            is_source=bool(sources),
+            is_sink=bool(sinks),
+            taint_sources=sources,
+            taint_sinks=sinks,
+        )
+        global_graph.record_function_summary(summary)

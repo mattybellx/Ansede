@@ -311,6 +311,7 @@ def remap_findings_to_source_map(
                 label=frame.label,
                 line=(source_line if frame.line == finding.line else frame.line),
                 start_column=(source_col + 1 if frame.line == finding.line else frame.start_column),
+                file_path=(source_file if frame.line == finding.line else frame.file_path),
             )
             for frame in finding.trace
         )
@@ -330,5 +331,6 @@ def remap_findings_to_source_map(
             trace=mapped_trace,
             analysis_kind=finding.analysis_kind,
             triggering_code=finding.triggering_code,
+            original_file=source_file,
         ))
     return remapped

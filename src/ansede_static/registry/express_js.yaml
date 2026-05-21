@@ -75,10 +75,11 @@ rules:
   - id: registry/express/auth/no-helmet
     title: "Express app without helmet security headers"
     cwe: CWE-693
-    severity: medium
+    severity: low
     pattern_type: regex
     regex: "express\\(\\)(?!.*helmet)"
     suggestion: "Add helmet middleware: app.use(require('helmet')())"
+    confidence: 0.35
 
   - id: registry/express/cors/allow-all
     title: "Express CORS configured for all origins"
@@ -131,10 +132,11 @@ rules:
   - id: registry/express/session/fixation
     title: "Session not regenerated after authentication"
     cwe: CWE-384
-    severity: high
+    severity: medium
     pattern_type: regex
     regex: "req\\.session\\.user\\s*=|req\\.session\\.userId\\s*="
     suggestion: "Call req.session.regenerate() before setting authentication data"
+    confidence: 0.45
 
   - id: registry/express/upload/unrestricted
     title: "Unrestricted file upload via multer"
@@ -147,10 +149,11 @@ rules:
   - id: registry/express/csp/missing
     title: "Content Security Policy not configured"
     cwe: CWE-693
-    severity: medium
+    severity: low
     pattern_type: regex
     regex: "app\\.use\\(express\\.static|res\\.sendFile(?!.*contentSecurityPolicy)"
     suggestion: "Configure CSP via helmet: helmet.contentSecurityPolicy({directives: {...}})"
+    confidence: 0.3
 
   - id: registry/express/injection/template-user
     title: "SSTI via user-controlled template string"

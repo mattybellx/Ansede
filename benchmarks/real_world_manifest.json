@@ -214,6 +214,149 @@
       "exclude_paths": ["**/test/", "**/samples/", "**/benchmarks/"],
       "expected_findings": {"min": 0, "max": 200},
       "notes": "Pinned ASP.NET Core security-focused subtree for C# structural coverage at realistic scale."
+    },
+    {
+      "case_id": "webgoat-net",
+      "name": "OWASP WebGoat.NET",
+      "source": {
+        "kind": "git",
+        "repo": "https://github.com/OWASP/WebGoat.NET.git",
+        "ref": "main"
+      },
+      "languages": ["csharp"],
+      "exclude_paths": ["**/packages/", "**/node_modules/", "*.md"],
+      "expected_findings": {"min": 0, "max": 50},
+      "notes": "Deliberately vulnerable ASP.NET app for C# detection validation."
+    },
+    {
+      "case_id": "django-full",
+      "name": "Django Web Framework",
+      "source": {
+        "kind": "git",
+        "repo": "https://github.com/django/django.git",
+        "ref": "4b3675cbe5ff02e84dbc7eea7b2661c27f0b0311"
+      },
+      "languages": ["python"],
+      "exclude_paths": ["tests/", "docs/", "js_tests/"],
+      "expected_findings": {"min": 0, "max": 200},
+      "notes": "Django framework core — large Python corpus for scalability testing."
+    },
+    {
+      "case_id": "fastapi-full",
+      "name": "FastAPI Framework",
+      "source": {
+        "kind": "git",
+        "repo": "https://github.com/fastapi/fastapi.git",
+        "ref": "c873a07d0422be3067f4b6a0ad9bb5f818678b80"
+      },
+      "languages": ["python"],
+      "exclude_paths": ["tests/", "docs/", "scripts/"],
+      "expected_findings": {"min": 0, "max": 100},
+      "notes": "FastAPI framework — modern Python async web coverage."
+    },
+    {
+      "case_id": "flask-full",
+      "name": "Flask Framework",
+      "source": {
+        "kind": "git",
+        "repo": "https://github.com/pallets/flask.git",
+        "ref": "1b5f4370e49d2f9713b62fb58eb44fafd81a0e24"
+      },
+      "languages": ["python"],
+      "exclude_paths": ["tests/", "docs/", "examples/"],
+      "expected_findings": {"min": 0, "max": 50},
+      "notes": "Flask microframework — primary Python web target."
+    },
+    {
+      "case_id": "express-full",
+      "name": "Express.js Framework",
+      "source": {
+        "kind": "git",
+        "repo": "https://github.com/expressjs/express.git",
+        "ref": "c4738445aab23ae1b2678edb45eb75fcd82549e6"
+      },
+      "languages": ["javascript"],
+      "exclude_paths": ["test/", "benchmarks/", "examples/"],
+      "expected_findings": {"min": 0, "max": 30},
+      "notes": "Express.js — primary JS web framework target."
+    },
+    {
+      "case_id": "spring-boot-full",
+      "name": "Spring Boot Framework",
+      "source": {
+        "kind": "git",
+        "repo": "https://github.com/spring-projects/spring-boot.git",
+        "ref": "d9a54c9a60b1663447bc3226d70559f4b9365f60"
+      },
+      "languages": ["java"],
+      "exclude_paths": ["**/test/", "**/samples/", "**/docs/"],
+      "expected_findings": {"min": 0, "max": 300},
+      "notes": "Spring Boot — largest Java framework target for parser fidelity."
+    },
+    {
+      "case_id": "rails-full",
+      "name": "Ruby on Rails",
+      "source": {
+        "kind": "git",
+        "repo": "https://github.com/rails/rails.git",
+        "ref": "d1a35a4ae182bffaeeb8449c6132fad076fa7ebb"
+      },
+      "languages": ["ruby"],
+      "exclude_paths": ["**/test/", "**/guides/", "**/doc/"],
+      "expected_findings": {"min": 0, "max": 200},
+      "notes": "Ruby on Rails — primary Ruby target for structural analysis."
+    },
+    {
+      "case_id": "laravel-full",
+      "name": "Laravel PHP Framework",
+      "source": {
+        "kind": "git",
+        "repo": "https://github.com/laravel/laravel.git",
+        "ref": "9e4ce7fc91a8ec3472ea22a0d0e3e7c5e3c1f1b0"
+      },
+      "languages": ["php"],
+      "exclude_paths": ["**/test/", "**/vendor/", "**/node_modules/"],
+      "expected_findings": {"min": 0, "max": 50},
+      "notes": "Laravel — primary PHP target for initial PHP analyzer validation."
+    },
+    {
+      "case_id": "vue-core",
+      "name": "Vue.js Core",
+      "source": {
+        "kind": "git",
+        "repo": "https://github.com/vuejs/core.git",
+        "ref": "f87fa36abfd8c2fdadc2ed2d50e674ae2e6ca174"
+      },
+      "languages": ["javascript", "typescript"],
+      "exclude_paths": ["**/test/", "**/__tests__/", "packages/compiler-sfc/"],
+      "expected_findings": {"min": 0, "max": 100},
+      "notes": "Vue.js 3 core — large TypeScript corpus for JS/TS structural analysis."
+    },
+    {
+      "case_id": "pytorch-full",
+      "name": "PyTorch",
+      "source": {
+        "kind": "git",
+        "repo": "https://github.com/pytorch/pytorch.git",
+        "ref": "49e5d28f4e2ab0aa4e65013f2f3bb434bbe74c6b"
+      },
+      "languages": ["python"],
+      "exclude_paths": ["test/", "docs/", "third_party/", "android/", "ios/", "scripts/"],
+      "expected_findings": {"min": 0, "max": 500},
+      "notes": "PyTorch — largest Python corpus for stress-testing scalability."
+    },
+    {
+      "case_id": "typescript-compiler",
+      "name": "TypeScript Compiler",
+      "source": {
+        "kind": "git",
+        "repo": "https://github.com/microsoft/TypeScript.git",
+        "ref": "aedf3524f61a59cc8d77c4bf0572cc1ab17f7dac"
+      },
+      "languages": ["typescript"],
+      "exclude_paths": ["tests/", "scripts/", "doc/"],
+      "expected_findings": {"min": 0, "max": 200},
+      "notes": "TypeScript compiler — largest TypeScript corpus for JS structural analysis."
     }
   ]
 }

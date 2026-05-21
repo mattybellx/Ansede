@@ -6,20 +6,22 @@ rules:
   - id: registry/python/toctou/exists-then-open
     title: "TOCTOU — os.path.exists() check before open()"
     cwe: CWE-362
-    severity: high
+    severity: medium
     pattern_type: taint_sink
     sinks:
       - "os.path.exists("
     suggestion: "Use try/except FileNotFoundError around open(); avoid separate exist checks that can race"
+    confidence: 0.4
 
   - id: registry/python/toctou/access-then-open
     title: "TOCTOU — os.access() check before open()"
     cwe: CWE-362
-    severity: high
+    severity: medium
     pattern_type: taint_sink
     sinks:
       - "os.access("
     suggestion: "os.access() is inherently racy; open the file directly and handle PermissionError"
+    confidence: 0.4
 
   - id: registry/python/toctou/tempfile-mktemp
     title: "Insecure temporary file creation via mktemp()"

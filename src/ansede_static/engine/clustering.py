@@ -118,9 +118,22 @@ def _cluster_key(finding: Finding) -> tuple[str, int, str]:
     return (cwe_family, region, sink)
 
 
-def _score_finding(finding: Finding) -> tuple[int, float, float, int]:
-    """Higher = better representative for a cluster."""
+def _score_finding(finding: Finding) -> tuple[int, int, float, float, int]:
+    """Higher = better representative for a cluster.
+
+    Priority order (most important first):
+      1. Structural trace present — any finding with non-empty trace_frames
+         ALWAYS beats a finding without one, regardless of confidence delta.
+         This prevents regex fallback findings (confidence=1.0, empty trace)
+         from winning over structural AST findings (confidence=0.96, rich trace).
+      2. Severity (higher severity first)
+      3. Confidence (higher is better)
+      4. Trace length (more frames = richer context for SARIF code flows)
+      5. Description length (tiebreaker)
+    """
+    has_trace = 1 if finding.trace else 0  # 1 = has trace (wins)
     return (
+        has_trace,                    # structural trace present beats empty
         -finding.severity.sort_key,  # higher severity first
         finding.confidence,           # higher confidence first
         float(len(finding.trace)),   # more trace frames = richer

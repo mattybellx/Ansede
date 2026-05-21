@@ -429,6 +429,7 @@ def format_sarif(results: list[AnalysisResult], *, execution: dict[str, Any] | N
                     "cwe": f.cwe,
                     "findingClass": f.finding_class,
                     "confidence": f.confidence,
+                    "confidenceLabel": f.confidence_label,
                     "analysisKind": f.analysis_kind,
                     "suggestion": f.suggestion,
                     "autoFix": f.auto_fix,
@@ -474,9 +475,13 @@ def _finding_fingerprint(file_path: str, finding: Finding) -> str:
 def _trace_to_sarif_codeflow(file_path: str, finding: Finding) -> dict[str, Any]:
     locations: list[dict[str, Any]] = []
     for frame in finding.trace:
+        # Prefer per-frame source file (set by source-map remapping) over the
+        # bundle/compiled file path.  This is the path GitHub Code Scanning
+        # uses to link back to the original source location.
+        frame_uri = (frame.file_path or file_path or "").lstrip("/\\")
         physical_location: dict[str, Any] = {
             "artifactLocation": {
-                "uri": (file_path or "").lstrip("/\\"),
+                "uri": frame_uri,
                 "uriBaseId": "%SRCROOT%",
             },
         }

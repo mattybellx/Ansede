@@ -74,6 +74,52 @@ jobs:
       - name: Performance smoke benchmark
         run: python -m benchmarks.perf_benchmark --iterations 10 --quiet --json
 
+  sarif-quality:
+    name: SARIF trace quality gate
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install
+        run: pip install -e ".[dev]"
+      - name: Validate SARIF trace coverage
+        run: python .github/scripts/validate_sarif_trace_coverage.py
+
+  engine-compare:
+    name: Dual-engine comparison (v1 vs v2)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install
+        run: pip install -e ".[dev]"
+      - name: Compare engines
+        run: python .github/scripts/compare_engines.py
+
+  language-parity:
+    name: Language parity (${{ matrix.lang }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        lang: [go, java, csharp, ruby]
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install
+        run: pip install -e ".[dev]"
+      - name: Language parity scan
+        run: python .github/scripts/language_parity_check.py ${{ matrix.lang }}
+
   platform-smoke:
     name: Platform smoke (${{ matrix.os }})
     runs-on: ${{ matrix.os }}

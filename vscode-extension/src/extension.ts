@@ -15,6 +15,8 @@ const SUPPORTED_LANGUAGE_SELECTORS: vscode.DocumentFilter[] = [
     { scheme: 'file', language: 'java' },
     { scheme: 'file', language: 'csharp' },
     { scheme: 'file', language: 'go' },
+    { scheme: 'file', language: 'ruby' },
+    { scheme: 'file', language: 'php' },
 ];
 
 
@@ -55,6 +57,10 @@ function getLanguage(document: vscode.TextDocument): string | null {
             return 'csharp';
         case 'go':
             return 'go';
+        case 'ruby':
+            return 'ruby';
+        case 'php':
+            return 'php';
         default:
             return null;
     }
@@ -324,10 +330,11 @@ class AnsedeCodeActionProvider implements vscode.CodeActionProvider {
         for (const diagnostic of context.diagnostics) {
             if (diagnostic.source === 'ansede-static' && (diagnostic as AnsedeDiagnostic).finding) {
                 const finding = (diagnostic as AnsedeDiagnostic).finding;
+
+                // ── Quick Fix: auto_fix snippet ───────────────────────────
                 if (finding.auto_fix && finding.auto_fix.includes('BEFORE:') && finding.auto_fix.includes('AFTER:')) {
                     const parts = finding.auto_fix.split("AFTER:");
                     const afterLines = parts[1].trimEnd().split('\n');
-                    // Usually the first line is exactly what we want, following lines might be padded
                     const after = afterLines.map(line => line.replace(/^ {8}/, '    ')).join('\n').replace(/^\n\s*/, '');
 
                     const action = new vscode.CodeAction(
@@ -339,7 +346,6 @@ class AnsedeCodeActionProvider implements vscode.CodeActionProvider {
                     
                     const edit = new vscode.WorkspaceEdit();
                     
-                    // Simple replacement based on line
                     if (finding.line) {
                         const lineIdx = finding.line - 1;
                         if (lineIdx >= 0 && lineIdx < document.lineCount) {
@@ -355,12 +361,50 @@ class AnsedeCodeActionProvider implements vscode.CodeActionProvider {
                     action.edit = edit;
                     actions.push(action);
                 }
+
+                // ── Suppress: add inline suppression comment ──────────────
+                const ruleId = finding.rule_id || finding.cwe;
+                if (ruleId) {
+                    const suppressAction = new vscode.CodeAction(
+                        `Ansede Suppress: ${ruleId}`,
+                        vscode.CodeActionKind.QuickFix
+                    );
+                    suppressAction.diagnostics = [diagnostic];
+                    const cweMatch = ruleId.match(/CWE-(\d+)/);
+                    const suppressToken = cweMatch ? `CWE-${cweMatch[1]}` : ruleId;
+                    const edit = new vscode.WorkspaceEdit();
+                    const lineIdx = (finding.line ?? 1) - 1;
+                    if (lineIdx >= 0 && lineIdx < document.lineCount) {
+                        const textLine = document.lineAt(lineIdx);
+                        edit.insert(
+                            document.uri,
+                            new vscode.Position(lineIdx, textLine.text.length),
+                            ` // ansede: ignore[${suppressToken}]`
+                        );
+                    }
+                    suppressAction.edit = edit;
+                    actions.push(suppressAction);
+
+                    // ── Explain: show detailed vulnerability info ──────────
+                    const explainAction = new vscode.CodeAction(
+                        `Ansede Explain: ${finding.title}`,
+                        vscode.CodeActionKind.Empty
+                    );
+                    explainAction.diagnostics = [diagnostic];
+                    explainAction.command = {
+                        command: 'ansede.showExplanation',
+                        title: 'Show Ansede Explanation',
+                        arguments: [finding],
+                    };
+                    actions.push(explainAction);
+                }
             }
         }
 
         return actions;
     }
 }
+
 
 export function activate(context: vscode.ExtensionContext): void {
     const collection = vscode.languages.createDiagnosticCollection('ansede');
@@ -424,9 +468,89 @@ export function activate(context: vscode.ExtensionContext): void {
         void scan(vscode.window.activeTextEditor.document, vscode.window.activeTextEditor.document.version);
     }
 
+    // ── Gutter decoration types ──────────────────────────────────────────
+    const errorDecoration = vscode.window.createTextEditorDecorationType({
+        gutterIconPath: context.asAbsolutePath('images/error.svg'),
+        gutterIconSize: 'contain',
+    });
+    const warningDecoration = vscode.window.createTextEditorDecorationType({
+        gutterIconPath: context.asAbsolutePath('images/warning.svg'),
+        gutterIconSize: 'contain',
+    });
+
+    // ── Command: Show explanation in a WebView panel ─────────────────────
+    const showExplanationCmd = vscode.commands.registerCommand('ansede.showExplanation', (finding: AnsedeFinding) => {
+        const panel = vscode.window.createWebviewPanel(
+            'ansedeExplanation',
+            `Ansede: ${finding.title}`,
+            vscode.ViewColumn.Beside,
+            { enableScripts: false }
+        );
+        const cweLink = finding.cwe
+            ? `<a href="https://cwe.mitre.org/data/definitions/${finding.cwe.replace('CWE-', '')}.html">${finding.cwe}</a>`
+            : '';
+        const severityClass = (finding.severity || 'info').toLowerCase();
+        panel.webview.html = `<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Ansede Explanation</title>
+<style>
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; padding: 1em; line-height: 1.6; color: var(--vscode-editor-foreground, #333); background: var(--vscode-editor-background, #fff); }
+h1 { font-size: 1.4em; border-bottom: 1px solid var(--vscode-panel-border, #ccc); padding-bottom: 0.3em; }
+.severity-badge { display: inline-block; padding: 2px 10px; border-radius: 3px; font-weight: 600; font-size: 0.85em; text-transform: uppercase; }
+.severity-badge.critical { background: #c00; color: #fff; }
+.severity-badge.high { background: #e60; color: #fff; }
+.severity-badge.medium { background: #ea0; color: #000; }
+.severity-badge.low { background: #6a6; color: #fff; }
+.severity-badge.info { background: #66a; color: #fff; }
+.meta { color: var(--vscode-descriptionForeground, #888); font-size: 0.85em; margin: 0.5em 0; }
+.description { margin: 1em 0; }
+.suggestion { background: var(--vscode-textBlockQuote-background, #f0f0f0); padding: 0.5em 1em; border-radius: 4px; margin-top: 1em; }
+</style>
+</head>
+<body>
+<h1>${finding.title}</h1>
+<div class="meta">
+    ${finding.rule_id ? `<span><strong>Rule:</strong> ${finding.rule_id}</span>` : ''}
+    ${cweLink ? ` | <span>${cweLink}</span>` : ''}
+</div>
+<p><span class="severity-badge ${severityClass}">${severityClass}</span></p>
+${finding.description ? `<p class="description">${finding.description}</p>` : ''}
+${finding.explanation ? `<p>${finding.explanation}</p>` : ''}
+${finding.suggestion ? `<div class="suggestion"><strong>Suggestion:</strong><p>${finding.suggestion}</p></div>` : ''}
+</body>
+</html>`;
+    });
+
+    // ── Gutter decoration updater ────────────────────────────────────────
+    const updateGutterDecorations = (editor: vscode.TextEditor | undefined) => {
+        if (!editor) { return; }
+        const diagnostics = collection.get(editor.document.uri) ?? [];
+        const errorLines: vscode.Range[] = [];
+        const warningLines: vscode.Range[] = [];
+        for (const d of diagnostics) {
+            if (d.source !== 'ansede-static') { continue; }
+            const lineRange = editor.document.validateRange(
+                new vscode.Range(d.range.start.line, 0, d.range.start.line, 0)
+            );
+            if (d.severity === vscode.DiagnosticSeverity.Error) {
+                errorLines.push(lineRange);
+            } else if (d.severity === vscode.DiagnosticSeverity.Warning) {
+                warningLines.push(lineRange);
+            }
+        }
+        editor.setDecorations(errorDecoration, errorLines);
+        editor.setDecorations(warningDecoration, warningLines);
+    };
+
+    // Refresh gutter decorations when diagnostics change
+    vscode.languages.onDidChangeDiagnostics(() => {
+        updateGutterDecorations(vscode.window.activeTextEditor);
+    });
+
     context.subscriptions.push(
         collection,
         statusItem,
+        showExplanationCmd,
         vscode.languages.registerCodeActionsProvider(
             SUPPORTED_LANGUAGE_SELECTORS,
             new AnsedeCodeActionProvider(),

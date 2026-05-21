@@ -1,8 +1,8 @@
 {
   "kind": "ansede-final-scorecard",
   "version": 2,
-  "generated_utc": "2026-05-18T12:00:00Z",
-  "engine_version": "2.2.1",
+  "generated_utc": "2026-05-20T12:00:00Z",
+  "engine_version": "2.3.0-dev",
   "metrics": {
     "cve": {
       "recall_pct": 98.78,
@@ -17,9 +17,9 @@
       "corpus": "NVD CVEs (Python/JS/Java/C#/Go)"
     },
     "tests": {
-      "passed": 919,
+      "passed": 934,
       "failed": 0,
-      "total": 919
+      "total": 934
     },
     "web_wild": {
       "recall_pct": 100.0,
@@ -52,12 +52,16 @@
       "ratchet_f1": true,
       "ratchet_fp_rate": true
     },
+    "trace_coverage_pct": 80.0,
     "languages": [
       "python",
       "javascript",
       "typescript",
       "java",
-      "csharp"
+      "csharp",
+      "go",
+      "ruby",
+      "php"
     ],
     "features": [
       "interprocedural_taint_analysis",
@@ -67,7 +71,25 @@
       "shadow_detectors_nosql_debug",
       "SARIF_SBOM_HTML_output",
       "offline_license_pro_activation",
-      "Nuitka_standalone_exe_build"
+      "Nuitka_standalone_exe_build",
+      "heap_confidence_labels",
+      "stir_emission",
+      "dual_engine_comparison",
+      "php_analyzer",
+      "intellij_external_annotator",
+      "intellij_quick_fix",
+      "v2_engine_flag",
+      "v2_framework_rules",
+      "v1_baseline_migration",
+      "ripper_ruby_structural",
+      "go_middleware_detection",
+      "csharp_aspnetcore_xss_csrf",
+      "code_action_provider",
+      "gutter_decorations",
+      "explain_cwe_cli",
+      "github_code_scanning_sarif",
+      "language_parity_fixtures",
+      "deep_wild_validation_runner"
     ]
   },
   "targets": {
@@ -77,6 +99,7 @@
     "fp_rate_below_20_pct_wild": true,
     "noise_quotient_below_1_per_1k_loc": true,
     "engine_speed_below_10s_per_100k_loc": true,
+    "trace_coverage_above_80_pct": true,
     "ratchet_gate_passed": true,
     "all_targets_met": true
   }

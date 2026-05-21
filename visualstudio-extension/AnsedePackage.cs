@@ -7,6 +7,10 @@ using System.Threading.Tasks;
 using EnvDTE;
 using Microsoft.VisualStudio.Shell;
 using Microsoft.VisualStudio.Shell.Interop;
+using Microsoft.VisualStudio.Text;
+using Microsoft.VisualStudio.Text.Editor;
+using Microsoft.VisualStudio.Text.Tagging;
+using Microsoft.VisualStudio.Utilities;
 using Task = System.Threading.Tasks.Task;
 
 namespace AnsedeStatic.VisualStudio;
@@ -35,6 +39,11 @@ public sealed class AnsedePackage : AsyncPackage
             var menuItem = new MenuCommand(async (s, e) => await ScanCurrentDocumentAsync(), menuCommandID);
             commandService.AddCommand(menuItem);
         }
+
+        // ── Register tagger provider for inline error squiggles ─────
+        var taggerProvider = new AnsedeTaggerProvider(_scanner, JoinableTaskFactory);
+        var compositionService = await GetServiceAsync(typeof(SComponentModel)) as IComponentModel;
+        compositionService?.DefaultCompositionService.SatisfyImportsOnce(taggerProvider);
     }
 
     /// <summary>

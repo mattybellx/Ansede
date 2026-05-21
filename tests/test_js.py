@@ -896,6 +896,154 @@ app.get('/logout', (req, res) => {
         assert labels[-1] == "sink `res.redirect()`"
 
 
+class TestGlobalGraphDelegation:
+    """GlobalGraph IFDS call-transfer delegation for JS return flows."""
+
+    def test_globalgraph_cached_summary_deduplicates_return_traces(self, tmp_path):
+        """When GlobalGraph already has a FunctionSummary for a callee, the
+        return trace emitted by the IFDS path should not be duplicated by the
+        local return_effects path."""
+        from ansede_static.ir.global_graph import GlobalGraph, FunctionSummary as GGSummary
+        from ansede_static.js_engine.project import (
+            JsProjectIndex, JsFileIndex, JsFunctionDef,
+            _trace_helper_return_expression,
+        )
+        from ansede_static._types import TraceFrame
+
+        caller_file = str(tmp_path / "app.js")
+
+        # Put the callee function directly in the caller file so resolve_js_function
+        # finds it without needing a cross-file import resolution.
+        fd = JsFunctionDef(
+            name="sanitizeAndReturn", params=("input",),
+            body="return input;", line=1, file_path=caller_file,
+        )
+        caller_index = JsFileIndex(
+            file_path=caller_file,
+            code="function sanitizeAndReturn(input){return input;}\nconst x=sanitizeAndReturn(userInput);",
+            functions={"sanitizeAndReturn": fd},
+        )
+        project = JsProjectIndex(files={caller_file: caller_index})
+
+        gg = GlobalGraph()
+        gg.record_function_summary(GGSummary(
+            file_path=caller_file,
+            function_name="sanitizeAndReturn",
+            args_to_sink=(),
+            args_to_return=(0,),
+            return_from_source=False,
+        ))
+
+        taint_traces = {
+            "userInput": (TraceFrame(kind="source", label="source `userInput`", line=1),),
+        }
+
+        traces = _trace_helper_return_expression(
+            project,
+            caller_file,
+            "sanitizeAndReturn(userInput)",
+            taint_traces,
+            line=5,
+            global_graph=gg,
+        )
+        # GlobalGraph is authoritative: the "helper" frame should appear at most
+        # once.  Without the deduplication fix, BOTH the IFDS path and the local
+        # return_effects loop emit a "helper" frame, resulting in 2+ copies.
+        assert len(traces) > 0, "Expected a taint trace to be propagated via GlobalGraph"
+        helper_frames = [f for f in traces if f.kind == "helper"]
+        assert len(helper_frames) <= 1, (
+            f"Expected at most 1 helper frame (deduplication), got {len(helper_frames)}"
+        )
+
+    def test_globalgraph_no_summary_falls_back_gracefully(self, tmp_path):
+        """Without a GlobalGraph summary, _trace_helper_return_expression must
+        not raise even with an empty GlobalGraph."""
+        from ansede_static.ir.global_graph import GlobalGraph
+        from ansede_static.js_engine.project import (
+            JsProjectIndex, JsFileIndex, JsFunctionDef,
+            _trace_helper_return_expression,
+        )
+        from ansede_static._types import TraceFrame
+
+        caller_file = str(tmp_path / "app2.js")
+
+        fd = JsFunctionDef(
+            name="passThrough", params=("x",),
+            body="return x;", line=1, file_path=caller_file,
+        )
+        caller_index = JsFileIndex(
+            file_path=caller_file,
+            code="function passThrough(x){return x;}\npassThrough(req);",
+            functions={"passThrough": fd},
+        )
+        project = JsProjectIndex(files={caller_file: caller_index})
+
+        gg = GlobalGraph()  # empty — no summary stored
+        taint_traces = {
+            "req": (TraceFrame(kind="source", label="source `req.query.val`", line=1),),
+        }
+
+        try:
+            _trace_helper_return_expression(
+                project, caller_file, "passThrough(req)", taint_traces,
+                line=3, global_graph=gg,
+            )
+        except Exception as exc:
+            pytest.fail(f"_trace_helper_return_expression raised unexpectedly: {exc}")
+
+
+class TestIDELatticeOperations:
+    """IDE fact lattice integration."""
+
+    def test_ide_lattice_boosts_confidence_for_tainted_facts(self):
+        from ansede_static.ir.global_graph import GlobalGraph, IDETaintLevel
+
+        gg = GlobalGraph()
+        gg.set_taint_with_access_path(
+            file_path="module.py", function_name="<module>",
+            value_label="$ret", level=IDETaintLevel.TAINTED, sources=("user_input",),
+        )
+        adjusted = gg.adjust_confidence_from_ide(
+            file_path="module.py", function_name="<module>",
+            value_label="$ret", base_confidence=0.75,
+        )
+        assert adjusted > 0.75, f"TAINTED IDE fact should boost confidence; got {adjusted}"
+
+    def test_ide_lattice_suppresses_confidence_for_clean_facts(self):
+        from ansede_static.ir.global_graph import GlobalGraph, IDETaintLevel
+
+        gg = GlobalGraph()
+        gg.set_taint_with_access_path(
+            file_path="safe.py", function_name="<module>",
+            value_label="$ret", level=IDETaintLevel.CLEAN, sources=(),
+        )
+        adjusted = gg.adjust_confidence_from_ide(
+            file_path="safe.py", function_name="<module>",
+            value_label="$ret", base_confidence=0.9,
+        )
+        assert adjusted < 0.9, f"CLEAN IDE fact should suppress confidence; got {adjusted}"
+
+    def test_python_analyze_with_global_graph_records_ide_facts(self):
+        from ansede_static.ir.global_graph import GlobalGraph
+        from ansede_static.python_analyzer import analyze_python
+
+        code = """
+from flask import request
+
+def get_query():
+    return request.args.get('q')
+
+def run(cmd):
+    import subprocess
+    subprocess.run(get_query(), shell=True)
+"""
+        gg = GlobalGraph()
+        result = analyze_python(code, filename="ide_test.py", global_graph=gg)
+        assert any(f.cwe == "CWE-78" for f in result.findings), (
+            f"Expected CWE-78; got {[f.cwe for f in result.findings]}"
+        )
+
+
 class TestBroaderRouteSemantics:
     def test_mounted_admin_router_missing_auth_detected(self):
         code = """

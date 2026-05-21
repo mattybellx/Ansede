@@ -244,7 +244,24 @@ def _build_custom_rule_from_entry(
         str(t).strip() for t in (tags_raw if isinstance(tags_raw, list) else [])
         if str(t).strip()
     )
-
+    # Optional per-rule confidence override; None means use default 0.7
+    raw_confidence = entry.get("confidence")
+    confidence: float | None = None
+    if raw_confidence is not None:
+        try:
+            val = float(raw_confidence)
+            if 0.0 <= val <= 1.0:
+                confidence = val
+        except (ValueError, TypeError):
+            pass
+    # Optional path exclusion regex
+    raw_path_exclude = entry.get("path_exclude", "")
+    path_exclude: re.Pattern[str] | None = None
+    if isinstance(raw_path_exclude, str) and raw_path_exclude.strip():
+        try:
+            path_exclude = re.compile(raw_path_exclude.strip())
+        except re.error:
+            pass
     return CustomRule(
         rule_id=rule_id,
         title=title,
@@ -264,6 +281,8 @@ def _build_custom_rule_from_entry(
         tags=tags,
         source_path=str(pack_path),
         is_community=False,
+        confidence=confidence,
+        path_exclude=path_exclude,
     )
 
 

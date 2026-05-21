@@ -73,10 +73,11 @@ rules:
   - id: registry/angular/http/no-auth-interceptor
     title: "Angular HttpClient requests without auth interceptor"
     cwe: CWE-306
-    severity: medium
+    severity: low
     pattern_type: regex
-    regex: "this\\.http\\.(?:get|post|put|delete)\\([^)]*\\)(?!.*interceptor)"
+    regex: "this\.http\.(?:get|post|put|delete)\([^)]*\)(?!.*interceptor)"
     suggestion: "Add an HTTP interceptor to automatically attach authentication headers"
+    confidence: 0.3
 
   - id: registry/angular/xss/dom-element-inject
     title: "XSS via direct DOM manipulation with user data"

@@ -56,10 +56,11 @@ rules:
   - id: registry/nextjs/env/client-bundle-exposure
     title: "Server-side secret exposed in client bundle"
     cwe: CWE-200
-    severity: critical
+    severity: medium
     pattern_type: regex
     regex: "process\\.env\\.(?!NEXT_PUBLIC_)[A-Z_]+"
     suggestion: "Use NEXT_PUBLIC_ prefix only for public vars; access secrets only in getServerSideProps or API routes"
+    confidence: 0.55
 
   - id: registry/nextjs/headers/missing-security
     title: "Next.js custom server without security headers"

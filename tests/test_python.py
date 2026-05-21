@@ -2189,3 +2189,155 @@ def login():
     def test_session_cookie_secure_false_config(self):
         code = "SESSION_COOKIE_SECURE = False\n"
         assert _has_cwe(code, "CWE-614")
+
+
+class TestZeroVulnerability:
+    """False-positive guard: clean code must produce zero findings."""
+
+    def test_clean_utility_module_produces_no_findings(self):
+        code = """
+import re
+from typing import Optional
+
+def sanitize_filename(filename: str) -> str:
+    return re.sub(r'[^a-zA-Z0-9._-]', '_', filename)
+
+def format_bytes(size: int) -> str:
+    for unit in ['B', 'KB', 'MB', 'GB']:
+        if size < 1024.0:
+            return f"{size:.1f} {unit}"
+        size /= 1024.0
+    return f"{size:.1f} TB"
+
+class Config:
+    def __init__(self, debug: bool = False):
+        self.debug = debug
+"""
+        result = analyze_python(code, filename="utils.py")
+        assert result.findings == [], (
+            f"False positives on clean utility module: "
+            f"{[f.title for f in result.findings]}"
+        )
+
+    def test_parameterized_sql_query_produces_no_sqli_finding(self):
+        code = """
+import sqlite3
+
+def get_user(db: sqlite3.Connection, user_id: int) -> dict:
+    cursor = db.cursor()
+    cursor.execute("SELECT * FROM users WHERE id = ?", (user_id,))
+    return dict(cursor.fetchone() or {})
+"""
+        result = analyze_python(code, filename="db.py")
+        sqli = [
+            f for f in result.findings
+            if "SQL" in f.title or (f.cwe and "89" in f.cwe)
+        ]
+        assert sqli == [], (
+            f"False-positive SQLi on parameterized query: {[f.title for f in sqli]}"
+        )
+
+
+# ── Item 3: Framework gating & new taint sources ─────────────────────────────
+
+class TestFrameworkGating:
+    """Framework-specific rules must not fire outside their target framework."""
+
+    def test_django_cbv_rule_silent_on_non_django_view(self):
+        """PY-028 must not fire on a plain Python class with get()/post() methods."""
+        code = """
+class UserView:
+    def get(self, request):
+        return {"users": []}
+    def post(self, request):
+        return {}
+"""
+        result = analyze_python(code, filename="views.py")
+        assert not any(f.rule_id == "PY-028" for f in result.findings), (
+            "PY-028 (Django CBV auth) fired on code with no Django imports"
+        )
+
+    def test_django_idor_cbv_rule_silent_on_non_django_code(self):
+        """PY-029 must not fire when there are no Django imports."""
+        code = """
+class OrderDetailView:
+    model = None
+"""
+        result = analyze_python(code, filename="views.py")
+        assert not any(f.rule_id == "PY-029" for f in result.findings), (
+            "PY-029 (Django IDOR CBV) fired on code with no Django imports"
+        )
+
+    def test_fastapi_depends_rule_silent_on_non_fastapi_code(self):
+        """PY-031 must not fire on code that does not import FastAPI."""
+        code = """
+def Depends(fn):
+    return fn
+
+def load_context():
+    return {"tenant": "demo"}
+
+async def list_users(ctx=Depends(load_context)):
+    return {'users': []}
+"""
+        result = analyze_python(code, filename="app.py")
+        assert not any(f.rule_id == "PY-031" for f in result.findings), (
+            "PY-031 (FastAPI Depends auth) fired on non-FastAPI code"
+        )
+
+    def test_fastapi_put_delete_rule_silent_on_non_fastapi_code(self):
+        """PY-032 must not fire when there are no FastAPI imports."""
+        code = """
+def delete(path):
+    def decorator(fn):
+        return fn
+    return decorator
+
+@delete('/orders/{order_id}')
+async def delete_order(order_id: int):
+    return {'deleted': order_id}
+"""
+        result = analyze_python(code, filename="routes.py")
+        assert not any(f.rule_id == "PY-032" for f in result.findings), (
+            "PY-032 (FastAPI PUT/DELETE auth) fired on non-FastAPI code"
+        )
+
+
+class TestTornadoAndAiohttpTaintSources:
+    """Tornado and aiohttp framework taint sources must propagate to sinks."""
+
+    def test_tornado_get_argument_reaches_command_sink(self):
+        """self.get_argument() is a taint source; piping it to subprocess is CWE-078."""
+        code = """
+import tornado.web
+import subprocess
+
+class MainHandler(tornado.web.RequestHandler):
+    def get(self):
+        cmd = self.get_argument("cmd")
+        subprocess.check_output(cmd, shell=True)
+"""
+        result = analyze_python(code, filename="handler.py")
+        cmd_injection = [f for f in result.findings if f.cwe in {"CWE-078", "CWE-077", "CWE-78", "CWE-77"} or (f.title and "Command Injection" in f.title)]
+        assert cmd_injection, (
+            "Expected command injection finding when self.get_argument flows to subprocess, "
+            f"got findings: {[f.title for f in result.findings]}"
+        )
+
+    def test_aiohttp_match_info_reaches_command_sink(self):
+        """request.match_info route param is a taint source; piping it to subprocess is CWE-078."""
+        code = """
+from aiohttp import web
+import subprocess
+
+async def handle(request):
+    user = request.match_info["user"]
+    result = subprocess.check_output(user, shell=True)
+    return web.Response(text="ok")
+"""
+        result = analyze_python(code, filename="handler.py")
+        cmd_injection = [f for f in result.findings if f.cwe in {"CWE-078", "CWE-077", "CWE-78", "CWE-77"} or (f.title and "Command Injection" in f.title)]
+        assert cmd_injection, (
+            "Expected command injection finding when request.match_info flows to subprocess, "
+            f"got findings: {[f.title for f in result.findings]}"
+        )
