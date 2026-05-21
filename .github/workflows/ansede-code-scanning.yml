@@ -30,7 +30,7 @@ jobs:
         run: |
           ansede scan . \
             --format json \
-            --output results.json \
+            --output ansede.json \
             --fail-on never \
             --exclude node_modules \
             --exclude .venv \
