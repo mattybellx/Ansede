@@ -40,6 +40,7 @@ from ansede_static.schema import FINGERPRINT_VERSION
 from ansede_static import _PYTHON_EXTS, _JS_EXTS, _GO_EXTS, _JAVA_EXTS, _CSHARP_EXTS, _RUBY_EXTS, _PHP_EXTS
 
 from ansede_static.ir.global_graph import GlobalGraph
+from ansede_static.profiler import ScanProfiler
 from ansede_static.engine.triage import run_ai_triage
 from ansede_static.licensing import (
     LicenseFeatureGate,
@@ -963,6 +964,10 @@ def build_parser() -> argparse.ArgumentParser:
         help="Print per-file scan timing table after scan completes.",
     )
     parser.add_argument(
+        "--profile", action="store_true",
+        help="Dump per-file per-phase timing breakdown as JSON (use with --output).",
+    )
+    parser.add_argument(
         "--incremental-sha256", dest="incremental_sha256", action="store_true",
         help=(
             "Use SHA-256 file-content hashing to skip unchanged files "
@@ -1815,6 +1820,7 @@ def _main_impl() -> None:
 
             # ── Helper for scanning one file (used in both serial and parallel) ──
             _file_timings: list[dict] = []
+            _profiler = ScanProfiler() if getattr(args, "profile", False) else None
 
             def _scan_one(fpath: Path) -> AnalysisResult:
                 t0 = time.perf_counter()
@@ -1919,6 +1925,18 @@ def _main_impl() -> None:
                       f"Avg: {avg:.0f}ms/file  "
                       f"Files/s: {files_per_sec:.1f}",
                       file=sys.stderr)
+
+            # ── Profile output (--profile flag) ─────────────────────────────
+            if _profiler is not None:
+                for t in _file_timings:
+                    _profiler.record_file_total(t["file"], t["ms"] / 1000)
+                profile_path = args.output
+                if profile_path:
+                    profile_out = str(profile_path).replace(".json", "_profile.json")
+                    _profiler.save(profile_out)
+                    print(f"ansede-static: profile written to {profile_out}", file=sys.stderr)
+                else:
+                    _profiler.print_summary()
 
         elif not results:
             parser.print_help()
