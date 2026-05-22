@@ -2210,6 +2210,22 @@ def _main_impl() -> None:
         output = format_text_multi(results, colour=colour and primary_output_path is None, verbose=args.verbose)
     elif args.format == "json":
         output = format_json(results, execution=execution)
+        # Inject timing metadata
+        try:
+            parsed = json.loads(output)
+            if _file_timings:
+                total_ms = sum(t["ms"] for t in _file_timings)
+                parsed["_meta"] = {
+                    "scan_time_ms": round(total_ms, 1),
+                    "files_scanned": len(_file_timings),
+                    "files_per_second": round(
+                        len(_file_timings) / (total_ms / 1000), 1
+                    ) if total_ms > 0 else 0,
+                    "findings_total": len(results),
+                }
+                output = json.dumps(parsed, indent=2)
+        except (json.JSONDecodeError, TypeError):
+            pass
         # Inject diagnostics if present
         if diagnostics_payload is not None:
             try:
