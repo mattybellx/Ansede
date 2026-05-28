@@ -5,7 +5,7 @@ from pathlib import Path
 from collections import defaultdict
 
 ROOT = Path(__file__).resolve().parent.parent
-NODEGOAT = ROOT / "NodeGoat"
+NODEGOAT = ROOT / "samples" / "NodeGoat"
 OUTPUT = ROOT / "tmp" / "triage"
 
 _TEST_RE = re.compile(r"(?:/test/|/tests/|/__tests__/|/spec/|/examples?/)", re.I)

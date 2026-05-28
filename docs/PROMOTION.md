@@ -32,7 +32,7 @@ I spent 6 months building ansede-static specifically to catch IDOR, auth bypass,
 - Incident clustering reduces findings by 49%
 
 GitHub: https://github.com/mattybellx/Ansede
-Live benchmarks: https://github.com/mattybellx/Ansede/blob/master/BENCHMARKS.md
+Live benchmarks: https://github.com/mattybellx/Ansede/blob/master/docs/BENCHMARKS.md
 
 Free tier: 500 scans/day. Pro: £4.99 one-time or £49/year.
 

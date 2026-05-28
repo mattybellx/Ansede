@@ -27,7 +27,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 
 - **Replaced all benchmarks with honest real-world data.** Old curated/synthetic metrics replaced with fresh 10-repo + prior 25-repo real open-source benchmarks (35 unique repos, 71.25 MB, 5 languages, 4,649 findings).
 - **Updated README.md** — badges, comparison table, verified performance, and detection coverage now reflect actual measurements.
-- **Updated BENCHMARKS.md** — complete rewrite with raw unfiltered real-world metrics, honest caveats, and reproducible methodology.
+- **Updated `docs/BENCHMARKS.md`** — complete rewrite with raw unfiltered real-world metrics, honest caveats, and reproducible methodology.
 - **Updated final_scorecard.json** — now reflects real-world scan data instead of curated metrics.
 - **Updated CHANGELOG.md** — this entry.
 - **Version bumped to 2.3.1** for PyPI release.
@@ -187,7 +187,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ### Added — Definitive public validation and release surface refresh
 - **Definitive world-best validation artifact** — added `world_best_final_validation.json`, capturing the final **20-seed × 60-file** web-wild proof run plus inline CVE gate metrics.
-- **Public benchmark refresh** — `README.md`, `BENCHMARKS.md`, and `final_product_scorecard.json` now surface the current flagship proof point so visitors immediately see the up-to-date result.
+- **Public benchmark refresh** — `README.md`, `docs/BENCHMARKS.md`, and `final_product_scorecard.json` now surface the current flagship proof point so visitors immediately see the up-to-date result.
 
 ### Validated
 - **Web-wild final gate:** **20 / 20 seeds PASS**, **366 TP / 4 FP / 0 FN**, **100.00% recall**, **1.05% FP rate**, **99.46% F1**.
@@ -253,7 +253,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 - **Triage engine** enhanced with broader ownership/tenant scoping patterns, Nest.js guard detection, and improved FastAPI dependency signal matching.
 
 ### Added — Public Launch Readiness (2026-04-30)
-- **`BENCHMARKS.md`** — dedicated public proof page with reproducible benchmark commands and current scorecards (CVE/quality/external/web-wild), plus cross-scanner NodeGoat evidence for ansede-static vs Bandit vs Semgrep OSS.
+- **`docs/BENCHMARKS.md`** — dedicated public proof page with reproducible benchmark commands and current scorecards (CVE/quality/external/web-wild), plus cross-scanner NodeGoat evidence for ansede-static vs Bandit vs Semgrep OSS.
 
 ### Changed — Public Launch Readiness (2026-04-30)
 - **PyPI-first install guidance** across `README.md` and `action.yml` (while still supporting explicit GitHub/local install paths for debugging and development).

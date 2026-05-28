@@ -59,7 +59,7 @@
 - [ ] Add entries to `benchmarks/cve_corpus.py` using `CVEEntry` dataclass
 - [ ] Validate each new entry produces the expected CWE
 - [ ] Re-run full CVE recall benchmark
-- [ ] Document precision/recall changes in `BENCHMARKS.md`
+- [ ] Document precision/recall changes in `docs/BENCHMARKS.md`
 - **Goal:** Statistically significant corpus that produces credible precision/recall numbers
 
 ### 1.5 Java/C# Rule Depth (match Python/JS)
@@ -97,7 +97,7 @@
 - [ ] Run `benchmarks/head_to_head.py` on full 82-case CVE corpus
 - [ ] Record ansede detection rate vs Semgrep detection rate
 - [ ] Categorize misses: ansede-only, Semgrep-only, both
-- [ ] Document findings in `BENCHMARKS.md`
+- [ ] Document findings in `docs/BENCHMARKS.md`
 - [ ] Publish results as a blog post or technical report
 - **Goal:** Independent validation of our 10/10 vs 6/10 sample finding
 

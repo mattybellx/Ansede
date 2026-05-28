@@ -14,7 +14,7 @@ This converts `P16.md` into an execution-ready plan focused on **credible adopti
 - [x] Use pinned commits for all external repos in manifests.
 - [x] Keep runs reproducible with cache + offline reruns.
 - [x] Do not publish exploit details before maintainers acknowledge or patch. *(Policy encoded in `docs/responsible-disclosure-rubric.md` and campaign runbook.)*
-- [x] Update `BENCHMARKS.md` only with raw, unsanitized aggregate results + methodology notes.
+- [x] Update `docs/BENCHMARKS.md` only with raw, unsanitized aggregate results + methodology notes.
 
 **Double-check gate (global):**
 - [x] `python -m pytest -q` *(2026-05-16 run: 919 passed, 4 warnings)*
@@ -67,7 +67,7 @@ Expand beyond curated/synthetic confidence by stress-testing on large, messy rep
   - [x] `python -m benchmarks.external_corpus --manifest benchmarks/real_world_manifest.json --cache-dir .tmp/ansede-corpus --refresh`
 - [x] Execute offline reproducibility run:
   - [x] `python -m benchmarks.external_corpus --manifest benchmarks/real_world_manifest.json --cache-dir .tmp/ansede-corpus --offline`
-- [x] Publish full raw summary and caveats in `BENCHMARKS.md`. *(Protocol + artifact contract section added.)*
+- [x] Publish full raw summary and caveats in `docs/BENCHMARKS.md`. *(Protocol + artifact contract section added.)*
 
 ### Double-check gates
 - [x] Compare refresh vs offline outputs for drift.
@@ -76,7 +76,7 @@ Expand beyond curated/synthetic confidence by stress-testing on large, messy rep
 
 ### Acceptance criteria
 - [x] Manifest contains multiple large, pinned repos per key language. *(Current pinned spread includes Java/WebGoat, JS/NodeGoat+DVNA, Python/flask-login, Go/gin, C#/aspnetcore security subtree.)*
-- [x] `BENCHMARKS.md` includes unsanitized aggregate + methodology + caveats.
+- [x] `docs/BENCHMARKS.md` includes unsanitized aggregate + methodology + caveats.
 
 ---
 
@@ -180,4 +180,4 @@ Make adoption easy for large teams without breaking existing pipelines.
 - [x] Re-run external corpus offline to detect reproducibility regressions.
 - [x] Review false-positive trend by language. *(Added language hotspot trend in drift summary artifacts.)*
 - [x] Review disclosure pipeline status (new, triaged, disclosed, acknowledged, patched). *(Current snapshot in `.tmp/campaign/disclosure_campaign_ledger_2026-05-16.json`: 2 triaged, 0 disclosed.)*
-- [x] Update `BENCHMARKS.md` and changelog with evidence only.
+- [x] Update `docs/BENCHMARKS.md` and changelog with evidence only.
