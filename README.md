@@ -22,18 +22,18 @@
 </p>
 
 <p align="center">
-  <a href="#-quick-start">Quick Start</a> ·
-  <a href="#-why-ansede">Why Ansede?</a> ·
-  <a href="#-benchmarks">Benchmarks</a> ·
-  <a href="#-comparison">Comparison</a> ·
-  <a href="#-features">Features</a> ·
-  <a href="#%EF%B8%8F-ide-support">IDE Support</a> ·
-  <a href="#-documentation">Docs</a>
+  <a href="#quick-start">Quick Start</a> ·
+  <a href="#why-ansede">Why Ansede?</a> ·
+  <a href="#benchmarks">Benchmarks</a> ·
+  <a href="#comparison">Comparison</a> ·
+  <a href="#features">Features</a> ·
+  <a href="#ide-support">IDE Support</a> ·
+  <a href="#documentation">Docs</a>
 </p>
 
 ---
 
-## ⚡ Quick Start
+## **<ins>Quick Start</ins>**
 
 ```bash
 pip install ansede-static
@@ -48,20 +48,20 @@ ansede-static src/ --incremental           # git-diff mode
 
 ---
 
-## 🎯 Why Ansede?
+## **<ins>Why Ansede?</ins>**
 
 **Ansede Static** detects vulnerability classes that every other free SAST tool silently ignores:
 
 | Vulnerability | Bandit | Semgrep OSS | CodeQL | **Ansede** |
 |---|---|---|---|---|
-| SQL Injection | ✅ | ✅ | ✅ | ✅ |
-| XSS | ⚠️ limited | ✅ | ✅ | ✅ |
-| **IDOR (CWE-639)** | ❌ | ❌* | ⚠️ manual | **✅ AST-native** |
-| **Missing Auth (CWE-862)** | ❌ | ❌* | ⚠️ manual | **✅ AST-native** |
-| **Ownership Bypass (CWE-285)** | ❌ | ❌* | ❌ | **✅ AST-native** |
-| Route-level Auth Analysis | ❌ | ❌ | ❌ | **✅ Built-in** |
-| Offline-First | ✅ | ⚠️ rules need sync | ❌ SaaS | **✅ Fully offline** |
-| Zero Dependencies | ✅ | ❌ | ❌ | **✅ Pure stdlib** |
+| SQL Injection | ✓ | ✓ | ✓ | ✓ |
+| XSS | ~ limited | ✓ | ✓ | ✓ |
+| **IDOR (CWE-639)** | ✗ | ✗* | ~ manual | **✓ AST-native** |
+| **Missing Auth (CWE-862)** | ✗ | ✗* | ~ manual | **✓ AST-native** |
+| **Ownership Bypass (CWE-285)** | ✗ | ✗* | ✗ | **✓ AST-native** |
+| Route-level Auth Analysis | ✗ | ✗ | ✗ | **✓ Built-in** |
+| Offline-First | ✓ | ~ needs sync | ✗ SaaS | **✓ Fully offline** |
+| Zero Dependencies | ✓ | ✗ | ✗ | **✓ Pure stdlib** |
 
 *\*Semgrep OSS can detect these with custom rules, but no default rules exist.*
 
@@ -71,7 +71,7 @@ ansede-static src/ --incremental           # git-diff mode
 def get_invoice(invoice_id):
     return db.execute("SELECT * FROM invoices WHERE id = ?", (invoice_id,))
     # → CWE-639 IDOR: any authenticated user can view any invoice
-    # Bandit / Semgrep OSS: silent.  Ansede: 🚨 CRITICAL
+    # Bandit / Semgrep OSS: silent.  Ansede: CRITICAL
 ```
 
 ```python
@@ -79,12 +79,12 @@ def get_invoice(invoice_id):
 def list_users():
     return User.query.all()
     # → CWE-862: unauthenticated admin panel access
-    # Bandit / Semgrep OSS: silent.  Ansede: 🚨 HIGH
+    # Bandit / Semgrep OSS: silent.  Ansede: HIGH
 ```
 
 ---
 
-## 📊 Benchmarks
+## **<ins>Benchmarks</ins>**
 
 ### NVD CVE Recall (Synthetic Corpus)
 
@@ -130,18 +130,18 @@ def list_users():
 
 ---
 
-## 🔬 Comparison
+## **<ins>Comparison</ins>**
 
 | Feature | Ansede Static | Semgrep OSS | CodeQL |
 |---|---|---|---|
 | **NVD CVE Recall** | **98.8%** | ~70%* | ~85%* |
-| **IDOR / Auth Bypass** | ✅ Native AST | ❌ No default rules | ⚠️ Manual QL |
-| **Incident Clustering** | ✅ 49% noise reduction | ❌ | ❌ |
-| **Offline-First** | ✅ Fully | ⚠️ Needs rule sync | ❌ SaaS-only |
-| **Zero Dep Install** | ✅ `pip install` | ❌ Requires semgrep | ❌ DB build req. |
-| **SBOM Output** | ✅ CycloneDX/SPDX | ❌ | ❌ |
-| **SARIF** | ✅ Free tier | ✅ | ✅ |
-| **LLM Triage** | ✅ (local Ollama) | ❌ | ❌ |
+| **IDOR / Auth Bypass** | ✓ Native AST | ✗ No default rules | ~ Manual QL |
+| **Incident Clustering** | ✓ 49% noise reduction | ✗ | ✗ |
+| **Offline-First** | ✓ Fully | ~ Needs rule sync | ✗ SaaS-only |
+| **Zero Dep Install** | ✓ `pip install` | ✗ Requires semgrep | ✗ DB build req. |
+| **SBOM Output** | ✓ CycloneDX/SPDX | ✗ | ✗ |
+| **SARIF** | ✓ Free tier | ✓ | ✓ |
+| **LLM Triage** | ✓ (local Ollama) | ✗ | ✗ |
 | **IDE Plugins** | VS Code, IntelliJ, VS | VS Code only | VS Code only |
 | **Price** | Free + Pro | Free + Managed | SaaS-licensed |
 
@@ -149,7 +149,7 @@ def list_users():
 
 ---
 
-## ✨ Features
+## **<ins>Features</ins>**
 
 ### Detection Engine
 - **35+ CWE types** — SQLi, XSS, IDOR, auth bypass, CSRF, SSRF, path traversal, code injection, hardcoded secrets, ReDoS, and more
@@ -182,19 +182,19 @@ def list_users():
 
 ---
 
-## 🛠️ IDE Support
+## **<ins>IDE Support</ins>**
 
 | IDE | Status | Install |
 |---|---|---|
-| **VS Code** | ✅ Published | [Marketplace](https://marketplace.visualstudio.com/) |
-| **IntelliJ IDEA** | ✅ Beta | Plugin from releases |
-| **Visual Studio 2022** | ✅ Beta | VSIX from releases |
+| **VS Code** | ✓ Published | [Marketplace](https://marketplace.visualstudio.com/) |
+| **IntelliJ IDEA** | ✓ Beta | Plugin from releases |
+| **Visual Studio 2022** | ✓ Beta | VSIX from releases |
 
 All plugins provide inline diagnostics, gutter decorations, and quick-fix suggestions.
 
 ---
 
-## 🤖 GitHub Action
+## **<ins>GitHub Action</ins>**
 
 ```yaml
 - uses: mattybellx/Ansede@v2.3.2
@@ -206,7 +206,7 @@ All plugins provide inline diagnostics, gutter decorations, and quick-fix sugges
 
 ---
 
-## 📖 Documentation
+## **<ins>Documentation</ins>**
 
 | Resource | Link |
 |---|---|
@@ -221,7 +221,7 @@ All plugins provide inline diagnostics, gutter decorations, and quick-fix sugges
 
 ---
 
-## 🤝 Contributing
+## **<ins>Contributing</ins>**
 
 ```bash
 git clone https://github.com/mattybellx/Ansede.git
@@ -234,7 +234,7 @@ See [`CONTRIBUTING.md`](CONTRIBUTING.md) for guidelines. All contributions welco
 
 ---
 
-## 📜 License
+## **<ins>License</ins>**
 
 MIT licensed. Built by [Matty Bell](https://github.com/mattybellx).
 
