@@ -199,9 +199,7 @@ def _collect_files(paths: list[Path], exclude_patterns: list[str]) -> list[Path]
         elif p.is_dir():
             # Directories to skip entirely during recursive scans
             _SKIP_DIRS: frozenset[str] = frozenset({
-                "tests", "benchmarks", "benchmark", "tmp", "webapp",
-                "internet_code_samples", "node_modules", "vendor",
-                "__pycache__", ".git", ".venv",
+                "node_modules", "vendor", ".venv", "__pycache__", ".git",
             })
             for child in sorted(p.rglob("*")):
                 if not child.is_file():
