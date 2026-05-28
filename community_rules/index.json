@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "updated": "2026-05-07",
+  "updated": "2026-05-25",
   "rules": [
     {
       "id": "community/flask-missing-rate-limit-CWE-307",
@@ -11,6 +11,19 @@
       "url": "https://raw.githubusercontent.com/mattybellx/Ansede/master/community_rules/flask-missing-rate-limit-CWE-307.yaml",
       "tags": [
         "owasp:A07"
+      ]
+    },
+    {
+      "id": "community/express-missing-helmet-CWE-693",
+      "title": "Express.js app missing helmet security middleware",
+      "cwe": "CWE-693",
+      "severity": "medium",
+      "language": "javascript",
+      "url": "https://raw.githubusercontent.com/mattybellx/Ansede/master/community_rules/express-missing-helmet-CWE-693.yaml",
+      "tags": [
+        "owasp:A05",
+        "express",
+        "helmet"
       ]
     }
   ]

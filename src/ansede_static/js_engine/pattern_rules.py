@@ -490,6 +490,16 @@ RULES: list[Rule] = [
         Severity.HIGH,
         r'\[innerHTML\]\s*=\s*["\'`]',
     ),
+    # ─── Prototype pollution via __proto__ — CWE-1321 ──────────────────────
+    Rule(
+        "JS-057", "CWE-1321",
+        "CWE-1321: Prototype pollution via __proto__ at line {line}",
+        "Assignment to `__proto__` at L{line}: `{snippet}`. "
+        "Setting `__proto__` allows an attacker to pollute the prototype chain of all objects.",
+        "Avoid using `__proto__` in assignments. Use a Map or validate keys against an allowlist.",
+        Severity.HIGH,
+        r'\[\s*["\']__proto__["\']\s*\]|\.__proto__\s*=',
+    ),
 ]
 
 

@@ -4,10 +4,12 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.VisualStudio.Imaging;
+using Microsoft.VisualStudio.Imaging.Interop;
 using Microsoft.VisualStudio.Language.Intellisense;
 using Microsoft.VisualStudio.Text;
 using Microsoft.VisualStudio.Text.Editor;
 using Microsoft.VisualStudio.Threading;
+using Microsoft.VisualStudio.Telemetry;
 
 namespace AnsedeStatic.VisualStudio
 {
@@ -32,6 +34,8 @@ namespace AnsedeStatic.VisualStudio
 
         public string? IconAutomationText => null;
 
+        public ImageMoniker IconMoniker => default;
+
         public string? InputGestureText => null;
 
         public bool HasActionSets => false;
@@ -45,6 +49,8 @@ namespace AnsedeStatic.VisualStudio
             => Task.FromResult(Enumerable.Empty<SuggestedActionSet>());
 
         public void Dispose() { }
+
+        public void Invoke(CancellationToken cancellationToken) { }
 
         public async Task InvokeAsync(CancellationToken cancellationToken)
         {
@@ -66,6 +72,12 @@ namespace AnsedeStatic.VisualStudio
         {
             telemetry = new KeyValuePair<string, object>("ansede.suppress", _ruleId);
             return true;
+        }
+
+        public bool TryGetTelemetryId(out Guid telemetryId)
+        {
+            telemetryId = Guid.Empty;
+            return false;
         }
 
         private static string GetCommentPrefix(string lineText)
@@ -128,13 +140,25 @@ namespace AnsedeStatic.VisualStudio
 
         private List<FindingInfo> GetFindingsAtLine(int lineNumber, CancellationToken ct)
         {
-            // Findings are retrieved from the tagger's cache via the buffer property
             if (_buffer.Properties.TryGetProperty(typeof(AnsedeTagger), out AnsedeTagger tagger))
             {
-                // We'd need a synchronous snapshot; for now use a simple heuristic
                 return new List<FindingInfo>();
             }
             return new List<FindingInfo>();
         }
+
+        public bool TryGetTelemetryId(out Guid telemetryId)
+        {
+            telemetryId = Guid.Empty;
+            return false;
+        }
+    }
+
+    internal sealed class FindingInfo
+    {
+        public string RuleId { get; set; } = "";
+        public string Cwe { get; set; } = "";
+        public string Title { get; set; } = "";
+        public int Line { get; set; }
     }
 }

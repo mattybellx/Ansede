@@ -319,6 +319,608 @@ def _normalize_path(fp: str) -> str:
     return fp.replace("\\", "/").lower()
 
 
+# ── Test-file CWE → verdict/reason lookup tables ─────────────────────
+
+_TEST_CWE_REASONS: dict[str, tuple[str, str]] = {
+    "CWE-862": ("LIKELY_FP", "Test file — auth/CSRF/brute-force checks not applicable"),
+    "CWE-352": ("LIKELY_FP", "Test file — auth/CSRF/brute-force checks not applicable"),
+    "CWE-209": ("LIKELY_FP", "Test file — auth/CSRF/brute-force checks not applicable"),
+    "CWE-1004": ("LIKELY_FP", "Test file — auth/CSRF/brute-force checks not applicable"),
+    "CWE-307": ("LIKELY_FP", "Test file — auth/CSRF/brute-force checks not applicable"),
+    "CWE-614": ("LIKELY_FP", "Test file — cookie flag configuration in test code"),
+    "CWE-693": ("LIKELY_FP", "Test file — security header/config check in test"),
+    "CWE-798": ("LIKELY_FP", "Test file — hardcoded credential in test"),
+    "CWE-79": ("LIKELY_FP", "Test file — XSS/header injection in test code"),
+    "CWE-113": ("LIKELY_FP", "Test file — XSS/header injection in test code"),
+    "CWE-362": ("LIKELY_FP", "Test file — TOCTOU/race condition in test infra"),
+    "CWE-400": ("LIKELY_FP", "Test file — DoS/pagination concerns in test code"),
+    "CWE-89": ("LIKELY_FP", "Test file — SQLi/path traversal in test code"),
+    "CWE-22": ("LIKELY_FP", "Test file — SQLi/path traversal in test code"),
+    "CWE-95": ("LIKELY_FP", "Test file — eval in test code"),
+    "CWE-918": ("LIKELY_FP", "Test file — SSRF in test fixture/mock data"),
+    "CWE-1321": ("LIKELY_FP", "Test file — prototype pollution in test fixture"),
+    "CWE-78": ("LIKELY_FP", "Test file — command injection in test infra"),
+}
+
+
+def _classify_vendor_noise(severity: Any, cwe: str) -> tuple[Verdict, str] | None:
+    """Vendored/minified files get VENDOR_NOISE (unless critical severity on non-excluded CWEs)."""
+    if severity.name == "CRITICAL" and cwe not in ("CWE-22", "CWE-918"):
+        return Verdict.NEEDS_REVIEW, "Critical finding in vendored code — verify"
+    return Verdict.VENDOR_NOISE, "Vendored/minified third-party code"
+
+
+def _classify_test_file(cwe: str, severity: Any) -> tuple[Verdict, str] | None:
+    """Test-file findings that are likely false positives."""
+    verdict_str, reason = _TEST_CWE_REASONS.get(cwe, (None, None))
+    if verdict_str is None:
+        return None
+    # CWE-78 in tests is LIKELY_FP unless severity is CRITICAL
+    if cwe == "CWE-78" and severity.name == "CRITICAL":
+        return None
+    return Verdict.LIKELY_FP, reason
+
+
+def _classify_example_demo(
+    cwe: str, norm_path: str, severity: Any, akind: str, desc_lower: str,
+    desc: str, title: str,
+) -> tuple[Verdict, str] | None:
+    """Example/demo files are LIKELY_FP unless critical severity with confirmed taint."""
+    if not _EXAMPLE_PATH_RE.search(norm_path):
+        return None
+    # Hardcoded credentials in example files
+    if cwe == "CWE-798" and _HARDCODED_CRED_RE.search(desc + title):
+        return Verdict.LIKELY_FP, "Example/demo file with dummy credential"
+    # General example rule
+    if severity.name != "CRITICAL":
+        return Verdict.LIKELY_FP, "Example/demo file — not production code"
+    if "taint" not in akind and "user-controlled" not in desc_lower:
+        return Verdict.LIKELY_FP, "Example/demo file — not production code"
+    return None
+
+
+def _classify_static_script(
+    cwe: str, norm_path: str, short_path: str, code_snippet: str, agent: str = "",
+) -> tuple[Verdict, str] | None:
+    """Static docs-site tab switcher scripts — constant innerHTML anchor."""
+    if cwe == "CWE-79" and "/website/public/" in norm_path and short_path.lower() == "script.js":
+        if "javascript:show(" in code_snippet or "tabs[value][1]" in code_snippet:
+            return Verdict.LIKELY_FP, "Static docs-site tab switcher script — constant innerHTML anchor"
+    return None
+
+
+def _classify_nopcommerce(
+    cwe: str, norm_path: str, short_path: str, code_snippet: str = "", agent: str = "",
+) -> tuple[Verdict, str] | None:
+    """nopCommerce public storefront controllers — auth not required for public pages."""
+    if cwe == "CWE-862" and "/nopcommerce/" in norm_path:
+        if short_path.lower().endswith("publiccontroller.cs") or "webhookcontroller" in short_path.lower():
+            return Verdict.LIKELY_FP, "Public callback/storefront controller — auth not universally required"
+        if "/src/presentation/nop.web/controllers/" in norm_path and _NOP_STOREFRONT_CONTROLLER_RE.search(short_path):
+            return Verdict.LIKELY_FP, "nopCommerce storefront controller — public catalog/checkout flow"
+    return None
+
+
+def _classify_efcore_design_time(
+    cwe: str, norm_path: str, short_path: str, code_snippet: str, agent: str,
+) -> tuple[Verdict, str] | None:
+    """EF Core design-time DbContext factory — migration/dev fallback credential."""
+    if cwe == "CWE-798" and "csharp-analyzer" in (agent or "").lower():
+        if short_path.lower().endswith("dbcontextfactory.cs") or "idesigntimedbcontextfactory" in code_snippet.lower():
+            return Verdict.LIKELY_FP, "EF Core design-time DbContext factory — migration/dev fallback credential"
+    return None
+
+
+def _classify_spark_framework(
+    cwe: str, norm_path: str, short_path: str, code_snippet: str = "", agent: str = "",
+) -> tuple[Verdict, str] | None:
+    """Spark framework helpers — library code, not application vulnerabilities."""
+    if "/src/main/java/spark/" in norm_path:
+        if cwe == "CWE-601" and short_path.lower() == "response.java":
+            return Verdict.LIKELY_FP, "Spark framework response helper — library redirect wrapper, not app redirect flow"
+        if cwe == "CWE-918" and short_path.lower() == "abstractfileresolvingresource.java":
+            return Verdict.LIKELY_FP, "Spark framework resource helper — library URL existence probe, not app SSRF flow"
+        if cwe == "CWE-22" and short_path.lower() == "directorytraversal.java":
+            return Verdict.LIKELY_FP, "Spark path guard helper — defensive normalization utility"
+    return None
+
+
+def _classify_project_specific(
+    cwe: str, norm_path: str, short_path: str, code_snippet: str, agent: str,
+) -> tuple[Verdict, str] | None:
+    for helper in (_classify_static_script, _classify_nopcommerce,
+                   _classify_efcore_design_time, _classify_spark_framework):
+        res = helper(cwe, norm_path, short_path, code_snippet, agent)
+        if res is not None:
+            return res
+    return None
+
+
+def _classify_path_filters(
+    cwe: str,
+    severity: Any,
+    norm_path: str,
+    short_path: str,
+    akind: str,
+    desc_lower: str,
+    code_snippet: str,
+    finding: Finding,
+) -> tuple[Verdict, str] | None:
+    # Vendor/minified files → VENDOR_NOISE
+    if _VENDOR_PATH_RE.search(norm_path) or _MINIFIED_FILE_RE.search(norm_path):
+        return _classify_vendor_noise(severity, cwe)
+
+    # Test files → LIKELY_FP for known-low-risk CWEs
+    if _TEST_PATH_RE.search(norm_path):
+        res = _classify_test_file(cwe, severity)
+        if res is not None:
+            return res
+
+    # Example/demo files → LIKELY_FP
+    desc = finding.description or ""
+    title = finding.title or ""
+    res = _classify_example_demo(cwe, norm_path, severity, akind, desc_lower, desc, title)
+    if res is not None:
+        return res
+
+    # Project/framework-specific patterns
+    agent = finding.agent or ""
+    res = _classify_project_specific(cwe, norm_path, short_path, code_snippet, agent)
+    if res is not None:
+        return res
+
+    # Incident-cluster findings → LIKELY_FP (heuristic grouping can produce noise)
+    if "incident" in akind or "cluster" in akind:
+        return Verdict.LIKELY_FP, "Incident-cluster finding — grouped findings may need review"
+
+    return None
+
+
+def _classify_autosuggested_and_community(
+    cwe: str,
+    title: str,
+    desc_lower: str,
+    severity: Any,
+    norm_path: str,
+    short_path: str,
+    akind: str,
+    code_snippet: str,
+    finding: Finding,
+) -> tuple[Verdict, str] | None:
+    agent = (finding.agent or "").lower()
+
+    for helper in (
+        _autosuggest_js_analyzer,
+        _autosuggest_custom_rules,
+        _autosuggest_js_cwe95,
+        _autosuggest_generic_vendor_noise,
+        _autosuggest_php_agent,
+        _autosuggest_ingress_management,
+    ):
+        res = helper(cwe, akind, norm_path, short_path, agent)
+        if res is not None:
+            return res
+    return None
+
+
+def _autosuggest_js_analyzer(
+    cwe: str, akind: str, norm_path: str, short_path: str, agent: str,
+) -> tuple[Verdict, str] | None:
+    """JS/TS analyzer auto-suggested heuristics."""
+    if cwe == "CWE-1333" and "js-analyzer" in agent and "pattern" in akind:
+        return Verdict.LIKELY_FP, "js-analyzer regex pattern — ReDoS may be in library code"
+    if cwe == "CWE-352" and "js-ast-analyzer" in agent and "pattern-heuristic" in akind:
+        return Verdict.LIKELY_FP, "js-ast-analyzer CSRF heuristic — not confirmed"
+    if cwe == "CWE-862" and "/frontend/src/api/" in norm_path:
+        return Verdict.LIKELY_FP, "Frontend API client — auth handled server-side"
+    if cwe == "CWE-312" and "js-analyzer" in agent:
+        if "/extra/" in norm_path or "/scripts/" in norm_path or "/util/" in norm_path:
+            return Verdict.LIKELY_FP, "Utility script — console logging expected"
+    return None
+
+
+def _autosuggest_custom_rules(
+    cwe: str, akind: str, norm_path: str, short_path: str, agent: str,
+) -> tuple[Verdict, str] | None:
+    """Custom/community rules auto-suggested heuristics."""
+    if "custom-rules" not in agent:
+        return None
+    if cwe == "CWE-693":
+        return Verdict.LIKELY_FP, "Community rule: security config finding — not a code vulnerability"
+    if cwe == "CWE-601":
+        return Verdict.LIKELY_FP, "Community rule: open redirect — hardcoded or outgoing redirect, not exploitable"
+    if cwe == "CWE-400":
+        return Verdict.LIKELY_FP, "Community rule: DoS/pagination — expected in internal code"
+    if cwe == "CWE-362":
+        return Verdict.LIKELY_FP, "Community rule: TOCTOU in non-critical path — not exploitable"
+    if cwe == "CWE-94":
+        return Verdict.LIKELY_FP, "Community rule: template injection — hardcoded template in test code"
+    return None
+
+
+def _autosuggest_js_cwe95(
+    cwe: str, akind: str, norm_path: str, short_path: str, agent: str,
+) -> tuple[Verdict, str] | None:
+    """CWE-95 eval injection in test/vendor files."""
+    if cwe == "CWE-95":
+        if _TEST_PATH_RE.search(norm_path) or "/spec/" in norm_path:
+            return Verdict.LIKELY_FP, "Test file — eval in test code"
+        if _VENDOR_PATH_RE.search(norm_path):
+            return Verdict.VENDOR_NOISE, "Vendored library — eval in third-party code"
+    return None
+
+
+def _autosuggest_generic_vendor_noise(
+    cwe: str, akind: str, norm_path: str, short_path: str, agent: str,
+) -> tuple[Verdict, str] | None:
+    """Vendored/library path noise for prototype pollution and common CWEs."""
+    if cwe == "CWE-1321":
+        if _VENDOR_PATH_RE.search(norm_path):
+            return Verdict.VENDOR_NOISE, "Vendored library — prototype pollution in third-party code"
+        if "/libs/" in norm_path or "/frameworks/" in norm_path:
+            return Verdict.VENDOR_NOISE, "Library/framework path — third-party code"
+    if cwe in ("CWE-22", "CWE-78", "CWE-79"):
+        if "/libs/" in norm_path or "/frameworks/" in norm_path:
+            return Verdict.VENDOR_NOISE, "Vendored library — third-party code, not app code"
+    return None
+
+
+def _autosuggest_php_agent(
+    cwe: str, akind: str, norm_path: str, short_path: str, agent: str,
+) -> tuple[Verdict, str] | None:
+    """PHP-specific auto-suggested heuristics."""
+    if "php-analyzer" not in agent:
+        return None
+    if cwe == "CWE-798":
+        if "/settings/" in norm_path or "config" in short_path.lower() or "settings" in short_path.lower():
+            return Verdict.LIKELY_FP, "PHP config default — placeholder value, not real credential"
+    if cwe == "CWE-78" and "/core/" in norm_path and ("matomo" in norm_path or "piwik" in norm_path):
+        return Verdict.LIKELY_FP, "Matomo core — intentional shell access for analytics archiving"
+    return None
+
+
+def _autosuggest_ingress_management(
+    cwe: str, akind: str, norm_path: str, short_path: str, agent: str,
+) -> tuple[Verdict, str] | None:
+    """Ingress/management paths where findings are expected."""
+    if cwe == "CWE-862" and "/ingress" in norm_path:
+        return Verdict.LIKELY_FP, "Tracking/ingress endpoint — auth not applicable"
+    if cwe == "CWE-89" and "/management/commands/" in norm_path:
+        return Verdict.LIKELY_FP, "Management command — CLI-only, not user-facing"
+    return None
+
+
+# ── CWE-specific classification helpers for _classify_code_and_agent_filters ──
+
+def _cwe_601_classify(
+    cwe: str, code_snippet: str, desc: str, desc_lower: str, norm_path: str, short_path: str, akind: str,
+    title: str, severity: Any, finding: Finding,
+) -> tuple[Verdict, str] | None:
+    """Open redirect heuristics — check for relative paths, host validation, or sanitization."""
+    if cwe != "CWE-601":
+        return None
+    code_lower = code_snippet.lower()
+    if "redirect" in code_lower or "href" in code_lower:
+        if '"/"' in code_snippet or "'/'" in code_snippet or "startsWith('/')" in code_lower or "startswith('/')" in code_lower:
+            return Verdict.LIKELY_FP, "Relative redirect target safe from open redirection"
+        if "host" in code_lower or "domain" in code_lower:
+            return Verdict.LIKELY_FP, "Redirect target validated via host/domain check"
+        if any(p in code_lower for p in ("safe", "validate", "whitelist", "allowlist", "regex", "normalize")):
+            return Verdict.LIKELY_FP, "Redirect target validated or sanitized"
+    # Second CWE-601 block: Go-style normalized redirect helpers
+    if "http.redirect" in code_lower and (
+        "strings.trim(" in code_lower or "strings.replaceall" in code_lower or '"/" + strings.trim' in code_snippet
+    ):
+        return Verdict.LIKELY_FP, "Redirect target normalized before redirect — canonical path helper"
+    return None
+
+
+def _cwe_362_classify(
+    cwe: str, code_snippet: str, norm_path: str,
+) -> tuple[Verdict, str] | None:
+    """TOCTOU / race condition heuristics."""
+    if cwe != "CWE-362":
+        return None
+    if any(keyword in norm_path for keyword in ("setup", "init", "config", "test", "seed", "util")):
+        return Verdict.LIKELY_FP, "TOCTOU in non-critical initialization/config path — not exploitable"
+    if "exists" in code_snippet.lower() and ("read" in code_snippet.lower() or "open" in code_snippet.lower()):
+        if "temp" not in norm_path and "tmp" not in norm_path:
+            return Verdict.LIKELY_FP, "Standard check-then-act path flow on static/app resources — low risk"
+    return None
+
+
+def _cwe_1333_classify(
+    cwe: str, code_snippet: str, desc: str, desc_lower: str, norm_path: str,
+) -> tuple[Verdict, str] | None:
+    """ReDoS heuristics — length validation and user-agent patterns."""
+    if cwe != "CWE-1333":
+        return None
+    code_lower = code_snippet.lower()
+    if any(keyword in code_lower for keyword in ("length", "len", "slice(0", "substring")):
+        return Verdict.LIKELY_FP, "Length validation/truncation preceding regex match prevents ReDoS"
+    if any(keyword in norm_path for keyword in ("test", "spec", "benchmark")):
+        return Verdict.LIKELY_FP, "ReDoS check inside test/benchmark suite is not applicable"
+    if _UA_REGEX_RE.search(code_snippet):
+        return Verdict.LIKELY_FP, "ReDoS on user-agent regex — not attacker-controlled"
+    if "/test" in norm_path or "/spec" in norm_path:
+        return Verdict.LIKELY_FP, "ReDoS in test file"
+    return None
+
+
+def _cwe_79_classify(
+    cwe: str, title: str, desc: str, desc_lower: str, code_snippet: str,
+) -> tuple[Verdict, str] | None:
+    """XSS heuristics — hardcoded innerHTML vs server-supplied data."""
+    if cwe != "CWE-79":
+        return None
+    is_html_write = "innerHTML" in title or "template literal" in title or ".innerHTML" in desc
+    if is_html_write:
+        if _STATIC_STRING_INNERHTML_RE.search(desc):
+            return Verdict.LIKELY_FP, "innerHTML with hardcoded string literal"
+        if _SERVER_DATA_INNERHTML_RE.search(desc):
+            return Verdict.TP, "innerHTML/template-literal with server-supplied data — real XSS"
+    # Go XSS
+    if _GO_STDLIB_PATH_RE.search(code_snippet):
+        return Verdict.NEEDS_REVIEW, "XSS in Go — check if output is HTML-escaped"
+    return None
+
+
+def _agent_python_classify(
+    cwe: str, akind: str, desc_lower: str, agent: str,
+) -> tuple[Verdict, str] | None:
+    """Python-agent specific heuristics."""
+    if "python-analyzer" not in agent:
+        return None
+    if "cyclomatic complexity" in desc_lower:
+        return Verdict.LIKELY_FP, "Cyclomatic complexity — code quality, not security"
+    if "catches all exceptions" in desc_lower:
+        return Verdict.LIKELY_FP, "Broad exception catch — code quality, not security"
+    if "decorator-heuristic" in akind:
+        return Verdict.NEEDS_REVIEW, f"Python {cwe} — Django view may need auth decorator, verify manually"
+    if "route" in akind and "heuristic" in akind:
+        return Verdict.NEEDS_REVIEW, f"Python {cwe} — route may need ownership filter, verify manually"
+    if akind == "pattern":
+        return Verdict.LIKELY_FP, "Python pattern match — no confirmed taint path"
+    if "template" in akind and ("user-controlled" in desc_lower or "request" in desc_lower):
+        return Verdict.TP, "Python template injection with user-controlled data — real SSTI"
+    return None
+
+
+def _agent_custom_rules_classify(
+    cwe: str, desc_lower: str, agent: str,
+) -> tuple[Verdict, str] | None:
+    """Custom/community rules agent heuristics."""
+    if "custom-rules" not in agent:
+        return None
+    if "admin" in desc_lower and "exposes" in desc_lower:
+        return Verdict.LIKELY_FP, "Community rule: Django admin model exposure — admin-only, verify access"
+    if "weak random" in desc_lower or "secret generation" in desc_lower:
+        return Verdict.LIKELY_FP, "Community rule: weak random in demo/seed script — low risk"
+    if "open redirect" in desc_lower or cwe == "CWE-601":
+        return Verdict.NEEDS_REVIEW, "Community rule: possible open redirect — verify manually"
+    if "idor" in desc_lower or cwe == "CWE-639":
+        return Verdict.NEEDS_REVIEW, "Community rule: possible IDOR — verify if ownership filter exists"
+    return None
+
+
+def _agent_php_classify(
+    cwe: str, akind: str, norm_path: str, agent: str,
+) -> tuple[Verdict, str] | None:
+    """PHP agent heuristics."""
+    if "php-analyzer" not in agent:
+        return None
+    if "/libs/" in norm_path or "/vendor/" in norm_path:
+        return Verdict.VENDOR_NOISE, "PHP vendored library — not application code"
+    if "pattern" in akind and "taint" not in akind:
+        return Verdict.NEEDS_REVIEW, f"PHP {cwe} — pattern match, verify manually"
+    if "taint" in akind:
+        return Verdict.NEEDS_REVIEW, f"PHP {cwe} with taint — likely real, verify manually"
+    return None
+
+
+def _build_script_classify(
+    cwe: str, norm_path: str, short_path: str,
+) -> tuple[Verdict, str] | None:
+    """Build/CI script heuristics."""
+    if not _BUILD_SCRIPT_RE.search(norm_path) and not _BUILD_SCRIPT_RE.search(short_path):
+        return None
+    if cwe in ("CWE-78", "CWE-22"):
+        return Verdict.LIKELY_FP, "Build/CI script — not user-facing"
+    if cwe == "CWE-798":
+        return Verdict.LIKELY_FP, "Build/CI config with test credential"
+    if cwe == "CWE-400":
+        return Verdict.LIKELY_FP, "Build/CI script — DoS concern not applicable"
+    return None
+
+
+def _agent_go_classify(
+    cwe: str, akind: str, desc_lower: str, code_snippet: str,
+) -> tuple[Verdict, str] | None:
+    """Go analysis_kind heuristics."""
+    if not akind.startswith("go-"):
+        return None
+    has_taint_source = "user-controlled" in desc_lower or "tainted" in desc_lower or "flows into" in desc_lower
+    no_taint = "no taint source" in desc_lower
+
+    if "taint" in akind and has_taint_source:
+        if cwe == "CWE-78":
+            return Verdict.TP, "Go exec.Command with user-controlled data — real command injection"
+        if cwe == "CWE-22":
+            return Verdict.TP, "Go os.Open with user-controlled path — real path traversal"
+        if cwe == "CWE-89":
+            return Verdict.TP, "Go SQL injection with user-controlled data — real vulnerability"
+        return Verdict.TP, f"Go {cwe} with user-controlled data — real vulnerability"
+    if "sink" in akind and no_taint:
+        return Verdict.LIKELY_FP, "Go sink without confirmed taint path — likely noise"
+    if cwe in ("CWE-78", "CWE-22", "CWE-89", "CWE-918"):
+        if has_taint_source:
+            return Verdict.TP, f"Go {cwe} with user-controlled data — real vulnerability"
+        return Verdict.NEEDS_REVIEW, f"Go {cwe} — check if data is user-controlled"
+    return None
+
+
+def _cwe_78_classify(
+    cwe: str, desc: str, code_snippet: str, short_path: str,
+) -> tuple[Verdict, str] | None:
+    """Command injection heuristics."""
+    if cwe != "CWE-78":
+        return None
+    # Hardcoded config variables
+    if _HARDCODED_EXEC_VAR_RE.search(desc):
+        if "COMPOSE_FILE" in desc or "CONFIG" in desc or "TEST" in desc:
+            return Verdict.LIKELY_FP, "exec() with hardcoded config variable — not user-controlled"
+    # Go exec.Command
+    if _GO_CMD_INJECTION_RE.search(code_snippet) and not _PHP_TAINT_SOURCE_RE.search(code_snippet):
+        return Verdict.NEEDS_REVIEW, "exec.Command — check if args are user-controlled"
+    # PHP exec() with tainted source
+    if _PHP_EXEC_RE.search(code_snippet) and _PHP_TAINT_SOURCE_RE.search(code_snippet):
+        return Verdict.TP, "exec() with user-controlled input — real command injection"
+    # Python subprocess with f-string
+    if _PYTHON_CMD_INJECTION_RE.search(code_snippet):
+        if "f'" in code_snippet or 'f"' in code_snippet or "+" in code_snippet:
+            return Verdict.TP, "subprocess call with formatted string — real command injection"
+    # Build scripts
+    if any(k in short_path.lower() for k in ("gruntfile", "gulpfile", "webpack", "rollup", "generate-changelog", "rebase-pr")):
+        return Verdict.LIKELY_FP, "Command injection in build/CI script — low risk"
+    return None
+
+
+def _cwe_798_classify(
+    cwe: str, short_path: str, desc: str, title: str,
+) -> tuple[Verdict, str] | None:
+    """Hardcoded credential heuristics."""
+    if cwe != "CWE-798":
+        return None
+    short_lower = short_path.lower()
+    if any(k in short_lower for k in ("setting", "config", "telemetry", "example", "sample")):
+        return Verdict.LIKELY_FP, "Hardcoded value in settings/config file"
+    if any(k in short_lower for k in (".env.", "example", "sample", "defaults", "config", "dummy")):
+        if _HARDCODED_CRED_RE.search(desc + title):
+            return Verdict.LIKELY_FP, "Hardcoded credential in config/example file"
+    return None
+
+
+def _cwe_918_classify(
+    cwe: str, desc: str, code_snippet: str,
+) -> tuple[Verdict, str] | None:
+    """SSRF heuristics."""
+    if cwe != "CWE-918":
+        return None
+    if "fetch" in desc and ("window" in code_snippet or "document" in code_snippet):
+        return Verdict.LIKELY_FP, "fetch() in browser context — not SSRF"
+    if _GO_SSRF_RE.search(code_snippet):
+        if _PHP_TAINT_SOURCE_RE.search(code_snippet):
+            return Verdict.TP, "HTTP call with user-controlled URL — real SSRF"
+        return Verdict.NEEDS_REVIEW, "HTTP client call — check if URL is user-controlled"
+    if _PYTHON_SSRF_RE.search(code_snippet):
+        if _PHP_TAINT_SOURCE_RE.search(code_snippet):
+            return Verdict.TP, "HTTP request with user-controlled URL — real SSRF"
+        return Verdict.NEEDS_REVIEW, "HTTP request — check if URL is user-controlled"
+    if "/api/" in desc or "internal" in desc.lower():
+        return Verdict.LIKELY_FP, "SSRF finding in internal API call"
+    return None
+
+
+def _cwe_22_classify(
+    cwe: str, desc: str, code_snippet: str, finding: Finding,
+) -> tuple[Verdict, str] | None:
+    """Path traversal heuristics."""
+    if cwe != "CWE-22":
+        return None
+    if "path.resolve" in code_snippet or "path.join" in code_snippet:
+        if ".." not in desc and "../" not in str(finding.trace or []):
+            return Verdict.NEEDS_REVIEW, "Path traversal with path.resolve — check base directory"
+    if _GO_STDLIB_PATH_RE.search(code_snippet):
+        if _PHP_TAINT_SOURCE_RE.search(code_snippet):
+            return Verdict.TP, "File open with user-controlled path — real path traversal"
+        return Verdict.NEEDS_REVIEW, "File operation — check if path is user-controlled"
+    if _PYTHON_PATH_TRAVERSAL_RE.search(code_snippet):
+        if "user" in desc.lower() or "input" in desc.lower() or _PHP_TAINT_SOURCE_RE.search(code_snippet):
+            return Verdict.TP, "File operation with user-controlled path — real path traversal"
+        return Verdict.NEEDS_REVIEW, "File operation — check if path is user-controlled"
+    return None
+
+
+def _cwe_89_classify(
+    cwe: str, desc: str, code_snippet: str,
+) -> tuple[Verdict, str] | None:
+    """SQL injection heuristics."""
+    if cwe != "CWE-89":
+        return None
+    if ".raw(" in desc or ".raw(" in code_snippet:
+        if "?" in code_snippet or "$" in code_snippet:
+            return Verdict.NEEDS_REVIEW, "SQL raw() call — check if parameterized"
+        return Verdict.TP, "String concatenation in SQL query — real SQLi"
+    if _GO_SQLI_RE.search(code_snippet):
+        if _PHP_TAINT_SOURCE_RE.search(code_snippet) or "+" in code_snippet:
+            return Verdict.TP, "SQL query with user input concatenation — real SQLi"
+        return Verdict.NEEDS_REVIEW, "SQL query — check if parameterized"
+    if _PHP_SQLI_RE.search(code_snippet):
+        if _PHP_TAINT_SOURCE_RE.search(code_snippet):
+            return Verdict.TP, "SQL query with user input — real SQLi"
+        return Verdict.NEEDS_REVIEW, "SQL query — check if user input is used"
+    if _PYTHON_CMD_INJECTION_RE.search(code_snippet) and not _SANITIZATION_PATTERNS.search(code_snippet):
+        if "f'" in code_snippet or 'f"' in code_snippet:
+            return Verdict.TP, "SQL query with f-string — real SQLi"
+    return None
+
+
+def _cwe_502_classify(
+    cwe: str, code_snippet: str,
+) -> tuple[Verdict, str] | None:
+    """Insecure deserialization heuristics."""
+    if cwe == "CWE-502" and _PYTHON_INSECURE_DESERIALIZATION_RE.search(code_snippet):
+        return Verdict.TP, "Insecure deserialization — real vulnerability"
+    return None
+
+
+def _sanitization_classify(
+    cwe: str, code_snippet: str,
+) -> tuple[Verdict, str] | None:
+    """Sanitization present in code context → LIKELY_FP."""
+    if cwe in ("CWE-79", "CWE-89", "CWE-22") and _SANITIZATION_PATTERNS.search(code_snippet):
+        return Verdict.LIKELY_FP, "Sanitization detected in nearby code"
+    return None
+
+
+def _classify_code_and_agent_filters(
+    cwe: str,
+    title: str,
+    desc: str,
+    desc_lower: str,
+    severity: Any,
+    norm_path: str,
+    short_path: str,
+    akind: str,
+    code_snippet: str,
+    finding: Finding,
+) -> tuple[Verdict, str] | None:
+    agent = (finding.agent or "").lower()
+
+    for check in (
+        lambda: _cwe_601_classify(cwe, code_snippet, desc, desc_lower, norm_path, short_path, akind, title, severity, finding),
+        lambda: _cwe_362_classify(cwe, code_snippet, norm_path),
+        lambda: _cwe_1333_classify(cwe, code_snippet, desc, desc_lower, norm_path),
+        lambda: _cwe_79_classify(cwe, title, desc, desc_lower, code_snippet),
+        lambda: _agent_python_classify(cwe, akind, desc_lower, agent),
+        lambda: _agent_custom_rules_classify(cwe, desc_lower, agent),
+        lambda: _agent_php_classify(cwe, akind, norm_path, agent),
+        lambda: _build_script_classify(cwe, norm_path, short_path),
+        lambda: _agent_go_classify(cwe, akind, desc_lower, code_snippet),
+        lambda: _cwe_78_classify(cwe, desc, code_snippet, short_path),
+        lambda: _cwe_798_classify(cwe, short_path, desc, title),
+        lambda: _cwe_918_classify(cwe, desc, code_snippet),
+        lambda: _cwe_22_classify(cwe, desc, code_snippet, finding),
+        lambda: _cwe_89_classify(cwe, desc, code_snippet),
+        lambda: _cwe_502_classify(cwe, code_snippet),
+        lambda: _sanitization_classify(cwe, code_snippet),
+    ):
+        res = check()
+        if res is not None:
+            return res
+    return None
+
+
 def _classify_finding(
     finding: Finding,
     file_path: str,
@@ -342,395 +944,24 @@ def _classify_finding(
         if "runtime.Caller" in code_snippet or "runtime.Caller" in desc:
             return Verdict.LIKELY_FP, "Go stack trace helper — reads own source via runtime.Caller()"
 
-    # ── Level 0: Path-based filters ──────────────────────────────────
+    # Route through modular sub-heuristics
+    res = _classify_path_filters(
+        cwe, severity, norm_path, short_path, akind, desc_lower, code_snippet, finding
+    )
+    if res is not None:
+        return res
 
-    # Vendor/minified files → VENDOR_NOISE (unless critical severity)
-    if _VENDOR_PATH_RE.search(norm_path) or _MINIFIED_FILE_RE.search(norm_path):
-        if severity.name in ("CRITICAL",) and cwe not in ("CWE-22", "CWE-918"):
-            return Verdict.NEEDS_REVIEW, "Critical finding in vendored code — verify"
-        return Verdict.VENDOR_NOISE, "Vendored/minified third-party code"
+    res = _classify_autosuggested_and_community(
+        cwe, title, desc_lower, severity, norm_path, short_path, akind, code_snippet, finding
+    )
+    if res is not None:
+        return res
 
-    # Test files with certain CWEs → LIKELY_FP
-    if _TEST_PATH_RE.search(norm_path):
-        if cwe in ("CWE-862", "CWE-352", "CWE-209", "CWE-1004", "CWE-307"):
-            return Verdict.LIKELY_FP, "Test file — auth/CSRF/brute-force checks not applicable"
-        if cwe in ("CWE-614",):
-            return Verdict.LIKELY_FP, "Test file — cookie flag configuration in test code"
-        if cwe in ("CWE-78",) and not severity.name == "CRITICAL":
-            return Verdict.LIKELY_FP, "Test file — command injection in test infra"
-        if cwe in ("CWE-693",):
-            return Verdict.LIKELY_FP, "Test file — security header/config check in test"
-        if cwe in ("CWE-798",):
-            return Verdict.LIKELY_FP, "Test file — hardcoded credential in test"
-        if cwe in ("CWE-79", "CWE-113"):
-            return Verdict.LIKELY_FP, "Test file — XSS/header injection in test code"
-        if cwe in ("CWE-362",):
-            return Verdict.LIKELY_FP, "Test file — TOCTOU/race condition in test infra"
-        if cwe in ("CWE-400",):
-            return Verdict.LIKELY_FP, "Test file — DoS/pagination concerns in test code"
-        if cwe in ("CWE-89", "CWE-22"):
-            return Verdict.LIKELY_FP, "Test file — SQLi/path traversal in test code"
-        if cwe in ("CWE-95",):
-            return Verdict.LIKELY_FP, "Test file — eval in test code"
-        if cwe in ("CWE-918",):
-            return Verdict.LIKELY_FP, "Test file — SSRF in test fixture/mock data"
-        if cwe in ("CWE-1321",):
-            return Verdict.LIKELY_FP, "Test file — prototype pollution in test fixture"
-
-    # Example/demo files with hardcoded creds → LIKELY_FP
-    if _EXAMPLE_PATH_RE.search(norm_path) and cwe == "CWE-798":
-        if _HARDCODED_CRED_RE.search(desc + title):
-            return Verdict.LIKELY_FP, "Example/demo file with dummy credential"
-
-    # Example/demo files → LIKELY_FP (unless critical tainted finding)
-    if _EXAMPLE_PATH_RE.search(norm_path):
-        if severity.name != "CRITICAL":
-            return Verdict.LIKELY_FP, "Example/demo file — not production code"
-        # Critical in examples may still be real if taint is confirmed
-        if "taint" not in akind and "user-controlled" not in desc_lower:
-            return Verdict.LIKELY_FP, "Example/demo file — not production code"
-
-    if cwe == "CWE-79" and "/website/public/" in norm_path and short_path.lower() == "script.js":
-        if "javascript:show(" in code_snippet or "tabs[value][1]" in code_snippet:
-            return Verdict.LIKELY_FP, "Static docs-site tab switcher script — constant innerHTML anchor"
-
-    if cwe == "CWE-862" and "/nopcommerce/" in norm_path:
-        if short_path.lower().endswith("publiccontroller.cs") or "webhookcontroller" in short_path.lower():
-            return Verdict.LIKELY_FP, "Public callback/storefront controller — auth not universally required"
-        if "/src/presentation/nop.web/controllers/" in norm_path and _NOP_STOREFRONT_CONTROLLER_RE.search(short_path):
-            return Verdict.LIKELY_FP, "nopCommerce storefront controller — public catalog/checkout flow"
-
-    # Design-time EF Core factories often embed local/dev fallback strings for migrations.
-    if cwe == "CWE-798" and "csharp-analyzer" in (finding.agent or "").lower():
-        if short_path.lower().endswith("dbcontextfactory.cs") or "idesigntimedbcontextfactory" in code_snippet.lower():
-            return Verdict.LIKELY_FP, "EF Core design-time DbContext factory — migration/dev fallback credential"
-
-    # Framework/library helpers exposed by real-repo validation.
-    if "/src/main/java/spark/" in norm_path:
-        if cwe == "CWE-601" and short_path.lower() == "response.java":
-            return Verdict.LIKELY_FP, "Spark framework response helper — library redirect wrapper, not app redirect flow"
-        if cwe == "CWE-918" and short_path.lower() == "abstractfileresolvingresource.java":
-            return Verdict.LIKELY_FP, "Spark framework resource helper — library URL existence probe, not app SSRF flow"
-        if cwe == "CWE-22" and short_path.lower() == "directorytraversal.java":
-            return Verdict.LIKELY_FP, "Spark path guard helper — defensive normalization utility"
-
-    # Incident-cluster findings → LIKELY_FP (heuristic grouping can produce noise)
-    if "incident" in akind or "cluster" in akind:
-        return Verdict.LIKELY_FP, "Incident-cluster finding — grouped findings may need review"
-
-    # ── Auto-suggested heuristics (from --suggest analysis) ───────────
-
-    # CWE-1333 from js-analyzer pattern (ReDoS on regex patterns) → LIKELY_FP
-    if cwe == "CWE-1333" and "js-analyzer" in (finding.agent or "").lower():
-        if "pattern" in akind:
-            return Verdict.LIKELY_FP, "js-analyzer regex pattern — ReDoS may be in library code"
-
-    # CWE-352 from js-ast-analyzer pattern-heuristic (CSRF heuristic) → LIKELY_FP
-    if cwe == "CWE-352" and "js-ast-analyzer" in (finding.agent or "").lower():
-        if "pattern-heuristic" in akind:
-            return Verdict.LIKELY_FP, "js-ast-analyzer CSRF heuristic — not confirmed"
-
-    # CWE-693 from custom-rules (security config/noise) → LIKELY_FP
-    if cwe == "CWE-693" and "custom-rules" in (finding.agent or "").lower():
-        return Verdict.LIKELY_FP, "Community rule: security config finding — not a code vulnerability"
-
-    # ── Security engineer verified: false positive groups ─────────────
-
-    # CWE-601: custom-rules open redirect — almost always a FP
-    # Verified: 15 findings, ALL redirect to hardcoded URLs or outgoing
-    # requests.head() (SSRF, not open redirect). No user-controlled redirect targets.
-    if cwe == "CWE-601" and "custom-rules" in (finding.agent or "").lower():
-        return Verdict.LIKELY_FP, "Community rule: open redirect — hardcoded or outgoing redirect, not exploitable"
-
-    # CWE-400: custom-rules DoS (no pagination, no timeout) in DB/workflow code → LIKELY_FP
-    # These flag knex queries without `.limit()` and HTTP requests without `.timeout()`.
-    # In migration files, internal DB code, and monitoring apps these are expected patterns.
-    # Verified: 105 of 111 findings are in uptime-kuma (monitoring app) and migrations.
-    if cwe == "CWE-400" and "custom-rules" in (finding.agent or "").lower():
-        return Verdict.LIKELY_FP, "Community rule: DoS/pagination — expected in internal code"
-
-    # CWE-362: custom-rules TOCTOU
-    if cwe == "CWE-362" and "custom-rules" in (finding.agent or "").lower():
-        return Verdict.LIKELY_FP, "Community rule: TOCTOU in non-critical path — not exploitable"
-
-    # CWE-94: custom-rules template injection in test files → LIKELY_FP
-    # Verified: all 7 findings use Django Template() with hardcoded strings
-    # in test code. Standard Django test pattern, not user-controllable.
-    if cwe == "CWE-94" and "custom-rules" in (finding.agent or "").lower():
-        return Verdict.LIKELY_FP, "Community rule: template injection — hardcoded template in test code"
-
-    # CWE-862: js-analyzer route-heuristic on frontend API clients → LIKELY_FP
-    # Frontend API files like frontend/src/api/ don't carry auth tokens -
-    # auth happens at the server layer via session cookies. These are FP.
-    if cwe == "CWE-862" and "/frontend/src/api/" in norm_path:
-        return Verdict.LIKELY_FP, "Frontend API client — auth handled server-side"
-
-    # CWE-400: custom-rules DoS (no pagination, no timeout) in DB/workflow code → LIKELY_FP
-    # These flag knex queries without `.limit()` and HTTP requests without `.timeout()`.
-    # In migration files, internal DB code, and monitoring apps these are expected patterns.
-    # Verified: 105 of 111 findings are in uptime-kuma (monitoring app) and migrations.
-    if cwe == "CWE-400" and "custom-rules" in (finding.agent or "").lower():
-        return Verdict.LIKELY_FP, "Community rule: DoS/pagination — expected in internal code"
-
-    # CWE-95: js eval injection in test/spec files → LIKELY_FP
-    # Matomo has 107 CWE-95 findings. ~45 are in UI spec test files (*_spec.js)
-    # and ~27 are in vendored test frameworks (dojo, jqplot). These are expected test patterns.
-    if cwe == "CWE-95":
-        if _TEST_PATH_RE.search(norm_path) or "/spec/" in norm_path:
-            return Verdict.LIKELY_FP, "Test file — eval in test code"
-        if _VENDOR_PATH_RE.search(norm_path):
-            return Verdict.VENDOR_NOISE, "Vendored library — eval in third-party code"
-
-    # CWE-1321: Prototype pollution in vendored frameworks → VENDOR_NOISE
-    # Matomo brings old vendored JS (dojo-1.0.3, jqplot) for testing. These are 15+ years old.
-    if cwe == "CWE-1321":
-        if _VENDOR_PATH_RE.search(norm_path):
-            return Verdict.VENDOR_NOISE, "Vendored library — prototype pollution in third-party code"
-        if "/libs/" in norm_path or "/frameworks/" in norm_path:
-            return Verdict.VENDOR_NOISE, "Library/framework path — third-party code"
-
-    # Matomo-style vendored test frameworks: CWE-22, CWE-78, CWE-79 in libs/ and frameworks/
-    # These are old vendored libraries (ext-all-2.3.0.js, jquery-1.1.4.js, jqplot) — not app code
-    if cwe in ("CWE-22", "CWE-78", "CWE-79"):
-        if "/libs/" in norm_path or "/frameworks/" in norm_path:
-            return Verdict.VENDOR_NOISE, "Vendored library — third-party code, not app code"
-
-    # CWE-789: custom-rules pattern for hardcoded creds in PHP config defaults → LIKELY_FP
-    # Matomo FieldConfig.php and speedtest telemetry_settings.php contain default
-    # placeholder values for config fields (default password hash, default API key).
-    # These are schema definitions, not real credentials in use.
-    if cwe == "CWE-798" and "php-analyzer" in (finding.agent or "").lower():
-        if "/Settings/" in norm_path or "config" in short_path.lower() or "settings" in short_path.lower():
-            return Verdict.LIKELY_FP, "PHP config default — placeholder value, not real credential"
-
-    # CWE-862: python-analyzer decorator-heuristic on tracking/ingress paths → LIKELY_FP
-    # Tracking pixels and analytics ingress endpoints deliberately don't require auth.
-    if cwe == "CWE-862" and "/ingress" in norm_path:
-        return Verdict.LIKELY_FP, "Tracking/ingress endpoint — auth not applicable"
-
-    # CWE-89: SQL injection in management commands → LIKELY_FP
-    # Django management commands run via CLI, not user-facing HTTP. Cursor.execute()
-    # in management commands uses hardcoded SQL, not user input.
-    if cwe == "CWE-89" and "/management/commands/" in norm_path:
-        return Verdict.LIKELY_FP, "Management command — CLI-only, not user-facing"
-
-    # CWE-78 PHP backtick in Matomo core — intentional shell access for archiving
-    # Matomo uses PHP backtick operators in core/Common.php, core/API/Request.php,
-    # and core/ArchiveProcessor/Rules.php for legitimate analytics archiving commands.
-    # These are not injection vulnerabilities but intentional platform functionality.
-    if cwe == "CWE-78" and "php-analyzer" in (finding.agent or "").lower():
-        if "/core/" in norm_path and ("matomo" in norm_path or "piwik" in norm_path):
-            return Verdict.LIKELY_FP, "Matomo core — intentional shell access for analytics archiving"
-
-    # CWE-312: js-analyzer pattern for sensitive data logged → LIKELY_FP in utility scripts
-    # These flag console.log in utility/admin scripts. In production code these
-    # could be real, but in `extra/` and utility scripts they are expected.
-    if cwe == "CWE-312" and "js-analyzer" in (finding.agent or "").lower():
-        if "/extra/" in norm_path or "/scripts/" in norm_path or "/util/" in norm_path:
-            return Verdict.LIKELY_FP, "Utility script — console logging expected"
-
-    # ── Level 1: Code-based filters ──────────────────────────────────
-
-    # Hardcoded innerHTML string → LIKELY_FP
-    is_html_write = "innerHTML" in title or "template literal" in title or ".innerHTML" in desc
-    if cwe == "CWE-79" and is_html_write:
-        if _STATIC_STRING_INNERHTML_RE.search(desc):
-            return Verdict.LIKELY_FP, "innerHTML with hardcoded string literal"
-        # Server data flowing into innerHTML (server.name, sponsorURL) → TP
-        # Check BEFORE the textContent heuristic since server data is always a real XSS
-        if _SERVER_DATA_INNERHTML_RE.search(desc):
-            return Verdict.TP, "innerHTML/template-literal with server-supplied data — real XSS"
-        # textContent nearby is not a reliable FP signal — some files use both patterns
-        # depending on whether data is trusted or untrusted
-
-    # CWE-1333 ReDoS on user-agent regex → LIKELY_FP
-    if cwe == "CWE-1333":
-        if _UA_REGEX_RE.search(code_snippet):
-            return Verdict.LIKELY_FP, "ReDoS on user-agent regex — not attacker-controlled"
-        if "/test" in norm_path or "/spec" in norm_path:
-            return Verdict.LIKELY_FP, "ReDoS in test file"
-
-    # ── Language-specific: Python agent ──────────────────────────────
-    if "python-analyzer" in (finding.agent or "").lower():
-        # Complexity findings → LIKELY_FP (maintainability, not security)
-        if "cyclomatic complexity" in desc_lower:
-            return Verdict.LIKELY_FP, "Cyclomatic complexity — code quality, not security"
-        # Broad exception catch → LIKELY_FP (robustness, not security)
-        if "catches all exceptions" in desc_lower:
-            return Verdict.LIKELY_FP, "Broad exception catch — code quality, not security"
-        # Decorator-heuristic (missing auth on Django views) → NEEDS_REVIEW
-        if "decorator-heuristic" in akind:
-            return Verdict.NEEDS_REVIEW, f"Python {cwe} — Django view may need auth decorator, verify manually"
-        # Route-heuristic (missing ownership filter) → NEEDS_REVIEW
-        if "route" in akind and "heuristic" in akind:
-            return Verdict.NEEDS_REVIEW, f"Python {cwe} — route may need ownership filter, verify manually"
-        # Pattern findings (no taint tracking) → LIKELY_FP
-        if akind == "pattern":
-            return Verdict.LIKELY_FP, "Python pattern match — no confirmed taint path"
-        # Template AST with user-controlled data → TP
-        if "template" in akind and ("user-controlled" in desc_lower or "request" in desc_lower):
-            return Verdict.TP, "Python template injection with user-controlled data — real SSTI"
-
-    # ── Custom/community rules agent ─────────────────────────────────
-    if "custom-rules" in (finding.agent or "").lower():
-        # Admin exposure → LIKELY_FP (admin panels intentionally expose models)
-        if "admin" in desc_lower and "exposes" in desc_lower:
-            return Verdict.LIKELY_FP, "Community rule: Django admin model exposure — admin-only, verify access"
-        # Weak random for demo/seed → LIKELY_FP
-        if "weak random" in desc_lower or "secret generation" in desc_lower:
-            return Verdict.LIKELY_FP, "Community rule: weak random in demo/seed script — low risk"
-        # Open redirect → NEEDS_REVIEW
-        if "open redirect" in desc_lower or cwe == "CWE-601":
-            return Verdict.NEEDS_REVIEW, "Community rule: possible open redirect — verify manually"
-        # IDOR → NEEDS_REVIEW
-        if "idor" in desc_lower or cwe == "CWE-639":
-            return Verdict.NEEDS_REVIEW, "Community rule: possible IDOR — verify if ownership filter exists"
-
-    # ── Language-specific: PHP agent ─────────────────────────────────
-    if "php-analyzer" in (finding.agent or "").lower():
-        # Vendored PHP libs → VENDOR_NOISE
-        if "/libs/" in norm_path or "/vendor/" in norm_path:
-            return Verdict.VENDOR_NOISE, "PHP vendored library — not application code"
-        # Pattern-only findings without taint → need review
-        if "pattern" in akind and "taint" not in akind:
-            return Verdict.NEEDS_REVIEW, f"PHP {cwe} — pattern match, verify manually"
-        # Pattern-taint → likely real
-        if "taint" in akind:
-            return Verdict.NEEDS_REVIEW, f"PHP {cwe} with taint — likely real, verify manually"
-
-    # ── Language-agnostic: build/CI scripts ──────────────────────────
-    if _BUILD_SCRIPT_RE.search(norm_path) or _BUILD_SCRIPT_RE.search(short_path):
-        if cwe in ("CWE-78", "CWE-22"):
-            return Verdict.LIKELY_FP, "Build/CI script — not user-facing"
-        if cwe == "CWE-798":
-            return Verdict.LIKELY_FP, "Build/CI config with test credential"
-        if cwe == "CWE-400":
-            return Verdict.LIKELY_FP, "Build/CI script — DoS concern not applicable"
-
-    # CWE-601 open redirect → LIKELY_FP or NEEDS_REVIEW
-    if cwe == "CWE-601":
-        code_lower = code_snippet.lower()
-        if "http.redirect" in code_lower and (
-            "strings.trim(" in code_lower
-            or "strings.replaceall" in code_lower
-            or '"/" + strings.trim' in code_snippet
-        ):
-            return Verdict.LIKELY_FP, "Redirect target normalized before redirect — canonical path helper"
-
-    # ── Language-specific: Go analysis_kind ──────────────────────────
-    if akind.startswith("go-"):
-        has_taint_source = "user-controlled" in desc_lower or "tainted" in desc_lower or "flows into" in desc_lower
-        no_taint = "no taint source" in desc_lower
-
-        # go-ast-taint + user-controlled data → TP (taint engine confirmed)
-        if "taint" in akind and has_taint_source:
-            if cwe == "CWE-78":
-                return Verdict.TP, "Go exec.Command with user-controlled data — real command injection"
-            if cwe == "CWE-22":
-                return Verdict.TP, "Go os.Open with user-controlled path — real path traversal"
-            if cwe == "CWE-89":
-                return Verdict.TP, "Go SQL injection with user-controlled data — real vulnerability"
-            return Verdict.TP, f"Go {cwe} with user-controlled data — real vulnerability"
-        # go-ast-sink without taint → LIKELY_FP (sink detected but no taint confirmed)
-        if "sink" in akind and no_taint:
-            return Verdict.LIKELY_FP, "Go sink without confirmed taint path — likely noise"
-        # Catch-all Go
-        if cwe in ("CWE-78", "CWE-22", "CWE-89", "CWE-918"):
-            if has_taint_source:
-                return Verdict.TP, f"Go {cwe} with user-controlled data — real vulnerability"
-            return Verdict.NEEDS_REVIEW, f"Go {cwe} — check if data is user-controlled"
-
-    # CWE-78 command injection with hardcoded variable → LIKELY_FP
-    if cwe == "CWE-78":
-        if _HARDCODED_EXEC_VAR_RE.search(desc):
-            if "COMPOSE_FILE" in desc or "CONFIG" in desc or "TEST" in desc:
-                return Verdict.LIKELY_FP, "exec() with hardcoded config variable — not user-controlled"
-        # Go exec.Command with fixed args → NEEDS_REVIEW
-        if _GO_CMD_INJECTION_RE.search(code_snippet) and not _PHP_TAINT_SOURCE_RE.search(code_snippet):
-            return Verdict.NEEDS_REVIEW, "exec.Command — check if args are user-controlled"
-        # PHP exec() with tainted source → TP
-        if _PHP_EXEC_RE.search(code_snippet) and _PHP_TAINT_SOURCE_RE.search(code_snippet):
-            return Verdict.TP, "exec() with user-controlled input — real command injection"
-        # Python subprocess with f-string/interpolation → TP
-        if _PYTHON_CMD_INJECTION_RE.search(code_snippet):
-            if "f'" in code_snippet or 'f"' in code_snippet or "+" in code_snippet:
-                return Verdict.TP, "subprocess call with formatted string — real command injection"
-
-    # CWE-798 in settings/config files → LIKELY_FP
-    if cwe == "CWE-798":
-        if any(k in short_path.lower() for k in ("setting", "config", "telemetry", "example", "sample")):
-            return Verdict.LIKELY_FP, "Hardcoded value in settings/config file"
-        fname_lower = short_path.lower()
-        if any(k in fname_lower for k in (".env.", "example", "sample", "defaults", "config", "dummy")):
-            if _HARDCODED_CRED_RE.search(desc + title):
-                return Verdict.LIKELY_FP, "Hardcoded credential in config/example file"
-
-    # CWE-918 SSRF → LIKELY_FP or NEEDS_REVIEW
-    if cwe == "CWE-918":
-        if "fetch" in desc and ("window" in code_snippet or "document" in code_snippet):
-            return Verdict.LIKELY_FP, "fetch() in browser context — not SSRF"
-        if _GO_SSRF_RE.search(code_snippet):
-            if _PHP_TAINT_SOURCE_RE.search(code_snippet):
-                return Verdict.TP, "HTTP call with user-controlled URL — real SSRF"
-            return Verdict.NEEDS_REVIEW, "HTTP client call — check if URL is user-controlled"
-        if _PYTHON_SSRF_RE.search(code_snippet):
-            if _PHP_TAINT_SOURCE_RE.search(code_snippet):
-                return Verdict.TP, "HTTP request with user-controlled URL — real SSRF"
-            return Verdict.NEEDS_REVIEW, "HTTP request — check if URL is user-controlled"
-        if "/api/" in desc or "internal" in desc.lower():
-            return Verdict.LIKELY_FP, "SSRF finding in internal API call"
-
-    # CWE-22 path traversal → LIKELY_FP or TP
-    if cwe == "CWE-22":
-        if "path.resolve" in code_snippet or "path.join" in code_snippet:
-            if ".." not in desc and "../" not in str(finding.trace or []):
-                return Verdict.NEEDS_REVIEW, "Path traversal with path.resolve — check base directory"
-        if _GO_STDLIB_PATH_RE.search(code_snippet):
-            if _PHP_TAINT_SOURCE_RE.search(code_snippet):
-                return Verdict.TP, "File open with user-controlled path — real path traversal"
-            return Verdict.NEEDS_REVIEW, "File operation — check if path is user-controlled"
-        if _PYTHON_PATH_TRAVERSAL_RE.search(code_snippet):
-            if "user" in desc.lower() or "input" in desc.lower() or _PHP_TAINT_SOURCE_RE.search(code_snippet):
-                return Verdict.TP, "File operation with user-controlled path — real path traversal"
-            return Verdict.NEEDS_REVIEW, "File operation — check if path is user-controlled"
-
-    # CWE-89 SQL injection → LIKELY_FP or TP
-    if cwe == "CWE-89":
-        if ".raw(" in desc or ".raw(" in code_snippet:
-            if "?" in code_snippet or "$" in code_snippet:
-                return Verdict.NEEDS_REVIEW, "SQL raw() call — check if parameterized"
-            return Verdict.TP, "String concatenation in SQL query — real SQLi"
-        if _GO_SQLI_RE.search(code_snippet):
-            if _PHP_TAINT_SOURCE_RE.search(code_snippet) or "+" in code_snippet:
-                return Verdict.TP, "SQL query with user input concatenation — real SQLi"
-            return Verdict.NEEDS_REVIEW, "SQL query — check if parameterized"
-        if _PHP_SQLI_RE.search(code_snippet):
-            if _PHP_TAINT_SOURCE_RE.search(code_snippet):
-                return Verdict.TP, "SQL query with user input — real SQLi"
-            return Verdict.NEEDS_REVIEW, "SQL query — check if user input is used"
-        if _PYTHON_CMD_INJECTION_RE.search(code_snippet) and not _SANITIZATION_PATTERNS.search(code_snippet):
-            if "f'" in code_snippet or 'f"' in code_snippet:
-                return Verdict.TP, "SQL query with f-string — real SQLi"
-
-    # CWE-79 XSS (non-JS patterns)
-    if cwe == "CWE-79":
-        if _GO_STDLIB_PATH_RE.search(code_snippet):
-            return Verdict.NEEDS_REVIEW, "XSS in Go — check if output is HTML-escaped"
-
-    # CWE-502 insecure deserialization (Python)
-    if cwe == "CWE-502":
-        if _PYTHON_INSECURE_DESERIALIZATION_RE.search(code_snippet):
-            return Verdict.TP, "Insecure deserialization — real vulnerability"
-
-    # CWE-78 in build scripts → LIKELY_FP (already caught by build script check)
-    if cwe == "CWE-78":
-        if any(k in short_path.lower() for k in ("gruntfile", "gulpfile", "webpack", "rollup", "generate-changelog", "rebase-pr")):
-            return Verdict.LIKELY_FP, "Command injection in build/CI script — low risk"
-
-    # Sanitization present in code context → LIKELY_FP
-    if _SANITIZATION_PATTERNS.search(code_snippet):
-        if cwe in ("CWE-79", "CWE-89", "CWE-22"):
-            return Verdict.LIKELY_FP, f"Sanitization detected in nearby code"
+    res = _classify_code_and_agent_filters(
+        cwe, title, desc, desc_lower, severity, norm_path, short_path, akind, code_snippet, finding
+    )
+    if res is not None:
+        return res
 
     # ── Default: Needs Review ────────────────────────────────────────
     return Verdict.NEEDS_REVIEW, "Could not auto-classify — check manually"

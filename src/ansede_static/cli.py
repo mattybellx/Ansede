@@ -119,12 +119,89 @@ def _load_ansedeignore(workspace_root: Path) -> list[str]:
     return patterns
 
 
+_SKIP_EXACT_SUFFIXES: frozenset[str] = frozenset({
+    ".d.ts",
+    ".min.js",
+    ".min.css",
+})
+
+_SKIP_EXTENSIONS: frozenset[str] = frozenset({
+    ".map",
+    ".snap",
+    ".png",
+    ".jpg",
+    ".jpeg",
+    ".gif",
+    ".svg",
+    ".ico",
+    ".woff",
+    ".woff2",
+    ".ttf",
+    ".eot",
+    ".mp4",
+    ".webm",
+    ".pyc",
+    ".pyo",
+    ".pyd",
+    ".so",
+    ".dll",
+    ".dylib",
+})
+
+_SKIP_PATH_PATTERNS: tuple[re.Pattern[str], ...] = (
+    re.compile(r"(?:^|[/\\])\.next(?:[/\\]|$)", re.IGNORECASE),
+    re.compile(r"(?:^|[/\\])\.nuxt(?:[/\\]|$)", re.IGNORECASE),
+    re.compile(r"(?:^|[/\\])dist(?:[/\\]|$)", re.IGNORECASE),
+    re.compile(r"(?:^|[/\\](?:build|coverage|\.cache|target|out|bin|obj))(?:[/\\]|$)", re.IGNORECASE),
+    re.compile(r"(?:^|[/\\])node_modules(?:[/\\]|$)", re.IGNORECASE),
+    re.compile(r"(?:^|[/\\])vendor(?:[/\\]|$)", re.IGNORECASE),
+    re.compile(r"(?:^|[/\\])__pycache__(?:[/\\]|$)", re.IGNORECASE),
+    re.compile(r"(?:^|[/\\])\.git(?:[/\\]|$)", re.IGNORECASE),
+    re.compile(r"yarn-\d+\.\d+\.\d+\.cjs$", re.IGNORECASE),
+    # Exclude own test/benchmark/sample directories to avoid false positives
+    # when scanning the ansede-static repo itself
+    re.compile(r"(?:^|[/\\])tests(?:[/\\]|$)", re.IGNORECASE),
+    re.compile(r"(?:^|[/\\])(?:benchmarks?|benchmark)(?:[/\\]|$)", re.IGNORECASE),
+    re.compile(r"(?:^|[/\\])tmp(?:[/\\]|$)", re.IGNORECASE),
+    re.compile(r"(?:^|[/\\])webapp(?:[/\\]|$)", re.IGNORECASE),
+    re.compile(r"(?:^|[/\\])internet_code_samples(?:[/\\]|$)", re.IGNORECASE),
+)
+
+_SKIP_LARGE_FILES = 1024 * 500
+
+
+def _should_skip_file(path: Path) -> tuple[bool, str]:
+    """Return whether a file should be skipped for performance/noise reasons."""
+    lower_name = path.name.lower()
+    suffix = path.suffix.lower()
+    normalized = path.as_posix().lower()
+
+    if any(lower_name.endswith(token) for token in _SKIP_EXACT_SUFFIXES):
+        return True, f"generated/minified suffix: {path.suffix or lower_name}"
+    if suffix in _SKIP_EXTENSIONS:
+        return True, f"skipped extension: {suffix}"
+    for pattern in _SKIP_PATH_PATTERNS:
+        if pattern.search(normalized):
+            return True, f"skipped path pattern: {pattern.pattern}"
+
+    try:
+        size = path.stat().st_size
+    except OSError:
+        size = 0
+
+    if size > _SKIP_LARGE_FILES:
+        return True, f"large file: {size} bytes"
+
+    return False, ""
+
+
 def _collect_files(paths: list[Path], exclude_patterns: list[str]) -> list[Path]:
     """Recursively expand directories into individual source files."""
     files: list[Path] = []
     for p in paths:
         if p.is_file():
-            if _detect_language(p) and not any(_matches_exclude_pattern(p, pat) for pat in exclude_patterns):
+            skip_file, _ = _should_skip_file(p)
+            if _detect_language(p) and not skip_file and not any(_matches_exclude_pattern(p, pat) for pat in exclude_patterns):
                 files.append(p)
         elif p.is_dir():
             for child in sorted(p.rglob("*")):
@@ -132,11 +209,140 @@ def _collect_files(paths: list[Path], exclude_patterns: list[str]) -> list[Path]
                     continue
                 if _detect_language(child) is None:
                     continue
+                skip_file, _ = _should_skip_file(child)
+                if skip_file:
+                    continue
                 # Skip excluded paths
                 if any(_matches_exclude_pattern(child, pat) for pat in exclude_patterns):
                     continue
                 files.append(child)
     return files
+
+
+def _build_cross_language_execution(root_dir: Path, *, return_details: bool = False) -> dict[str, Any] | tuple[dict[str, Any], list[dict[str, object]]]:
+    """Build execution metadata for experimental cross-language graph mode (DIR-3.3: GlobalGraph converged)."""
+    from ansede_static.graph.cross_language_taint import build_repository_graph_with_global_graph, find_cross_language_taint
+
+    graph, global_graph, bridge_count = build_repository_graph_with_global_graph(root_dir)
+    stats = graph.statistics()
+    stats["global_graph_bridges"] = bridge_count
+    stats["global_graph_ide_facts"] = len(getattr(global_graph, 'ide_facts', {}))
+    taint_paths = find_cross_language_taint(graph)
+    execution = {
+        "enabled": True,
+        "status": "graph-built",
+        "convergence": "global-graph-ifds",
+        "root": str(root_dir),
+        "stats": stats,
+        "taint_paths_found": len(taint_paths),
+        "sample_taint_paths": taint_paths[:5],
+    }
+    if return_details:
+        return execution, taint_paths
+    return execution
+
+
+def _coerce_int(value: object, default: int = 0) -> int:
+    try:
+        return int(str(value))
+    except (TypeError, ValueError):
+        return default
+
+
+def _coerce_float(value: object, default: float = 0.0) -> float:
+    try:
+        return float(str(value))
+    except (TypeError, ValueError):
+        return default
+
+
+def _cross_language_sink_profile(path: dict[str, object]) -> dict[str, object]:
+    sink_name = str(path.get("sink_name") or "sink")
+    sink_family = str(path.get("sink_family") or "dom_xss")
+    if sink_family == "code_execution" or sink_name in {"eval", "Function"}:
+        return {
+            "rule_id": "XL-002",
+            "cwe": "CWE-94",
+            "severity": Severity.CRITICAL,
+            "title": f"CWE-94: Cross-language taint path reaches `{sink_name}`",
+            "suggestion": (
+                "Treat backend API data as untrusted before passing it into dynamic code-execution APIs, "
+                "and avoid `eval`/`Function` for response-driven behavior."
+            ),
+            "sink_label": f"code-execution sink `{sink_name}`",
+        }
+    return {
+        "rule_id": "XL-001",
+        "cwe": "CWE-79",
+        "severity": Severity.HIGH,
+        "title": f"CWE-79: Cross-language taint path reaches `{sink_name}`",
+        "suggestion": (
+            "Validate or encode data returned from backend routes before writing it into DOM sinks, "
+            "and avoid raw `innerHTML`/`document.write` flows for API response data."
+        ),
+        "sink_label": f"DOM sink `{sink_name}`",
+    }
+
+
+def _cross_language_results_from_paths(taint_paths: list[dict[str, object]]) -> list[AnalysisResult]:
+    """Convert discovered cross-language taint paths into reportable findings."""
+    grouped: dict[str, AnalysisResult] = {}
+    for path in taint_paths:
+        sink_file = str(path.get("sink_file") or "")
+        if not sink_file:
+            continue
+        sink_line = _coerce_int(path.get("sink_line"), 1)
+        source_file = str(path.get("source_file") or "")
+        source_line = _coerce_int(path.get("source_line"), 1)
+        sink_name = str(path.get("sink_name") or "sink")
+        raw_languages = path.get("languages")
+        languages = [str(language) for language in raw_languages] if isinstance(raw_languages, list) else []
+        confidence = _coerce_float(path.get("confidence"), 0.80)
+        sink_profile = _cross_language_sink_profile(path)
+        severity = sink_profile["severity"]
+        result = grouped.setdefault(
+            sink_file,
+            AnalysisResult(
+                file_path=sink_file,
+                language=_detect_language(Path(sink_file)) or "unknown",
+            ),
+        )
+        language_chain = " → ".join(languages) if languages else "multiple languages"
+        result.findings.append(Finding(
+            category="security",
+            severity=severity if isinstance(severity, Severity) else Severity.HIGH,
+            title=str(sink_profile["title"]),
+            description=(
+                "Unified Source Graph found a cross-language taint path from backend route "
+                f"`{source_file}:{source_line}` to sink `{sink_name}` at "
+                f"`{sink_file}:{sink_line}` across {language_chain}."
+            ),
+            line=sink_line,
+            suggestion=str(sink_profile["suggestion"]),
+            rule_id=str(sink_profile["rule_id"]),
+            cwe=str(sink_profile["cwe"]),
+            agent="cross-language-graph",
+            confidence=confidence,
+            analysis_kind="taint_flow",
+            trace=(
+                TraceFrame(kind="source", label="backend route", line=source_line, file_path=source_file),
+                TraceFrame(kind="bridge", label=f"cross-language path ({language_chain})", line=sink_line, file_path=sink_file),
+                TraceFrame(kind="sink", label=str(sink_profile["sink_label"]), line=sink_line, file_path=sink_file),
+            ),
+        ))
+    return list(grouped.values())
+
+
+def _merge_results(results: list[AnalysisResult], extra_results: list[AnalysisResult]) -> None:
+    """Merge additional findings into the existing per-file analysis results."""
+    by_file = {result.file_path: result for result in results}
+    for extra in extra_results:
+        existing = by_file.get(extra.file_path)
+        if existing is None:
+            results.append(extra)
+            by_file[extra.file_path] = extra
+            continue
+        existing.findings.extend(extra.findings)
 
 
 _ENTROPY_TEXT_EXTS: frozenset[str] = frozenset({
@@ -169,13 +375,17 @@ def _collect_entropy_files(paths: list[Path], exclude_patterns: list[str]) -> li
     files: list[Path] = []
     for p in paths:
         if p.is_file():
-            if _is_entropy_text_candidate(p) and not any(_matches_exclude_pattern(p, pat) for pat in exclude_patterns):
+            skip_file, _ = _should_skip_file(p)
+            if _is_entropy_text_candidate(p) and not skip_file and not any(_matches_exclude_pattern(p, pat) for pat in exclude_patterns):
                 files.append(p)
         elif p.is_dir():
             for child in sorted(p.rglob("*")):
                 if not child.is_file():
                     continue
                 if not _is_entropy_text_candidate(child):
+                    continue
+                skip_file, _ = _should_skip_file(child)
+                if skip_file:
                     continue
                 if any(_matches_exclude_pattern(child, pat) for pat in exclude_patterns):
                     continue
@@ -201,6 +411,12 @@ def _analyze_entropy_file(path: Path) -> AnalysisResult:
     return result
 
 
+def _null_context():
+    """No-op context manager for conditional profiling."""
+    import contextlib
+    return contextlib.nullcontext()
+
+
 def _analyze_file(
     path: Path,
     *,
@@ -209,10 +425,15 @@ def _analyze_file(
     global_graph: GlobalGraph | None = None,
     cache_store: Any | None = None,
     engine: str = "auto",
+    profiler: Any | None = None,
 ) -> AnalysisResult:
     lang = _detect_language(path)
     try:
-        code = path.read_text(encoding="utf-8", errors="replace")
+        if profiler:
+            with profiler.phase(str(path), "read"):
+                code = path.read_text(encoding="utf-8", errors="replace")
+        else:
+            code = path.read_text(encoding="utf-8", errors="replace")
     except OSError as exc:
         result = AnalysisResult(file_path=str(path), language=lang or "unknown")
         result.parse_error = str(exc)
@@ -222,7 +443,8 @@ def _analyze_file(
     if engine == "v2" and lang in ("python", "javascript"):
         from ansede_static.v2.engine import Engine
         eng = Engine()
-        v2_findings = eng.scan_source(code, file_path=str(path), language=lang)
+        with profiler.phase(str(path), "v2_scan") if profiler else _null_context():
+            v2_findings = eng.scan_source(code, file_path=str(path), language=lang)
         result = AnalysisResult(file_path=str(path), language=lang)
         for v2f in v2_findings:
             v1 = v2f.to_v1()
@@ -233,22 +455,34 @@ def _analyze_file(
     # ── File-level result cache (skip re-analysis if file unchanged) ──────
     if cache_store is not None and hasattr(cache_store, "get_cached_result"):
         try:
-            cached = cache_store.get_cached_result(str(path), code)
+            if profiler:
+                with profiler.phase(str(path), "cache_check"):
+                    cached = cache_store.get_cached_result(str(path), code)
+            else:
+                cached = cache_store.get_cached_result(str(path), code)
             if cached is not None:
                 return cached
         except Exception:
             pass
 
     if lang == "python":
-        result = analyze_python(code, filename=str(path), global_graph=global_graph)
+        if profiler:
+            with profiler.phase(str(path), "python_analyze"):
+                result = analyze_python(code, filename=str(path), global_graph=global_graph)
+        else:
+            result = analyze_python(code, filename=str(path), global_graph=global_graph)
     elif lang == "javascript":
-        result, _ = run_js_analysis(
-            code,
-            filename=str(path),
-            requested_backend=requested_js_backend,
-            experimental_js_ast=experimental_js_ast,
-            global_graph=global_graph,
-        )
+        if profiler:
+            with profiler.phase(str(path), "js_analyze"):
+                result, _ = run_js_analysis(
+                    code, filename=str(path), requested_backend=requested_js_backend,
+                    experimental_js_ast=experimental_js_ast, global_graph=global_graph,
+                )
+        else:
+            result, _ = run_js_analysis(
+                code, filename=str(path), requested_backend=requested_js_backend,
+                experimental_js_ast=experimental_js_ast, global_graph=global_graph,
+            )
     elif lang == "go":
         from ansede_static.go_engine.go_analyzer import run_go_analysis
         result = run_go_analysis(code, filename=str(path), global_graph=global_graph)
@@ -790,7 +1024,7 @@ def build_parser() -> argparse.ArgumentParser:
               1   One or more findings at or above --fail-on severity
               2   Usage error or no files found
 
-            Upgrade to Pro for SARIF, SBOM & HTML dashboards:
+            SARIF output is free. Upgrade to Pro for SBOM & HTML dashboards:
               ansede-static license activate YOUR_KEY
               Get a key: https://ansede.onrender.com
         """),
@@ -968,6 +1202,18 @@ def build_parser() -> argparse.ArgumentParser:
         help="Dump per-file per-phase timing breakdown as JSON (use with --output).",
     )
     parser.add_argument(
+        "--cross-language", action="store_true",
+        help="Enable cross-language taint tracking: detects taint paths spanning Python/Go backends to JS/TS frontends via route-to-fetch/axios bridges (v3 Unified Source Graph).",
+    )
+    parser.add_argument(
+        "--auto-rule", action="store_true",
+        help="Generate heuristic rules from persistent LLM memory and save them under community_rules/auto_generated/.",
+    )
+    parser.add_argument(
+        "--apply-auto-rules", action="store_true",
+        help="Apply saved auto-generated heuristic rules during the audit pass.",
+    )
+    parser.add_argument(
         "--incremental-sha256", dest="incremental_sha256", action="store_true",
         help=(
             "Use SHA-256 file-content hashing to skip unchanged files "
@@ -1075,6 +1321,7 @@ def _analyze_file_with_timeout(
     timeout_seconds: float = 30.0,
     global_graph: GlobalGraph | None = None,
     engine: str = "auto",
+    profiler: Any | None = None,
 ) -> AnalysisResult:
     """Run _analyze_file with a hard per-file timeout.
 
@@ -1099,6 +1346,7 @@ def _analyze_file_with_timeout(
                     experimental_js_ast=experimental_js_ast,
                     global_graph=global_graph,
                     engine=engine,
+                    profiler=profiler,
                 )
         except Exception as exc:  # noqa: BLE001
             r = AnalysisResult(file_path=str(path), language=_detect_language(path) or "unknown")
@@ -1584,6 +1832,11 @@ def _main_impl() -> None:
     execution = {
         "js_backend": backend_execution_record(args.js_backend, experimental_js_ast=args.experimental_js_ast),
     }
+    if getattr(args, "cross_language", False):
+        execution["cross_language"] = {
+            "enabled": True,
+            "status": "requested",
+        }
 
     results: list[AnalysisResult] = []
 
@@ -1831,6 +2084,7 @@ def _main_impl() -> None:
                     timeout_seconds=args.timeout_per_file,
                     global_graph=global_graph,
                     engine=getattr(args, "engine", "auto"),
+                    profiler=_profiler,
                 )
                 elapsed = time.perf_counter() - t0
                 _file_timings.append({
@@ -1845,16 +2099,42 @@ def _main_impl() -> None:
 
             # ── Pass 1: Discovery & Graph Building ────────────────────────────
             if files:
-                for fpath in files:
+                # ── Speedup optimization: Parallel execution to bypass the GIL on multi-core systems ──
+                import concurrent.futures
+                import os
+                from ansede_static.python_analyzer import index_python_file
+
+                def _index_worker(fpath: Path) -> tuple[str, str] | None:
                     lang = _detect_language(fpath)
-                    try:
-                        code = fpath.read_text(encoding="utf-8", errors="replace")
-                        if lang == "python":
-                            from ansede_static.python_analyzer import index_python_file
-                            index_python_file(code, str(fpath), global_graph)
-                            gc.collect()
-                    except OSError:
-                        pass
+                    if lang == "python":
+                        try:
+                            code = fpath.read_text(encoding="utf-8", errors="replace")
+                            return str(fpath), code
+                        except OSError:
+                            pass
+                    return None
+
+                py_files = [fp for fp in files if _detect_language(fp) == "python"]
+                if len(py_files) > 12 and (getattr(args, "parallel", False) or getattr(args, "workers", None)):
+                    # For larger sweeps, concurrent extraction bypasses sequentially reading from disk
+                    max_workers = getattr(args, "workers", None) or os.cpu_count() or 4
+                    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+                        results_list = list(executor.map(_index_worker, py_files))
+                        for item in results_list:
+                            if item is not None:
+                                fpath_str, code = item
+                                index_python_file(code, fpath_str, global_graph)
+                                gc.collect()
+                else:
+                    for fpath in files:
+                        lang = _detect_language(fpath)
+                        try:
+                            code = fpath.read_text(encoding="utf-8", errors="replace")
+                            if lang == "python":
+                                index_python_file(code, str(fpath), global_graph)
+                                gc.collect()
+                        except OSError:
+                            pass
 
             # ── Pass 2: Taint Engine Evaluation ──────────────────────────────
             scan_targets = files + entropy_files
@@ -2148,6 +2428,42 @@ def _main_impl() -> None:
         try:
             from ansede_static.engine.audit import audit_findings, suggest_improvements, print_suggestions
             audit_report = audit_findings(results, verbose=args.verbose)
+
+            if getattr(args, "auto_rule", False):
+                try:
+                    from ansede_static.engine.auto_rules import generate_rules, load_memory, save_rules
+
+                    memory = load_memory()
+                    generated_rules = generate_rules(memory)
+                    save_rules(generated_rules)
+                    msg = (
+                        "ansede-static: generated "
+                        f"{len(generated_rules)} auto-rule(s) from {len(memory)} memory entr"
+                        f"{'y' if len(memory) == 1 else 'ies'}"
+                    )
+                    if console:
+                        console.print(f"[bold green]{msg}[/bold green]")
+                    else:
+                        print(msg, file=sys.stderr)
+                except Exception as exc:
+                    print(f"ansede-static: auto-rule generation error: {exc}", file=sys.stderr)
+
+            if getattr(args, "apply_auto_rules", False):
+                try:
+                    from ansede_static.engine.audit import AuditReport
+                    from ansede_static.engine.auto_rules import apply_rules_to_audit, load_rules
+
+                    loaded_rules = load_rules()
+                    updated_findings = apply_rules_to_audit(audit_report.findings, loaded_rules)
+                    audit_report = AuditReport(findings=updated_findings)
+                    msg = f"ansede-static: applied {len(loaded_rules)} saved auto-rule(s) during audit"
+                    if console:
+                        console.print(f"[bold green]{msg}[/bold green]")
+                    else:
+                        print(msg, file=sys.stderr)
+                except Exception as exc:
+                    print(f"ansede-static: auto-rule application error: {exc}", file=sys.stderr)
+
             audit_path = primary_output_path
             if audit_path:
                 audit_path = audit_path.parent / (audit_path.stem + "_audit.json")
@@ -2206,6 +2522,45 @@ def _main_impl() -> None:
             import traceback
             print(f"ansede-static: audit pipeline error: {exc}", file=sys.stderr)
             traceback.print_exc()
+
+    if getattr(args, "cross_language", False):
+        if args.stdin:
+            execution["cross_language"] = {
+                "enabled": True,
+                "status": "unsupported-stdin",
+            }
+        else:
+            try:
+                raw_cross_language = _build_cross_language_execution(workspace_root, return_details=True)
+                if not isinstance(raw_cross_language, tuple):
+                    raise TypeError("cross-language execution helper did not return detail tuple")
+                cross_language_execution, taint_paths = raw_cross_language
+                execution["cross_language"] = cross_language_execution
+                _merge_results(results, _cross_language_results_from_paths(taint_paths))
+                stats = cross_language_execution.get("stats", {})
+                msg = (
+                    "ansede-static: cross-language graph built "
+                    f"({stats.get('nodes', 0)} nodes, {stats.get('edges', 0)} edges)"
+                )
+                path_count = int(cross_language_execution.get("taint_paths_found", 0) or 0)
+                if path_count:
+                    msg += f" — {path_count} cross-language taint path(s)"
+                if args.format == "text":
+                    if console:
+                        console.print(f"[bold cyan]{msg}[/bold cyan]")
+                    else:
+                        print(msg, file=sys.stderr)
+            except Exception as exc:
+                execution["cross_language"] = {
+                    "enabled": True,
+                    "status": "error",
+                    "error": str(exc),
+                }
+                msg = f"ansede-static: cross-language graph build failed: {exc}"
+                if console:
+                    console.print(f"[bold yellow]{msg}[/bold yellow]")
+                else:
+                    print(msg, file=sys.stderr)
 
     # ── Format output ───────────────────────────────────────────────────────
     if args.format == "text":

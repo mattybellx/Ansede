@@ -9,6 +9,7 @@ from benchmarks.web_wild_harness import (
     _infer_expected_labels,
     _labels_for_sample,
     _load_curated_labels,
+    _score_sample,
     _select_samples,
     _write_report,
 )
@@ -273,6 +274,24 @@ def test_framework_repo_suppresses_noisy_weak_path_labels(tmp_path):
     assert source == "weak"
     assert "CWE-22" not in labels
     assert not any("CWE-22" in reason for reason in reasons)
+
+
+def test_score_sample_includes_cluster_adjusted_noise_metrics(tmp_path):
+    sample_file = _write_file(tmp_path / "app.js", "eval(userInput);\neval(userInput);\n")
+    sample = SampledFile(repo="example/demo", path=sample_file, relative_path="src/app.js")
+
+    report = _score_sample(
+        sample,
+        severity_min="low",
+        js_backend="auto",
+        suppression_config=None,
+        label_mode="weak",
+        curated_labels={},
+    )
+
+    assert "clustered_finding_count_scored" in report
+    assert "cluster_adjusted_scored_noise_quotient" in report
+    assert report["clustered_finding_count_scored"] <= report["finding_count_scored"]
 
 
 def test_framework_file_specific_suppressions_remove_known_noise(tmp_path):

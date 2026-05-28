@@ -1,0 +1,40 @@
+# ansede-static community rule: express-missing-helmet-CWE-693
+# Detects Express.js apps that don't use helmet middleware
+# Helmet sets security headers (CSP, X-Frame-Options, etc.)
+# CWE-693: Missing security headers / Protection mechanism failure
+metadata:
+  id: community/express-missing-helmet-CWE-693
+  title: Express.js app missing helmet security middleware
+  cwe: CWE-693
+  severity: medium
+  language: javascript
+  tags:
+    - owasp:A05
+    - express
+    - helmet
+  description: >
+    Express.js applications should use the `helmet` middleware to set
+    security-related HTTP headers (Content-Security-Policy, X-Frame-Options,
+    Strict-Transport-Security, X-Content-Type-Options, etc.).
+
+detect:
+  # Trigger on Express app creation
+  patterns:
+    - "const app = express()"
+    - "const app = require('express')()"
+    - "const app = require('express')()"
+  # But only if helmet is NOT used
+  not:
+    patterns:
+      - "app.use(helmet"
+      - "require('helmet')"
+      - "import helmet from 'helmet'"
+      - "import.*helmet"
+
+output:
+  title: "Express.js app without helmet security middleware"
+  description: >
+    This Express application does not use `helmet`, which would set security
+    headers like Content-Security-Policy, X-Frame-Options, X-Content-Type-Options,
+    and Strict-Transport-Security. Add `app.use(helmet())` after creating the app.
+  remediation: "npm install helmet && app.use(helmet())"

@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import re
 from pathlib import Path
+from typing import Any, Callable
 
 from ansede_static._types import AnalysisResult, Finding, Severity, TraceFrame
 from ansede_static.js_analyzer import analyze_js
@@ -892,20 +893,59 @@ def _check_idor_js(code: str) -> list[Finding]:
 
 
 
-def analyze_js_ast(code: str, filename: str = "", global_graph: object | None = None) -> AnalysisResult:
-    result = AnalysisResult(
-        file_path=filename,
-        language="javascript",
-        lines_scanned=len(code.splitlines()),
-    )
+def _build_checker_list(
+    calls: list[JsCall],
+    property_writes: list[JsPropertyWrite],
+    taint_traces,  # type: ignore[arg-type]
+    project_ctx: ProjectContext,
+    code: str,
+    filename: str,
+    project,  # type: ignore[arg-type]
+    global_graph: object | None,
+) -> list[Callable[[], list[Finding]]]:
+    """Build the list of structural checker lambdas."""
+    return [
+        lambda: _check_property_xss(property_writes, taint_traces),
+        lambda: _check_document_write(calls, taint_traces),
+        lambda: _check_eval(calls, taint_traces),
+        lambda: _check_function_constructor(calls),
+        lambda: _check_timer_string_eval(calls, taint_traces),
+        lambda: _check_command_exec(calls, taint_traces, project_context=project_ctx),
+        lambda: _check_shell_true(calls),
+        lambda: _check_sql_injection(calls, taint_traces),
+        lambda: _check_dynamic_require(calls, project_context=project_ctx),
+        lambda: _check_path_traversal(calls, taint_traces, code=code, project_context=project_ctx),
+        lambda: _check_open_redirect(calls, taint_traces),
+        lambda: _check_ssrf(calls, taint_traces, project_context=project_ctx),
+        lambda: _check_csrf_js(code),
+        lambda: _check_file_upload_js(code, calls),
+        lambda: _check_idor_js(code),
+        lambda: run_taint_flow_checks(
+            code, agent="js-ast-analyzer", analysis_kind="syntax-ast",
+            filename=filename, project=project, global_graph=global_graph,
+            project_context=project_ctx,
+        ),
+        lambda: run_react_checks(
+            code, calls, taint_traces,
+            agent="js-ast-analyzer", analysis_kind="syntax-ast",
+        ),
+        lambda: run_route_checks(
+            code, agent="js-ast-analyzer", analysis_kind="syntax-ast",
+            filename=filename, project=project,
+        ),
+    ]
 
+
+def _run_structural_checkers(
+    code: str, filename: str, global_graph: object | None,
+) -> tuple[list[Finding], ProjectContext, object, Any]:
+    """Run all structural JS checkers. Returns (findings, project_ctx, project)."""
     structural_findings: list[Finding] = []
     minified = detect_minified(filename or "<memory>", code)
-    source_map_path = load_sourcemap_path(filename) if filename else None
-    project_ctx = ProjectContext()  # default empty context
+    project_ctx = ProjectContext()
+    project = None
 
     try:
-        project = None
         if filename and not minified.is_minified:
             project = build_js_project_index(filename, code)
         calls = collect_calls(code)
@@ -913,104 +953,105 @@ def analyze_js_ast(code: str, filename: str = "", global_graph: object | None = 
         taint_traces = extract_taint_traces(code)
         if project and filename:
             taint_traces = propagate_helper_return_traces(
-                project,
-                filename,
-                code,
-                taint_traces,
-                global_graph=global_graph,
+                project, filename, code, taint_traces, global_graph=global_graph,
             )
-
-        # ── Project context detection ─────────────────────────────────
-        # Determines whether this file is browser-side, Node.js, or both.
-        # Used by rule checkers to skip findings that don't apply.
         project_ctx = classify_runtime(code, file_path=filename)
 
-        for checker in (
-            lambda: _check_property_xss(property_writes, taint_traces),
-            lambda: _check_document_write(calls, taint_traces),
-            lambda: _check_eval(calls, taint_traces),
-            lambda: _check_function_constructor(calls),
-            lambda: _check_timer_string_eval(calls, taint_traces),
-            lambda: _check_command_exec(calls, taint_traces, project_context=project_ctx),
-            lambda: _check_shell_true(calls),
-            lambda: _check_sql_injection(calls, taint_traces),
-            lambda: _check_dynamic_require(calls, project_context=project_ctx),
-            lambda: _check_path_traversal(calls, taint_traces, code=code, project_context=project_ctx),
-            lambda: _check_open_redirect(calls, taint_traces),
-            lambda: _check_ssrf(calls, taint_traces, project_context=project_ctx),
-            lambda: _check_csrf_js(code),
-            lambda: _check_file_upload_js(code, calls),
-            lambda: _check_idor_js(code),
-            lambda: run_taint_flow_checks(
-                code,
-                agent="js-ast-analyzer",
-                analysis_kind="syntax-ast",
-                filename=filename,
-                project=project,
-                global_graph=global_graph,
-                project_context=project_ctx,
-            ),
-            lambda: run_react_checks(
-                code,
-                calls,
-                taint_traces,
-                agent="js-ast-analyzer",
-                analysis_kind="syntax-ast",
-            ),
-            lambda: run_route_checks(
-                code,
-                agent="js-ast-analyzer",
-                analysis_kind="syntax-ast",
-                filename=filename,
-                project=project,
-            ),
-        ):
+        checkers = _build_checker_list(
+            calls, property_writes, taint_traces, project_ctx,
+            code, filename, project, global_graph,
+        )
+        for checker in checkers:
             structural_findings.extend(checker())
-    except (ValueError, TypeError, RecursionError, re.error) as exc:  # noqa: BLE001
+    except (ValueError, TypeError, RecursionError, re.error) as exc:
         _log.debug("ansede-static: syntax-aware JS analysis failed on %r: %s", filename, exc, exc_info=True)
+
+    return structural_findings, project_ctx, project, minified
+
+
+def _dedup_and_merge(
+    merged: list[Finding], new_findings: list[Finding], key_attr: str = "cwe",
+) -> list[Finding]:
+    """Merge new findings into merged list, deduplicating by (cwe, line)."""
+    existing: set[tuple[str, int]] = set()
+    for f in merged:
+        existing.add((f.cwe or "", f.line or 0))
+    for sf in new_findings:
+        if (sf.cwe or "", sf.line or 0) not in existing:
+            merged.append(sf)
+            existing.add((sf.cwe or "", sf.line or 0))
+    return merged
+
+
+def _rust_fast_path(code: str, filename: str) -> AnalysisResult | None:
+    """Use Rust Tree-sitter for a fast pre-check.
+    Returns an empty AnalysisResult if the file is trivially clean
+    (no function calls, no taint sources). Returns None to fall through
+    to the full analyzer."""
+    try:
+        from ansede_static.engine.rust_parser import HAS_RUST_CORE, fast_parse
+    except ImportError:
+        return None
+    if not HAS_RUST_CORE:
+        return None
+
+    lang = "javascript"
+    raw = fast_parse(code, lang, filename)
+    if not raw or not raw.get("nodes"):
+        return None
+
+    nodes = raw["nodes"]
+    # Quick heuristic: if there are no call expressions, no identifiers
+    # matching common taint sources, and no imports — file is trivially clean
+    has_calls = any(n.get("kind") in ("call", "call_expression") for n in nodes)
+    if not has_calls:
+        result = AnalysisResult(file_path=filename, language=lang, lines_scanned=raw.get("lines_scanned", 0))
+        return result
+
+    # Has calls — need full analysis
+    return None
+
+
+def analyze_js_ast(code: str, filename: str = "", global_graph: object | None = None) -> AnalysisResult:
+    # Rust fast-path: skip analysis for trivially clean files
+    fast = _rust_fast_path(code, filename)
+    if fast is not None:
+        return fast
+
+    result = AnalysisResult(
+        file_path=filename,
+        language="javascript",
+        lines_scanned=len(code.splitlines()),
+    )
+
+    structural_findings, project_ctx, project, minified = _run_structural_checkers(
+        code, filename, global_graph,
+    )
+    source_map_path = load_sourcemap_path(filename) if filename else None
 
     fallback = analyze_js(code, filename, global_graph=global_graph, project=project)
     merged = cluster_findings(structural_findings + fallback.findings)
     merged = rescore_findings(merged)
     merged = remap_findings_to_source_map(merged, filename)
 
-    # ── Source-map-aware rescan ───────────────────────────────────────
-    # If the minified file has an available source map, rescan original
-    # source files with the full structural parser and remap findings back.
+    # Source-map-aware rescan
     if minified.is_minified and filename:
         try:
             sourcemap_findings = rescore_via_source_map(
                 code, filename,
                 scan_fn=lambda c, f: analyze_js_ast(c, f).findings,
             )
-            # Merge source map findings with existing — dedup by (cwe, line)
-            existing: set[tuple[str, int]] = set()
-            for f in merged:
-                existing.add((f.cwe or "", f.line or 0))
-            for sf in sourcemap_findings:
-                if (sf.cwe or "", sf.line or 0) not in existing:
-                    merged.append(sf)
-                    existing.add((sf.cwe or "", sf.line or 0))
+            merged = _dedup_and_merge(merged, sourcemap_findings)
         except Exception:
-            pass
+            _log.exception("Source-map rescan failed for %s", filename)
 
-    # ── Minified JS regex pre-scanner ─────────────────────────────────
-    # Only run on non-vendor minified files where the structural parser
-    # can't recover patterns. Vendor minified files already have noise
-    # policies — the minified scanner would only add FPs.
+    # Minified JS regex pre-scanner
     if minified.is_minified and not _is_vendor_or_minified_js_path(filename):
         try:
             minified_findings = scan_minified_js(code, filename=filename)
-            # Merge: structural findings take precedence (higher confidence),
-            # minified heuristics fill gaps.
-            structural_cwes: set[tuple[str, int]] = set()
-            for f in merged:
-                structural_cwes.add((f.cwe or "", f.line or 0))
-            for mf in minified_findings:
-                if (mf.cwe or "", mf.line or 0) not in structural_cwes:
-                    merged.append(mf)
+            merged = _dedup_and_merge(merged, minified_findings)
         except Exception:
-            pass
+            _log.exception("Minified JS pre-scanner failed for %s", filename)
 
     if minified.is_minified and source_map_path is None:
         merged = _downgrade_findings_for_missing_sourcemap(merged)
@@ -1023,18 +1064,11 @@ def analyze_js_ast(code: str, filename: str = "", global_graph: object | None = 
     )
     result.findings = filter_inline_suppressions(merged, code)
 
-    # ── Symbolic guard analysis ───────────────────────────────────────
+    # Symbolic guard analysis
     try:
         from ansede_static.engine.symbolic_guards import analyze_guards_js
         result.findings = analyze_guards_js(code, result.findings, filename=filename)
     except Exception:
-        pass
+        _log.exception("Symbolic guard analysis failed for %s", filename)
 
     return result
-
-
-
-def analyze_file(path: str | Path) -> AnalysisResult:
-    source_path = Path(path)
-    code = source_path.read_text(encoding="utf-8", errors="replace")
-    return analyze_js_ast(code, filename=str(source_path))

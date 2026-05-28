@@ -23,10 +23,15 @@ from ansede_static import yaml_rules as _yaml_rules
 from functools import lru_cache
 from pathlib import Path
 from types import SimpleNamespace
+import concurrent.futures
+import logging
+
+_log = logging.getLogger(__name__)
 
 
 __all__ = [
     "scan_file",
+    "scan_files",
     "scan_code",
     "AnalysisResult",
     "AnsedeConfig",
@@ -135,6 +140,19 @@ def _apply_runtime_and_registry_rules(
         )
 
 
+_DEFAULT_GLOBAL_GRAPH = None
+
+def _get_default_global_graph():
+    global _DEFAULT_GLOBAL_GRAPH
+    if _DEFAULT_GLOBAL_GRAPH is None:
+        try:
+            from ansede_static.ir.global_graph import GlobalGraph  # noqa: PLC0415
+            _DEFAULT_GLOBAL_GRAPH = GlobalGraph()
+        except (ImportError, AttributeError, ValueError):
+            _DEFAULT_GLOBAL_GRAPH = None
+    return _DEFAULT_GLOBAL_GRAPH
+
+
 def scan_file(
     path: str | Path,
     config: AnsedeConfig | None = None,
@@ -153,18 +171,28 @@ def scan_file(
     runtime_rules = _get_runtime_rules(config, workspace_root=Path.cwd())
     code = p.read_text(encoding="utf-8", errors="replace")
 
-    # Create a shared GlobalGraph for IFDS-based interprocedural taint transfer.
-    try:
-        from ansede_static.ir.global_graph import GlobalGraph  # noqa: PLC0415
-        shared_graph = GlobalGraph()
-    except Exception:
-        shared_graph = None
+    # Retrieve/reuse a shared GlobalGraph for IFDS-based interprocedural taint transfer.
+    shared_graph = _get_default_global_graph()
 
     with temporary_analyzer_config(config):
         if ext in _PYTHON_EXTS:
             result = _py_file(p, global_graph=shared_graph)
         elif ext in _JS_EXTS:
-            result, _ = run_js_analysis(code, filename=str(p), requested_backend=js_backend, global_graph=shared_graph)
+            try:
+                with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+                    future = executor.submit(
+                        run_js_analysis, code, filename=p.name,
+                        requested_backend=js_backend, global_graph=shared_graph,
+                    )
+                    result_tuple = future.result(timeout=60)
+                    result = result_tuple[0]
+            except (concurrent.futures.TimeoutError, RuntimeError, ValueError):
+                # Fall back to classic backend if structural analysis hangs
+                _log.warning("JS analysis timed out on %s — falling back to classic backend", p)
+                result, _ = run_js_analysis(
+                    code, filename=p.name,
+                    requested_backend="classic", global_graph=shared_graph,
+                )
         elif ext in _GO_EXTS:
             from ansede_static.go_engine.go_analyzer import run_go_analysis
             result = run_go_analysis(code, filename=str(p))
@@ -188,6 +216,83 @@ def scan_file(
     )
     apply_config_to_results([result], config)
     return result
+
+
+def scan_files(
+    paths: list[str | Path],
+    config: AnsedeConfig | None = None,
+    *,
+    js_backend: str = "auto",
+    include_registry_rules: bool = False,
+    max_workers: int = 0,
+) -> dict[Path, AnalysisResult]:
+    """
+    Scan multiple files with shared state for throughput.
+
+    Rules and GlobalGraph are loaded once and reused across all files.
+    When *max_workers* > 0, files are scanned in parallel using a
+    thread pool (most beneficial for I/O-bound or mixed-language scans).
+
+    Returns a dict mapping resolved Path → AnalysisResult.
+    Raises ValueError if any file extension is unsupported.
+    """
+    resolved = [Path(p) for p in paths]
+    runtime_rules = _get_runtime_rules(config, workspace_root=Path.cwd())
+    shared_graph = _get_default_global_graph()
+
+    def _scan_one(p: Path) -> tuple[Path, AnalysisResult]:
+        ext = p.suffix.lower()
+        code = p.read_text(encoding="utf-8", errors="replace")
+        with temporary_analyzer_config(config):
+            if ext in _PYTHON_EXTS:
+                result = _py_file(p, global_graph=shared_graph)
+            elif ext in _JS_EXTS:
+                try:
+                    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+                        future = executor.submit(
+                            run_js_analysis, code, filename=p.name,
+                            requested_backend=js_backend, global_graph=shared_graph,
+                        )
+                        result_tuple = future.result(timeout=60)
+                        result = result_tuple[0]
+                except (concurrent.futures.TimeoutError, RuntimeError, ValueError):
+                    _log.warning("JS analysis timed out on %s — falling back to classic backend", p)
+                    result, _ = run_js_analysis(
+                        code, filename=p.name,
+                        requested_backend="classic", global_graph=shared_graph,
+                    )
+            elif ext in _GO_EXTS:
+                from ansede_static.go_engine.go_analyzer import run_go_analysis
+                result = run_go_analysis(code, filename=str(p))
+            elif ext in _JAVA_EXTS:
+                from ansede_static.java_analyzer import analyze_java
+                result = analyze_java(code, filename=str(p))
+            elif ext in _CSHARP_EXTS:
+                from ansede_static.csharp_analyzer import analyze_csharp
+                result = analyze_csharp(code, filename=str(p))
+            else:
+                raise ValueError(
+                    f"Unsupported file extension: {ext!r}. "
+                    f"Supported: .py, .js, .ts, .go, .java, .cs (and variants)."
+                )
+        _apply_runtime_and_registry_rules(
+            code,
+            filename=str(p),
+            language=result.language,
+            runtime_rules=runtime_rules,
+            result=result,
+            include_registry_rules=include_registry_rules,
+        )
+        return p, result
+
+    if max_workers > 0:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as pool:
+            results = dict(pool.map(_scan_one, resolved))
+    else:
+        results = dict(_scan_one(p) for p in resolved)
+
+    apply_config_to_results(list(results.values()), config)
+    return results
 
 
 def scan_code(

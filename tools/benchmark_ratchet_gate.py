@@ -21,6 +21,10 @@ class Aggregate:
     f1_pct: float
     fp_rate_pct: float
     elapsed_seconds: float
+    raw_findings: int
+    clustered_findings: int
+    raw_noise_quotient: float
+    cluster_adjusted_noise_quotient: float
 
 
 def _safe_div(n: float, d: float) -> float:
@@ -60,6 +64,9 @@ def _read_reports(patterns: list[str]) -> list[dict[str, Any]]:
 def _aggregate(reports: list[dict[str, Any]]) -> Aggregate:
     sampled = labeled = tp = fp = fn = 0
     elapsed = 0.0
+    raw_findings = clustered_findings = 0
+    raw_noise_weighted = clustered_noise_weighted = 0.0
+    raw_noise_weight = 0
     for report in reports:
         summary = report.get("summary", {})
         sampled += int(summary.get("sampled_files", 0) or 0)
@@ -68,6 +75,15 @@ def _aggregate(reports: list[dict[str, Any]]) -> Aggregate:
         fp += int(summary.get("fp", 0) or 0)
         fn += int(summary.get("fn", 0) or 0)
         elapsed += float(report.get("elapsed_seconds", 0.0) or 0.0)
+        clustering_summary = report.get("clustering_summary", {}) if isinstance(report.get("clustering_summary"), dict) else {}
+        raw_findings += int(clustering_summary.get("raw_findings", summary.get("total_findings_scored", 0)) or 0)
+        clustered_findings += int(clustering_summary.get("clustered_findings", summary.get("total_clustered_findings_scored", 0)) or 0)
+        report_sampled = int(summary.get("sampled_files", 0) or 0)
+        raw_noise = float(clustering_summary.get("raw_noise_quotient", summary.get("raw_noise_quotient", 0.0)) or 0.0)
+        clustered_noise = float(clustering_summary.get("cluster_adjusted_noise_quotient", summary.get("cluster_adjusted_noise_quotient", 0.0)) or 0.0)
+        raw_noise_weighted += raw_noise * max(1, report_sampled)
+        clustered_noise_weighted += clustered_noise * max(1, report_sampled)
+        raw_noise_weight += max(1, report_sampled)
 
     recall, precision, f1, fp_rate = _compute(tp, fp, fn)
     return Aggregate(
@@ -81,6 +97,10 @@ def _aggregate(reports: list[dict[str, Any]]) -> Aggregate:
         f1_pct=round(f1, 2),
         fp_rate_pct=round(fp_rate, 2),
         elapsed_seconds=round(elapsed, 2),
+        raw_findings=raw_findings,
+        clustered_findings=clustered_findings,
+        raw_noise_quotient=round(raw_noise_weighted / raw_noise_weight, 4) if raw_noise_weight else 0.0,
+        cluster_adjusted_noise_quotient=round(clustered_noise_weighted / raw_noise_weight, 4) if raw_noise_weight else 0.0,
     )
 
 
@@ -123,6 +143,11 @@ def main() -> int:
 
     failures: list[str] = []
     checks: dict[str, bool] = {}
+    checks["clustering_gate"] = aggregate.cluster_adjusted_noise_quotient <= aggregate.raw_noise_quotient and aggregate.clustered_findings <= aggregate.raw_findings
+    if not checks["clustering_gate"]:
+        failures.append(
+            f"clustering gate failed: clustered noise {aggregate.cluster_adjusted_noise_quotient:.4f} > raw noise {aggregate.raw_noise_quotient:.4f}"
+        )
 
     if args.min_recall is not None:
         checks["abs_min_recall"] = aggregate.recall_pct >= args.min_recall
@@ -189,6 +214,10 @@ def main() -> int:
             "f1_pct": aggregate.f1_pct,
             "fp_rate_pct": aggregate.fp_rate_pct,
             "elapsed_seconds": aggregate.elapsed_seconds,
+            "raw_findings": aggregate.raw_findings,
+            "clustered_findings": aggregate.clustered_findings,
+            "raw_noise_quotient": aggregate.raw_noise_quotient,
+            "cluster_adjusted_noise_quotient": aggregate.cluster_adjusted_noise_quotient,
         },
         "baseline": str(args.baseline) if args.baseline else None,
         "baseline_aggregate": baseline_aggregate,

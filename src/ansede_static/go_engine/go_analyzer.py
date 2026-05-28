@@ -71,7 +71,6 @@ _GO_DANGEROUS_SINKS: Dict[str, Tuple[str, str, str]] = {
     "DB.Query": ("CWE-89", "SQL Injection via DB.Query", "critical"),
     "DB.Exec": ("CWE-89", "SQL Injection via DB.Exec", "critical"),
     "DB.QueryRow": ("CWE-89", "SQL Injection via DB.QueryRow", "critical"),
-    "fmt.Sprintf": ("CWE-89", "Potential SQL/Command Injection via fmt.Sprintf", "medium"),
     "template.HTMLEscaper": ("CWE-79", "Unescaped template output (potential XSS)", "medium"),
     "http.Redirect": ("CWE-601", "Open Redirect via http.Redirect", "medium"),
     "http.RedirectHandler": ("CWE-601", "Open Redirect via http.RedirectHandler", "medium"),

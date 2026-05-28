@@ -29,10 +29,13 @@ from benchmarks.quality_corpus import QUALITY_CORPUS, QualityCase
 
 
 def _scan_case(case: QualityCase):
+    # Use empty filename for JS to avoid triggering workspace-level project indexing
+    # which can be slow. For non-JS the filename is cosmetic for benchmark output.
+    fn = "" if case.language in ("javascript", "typescript", "js", "ts") else (case.filename or f"{case.case_id}.py")
     return scan_code(
         case.snippet,
         language=case.language,
-        filename=case.filename or f"{case.case_id}.{ 'py' if case.language == 'python' else 'js' }",
+        filename=fn,
         js_backend=case.js_backend,
     )
 
@@ -73,6 +76,7 @@ def _evaluate_case(case: QualityCase) -> dict[str, Any]:
         "case_id": case.case_id,
         "language": case.language,
         "js_backend": case.js_backend,
+        "guard_family": case.guard_family,
         "passed": all(check["passed"] for check in checks),
         "checks": checks,
         "findings": [finding.as_dict(language=result.language) for finding in result.sorted_findings()],
@@ -86,6 +90,8 @@ def run_quality_benchmark(lang_filter: str | None = None, quiet: bool = False) -
         return {
             "cases": [],
             "summary": {"total_cases": 0, "passed_cases": 0, "checks_total": 0, "checks_passed": 0, "score_pct": 0.0},
+            "guard_summary": {"total_cases": 0, "passed_cases": 0, "score_pct": 0.0, "gate_ready": False, "per_guard_family": {}},
+            "shadow_detector_summary": {"total_cases": 0, "passed_cases": 0, "score_pct": 0.0, "gate_ready": False},
             "per_token": {},
         }
 
@@ -101,6 +107,18 @@ def run_quality_benchmark(lang_filter: str | None = None, quiet: bool = False) -
             bucket["checks"] += 1
             bucket["passed"] += 1 if check["passed"] else 0
 
+    guard_buckets: dict[str, dict[str, int]] = defaultdict(lambda: {"cases": 0, "passed_cases": 0})
+    guard_cases = [case for case in case_results if case.get("guard_family")]
+    for case in guard_cases:
+        family = str(case.get("guard_family", "") or "unknown")
+        bucket = guard_buckets[family]
+        bucket["cases"] += 1
+        bucket["passed_cases"] += 1 if case["passed"] else 0
+    for bucket in guard_buckets.values():
+        bucket["gate_ready"] = bucket["passed_cases"] == bucket["cases"]
+
+    shadow_detector_cases = [case for case in case_results if case.get("guard_family") == "shadow-detector"]
+
     summary = {
         "total_cases": len(case_results),
         "passed_cases": passed_cases,
@@ -112,6 +130,21 @@ def run_quality_benchmark(lang_filter: str | None = None, quiet: bool = False) -
     report = {
         "cases": case_results,
         "summary": summary,
+        "guard_summary": {
+            "total_cases": len(guard_cases),
+            "passed_cases": sum(1 for case in guard_cases if case["passed"]),
+            "score_pct": round((sum(1 for case in guard_cases if case["passed"]) / len(guard_cases) * 100.0), 2) if guard_cases else 0.0,
+            "families_total": len(guard_buckets),
+            "families_passed": sum(1 for bucket in guard_buckets.values() if bucket["gate_ready"]),
+            "gate_ready": bool(guard_cases) and all(bucket["gate_ready"] for bucket in guard_buckets.values()),
+            "per_guard_family": dict(sorted(guard_buckets.items())),
+        },
+        "shadow_detector_summary": {
+            "total_cases": len(shadow_detector_cases),
+            "passed_cases": sum(1 for case in shadow_detector_cases if case["passed"]),
+            "score_pct": round((sum(1 for case in shadow_detector_cases if case["passed"]) / len(shadow_detector_cases) * 100.0), 2) if shadow_detector_cases else 0.0,
+            "gate_ready": bool(shadow_detector_cases) and all(case["passed"] for case in shadow_detector_cases),
+        },
         "per_token": dict(sorted(per_token.items())),
     }
 
@@ -131,6 +164,16 @@ def run_quality_benchmark(lang_filter: str | None = None, quiet: bool = False) -
         print()
         print(f"  Score: {summary['checks_passed']}/{summary['checks_total']} checks passed  ({summary['score_pct']:.2f}%)")
         print(f"  Cases: {summary['passed_cases']}/{summary['total_cases']} fully green")
+        if report["guard_summary"]["total_cases"]:
+            print(
+                f"  Guard verification: {report['guard_summary']['passed_cases']}/{report['guard_summary']['total_cases']} "
+                f"guard-sensitive cases green ({report['guard_summary']['score_pct']:.2f}%)"
+            )
+        if report["shadow_detector_summary"]["total_cases"]:
+            print(
+                f"  Shadow detectors: {report['shadow_detector_summary']['passed_cases']}/{report['shadow_detector_summary']['total_cases']} "
+                f"detector-sensitive cases green ({report['shadow_detector_summary']['score_pct']:.2f}%)"
+            )
         print()
 
     return report

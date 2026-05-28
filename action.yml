@@ -265,7 +265,3 @@ runs:
             print(f"[ansede] Failed to post PR comments: HTTP {exc.code} {exc.reason}")
             raise SystemExit(1)
         PY
-
-branding:
-  icon: 'shield'
-  color: 'red'

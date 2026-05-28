@@ -893,6 +893,8 @@ def build_js_project_index(filename: str, code: str) -> JsProjectIndex | None:
 	if detect_minified(filename, code).is_minified:
 		return None
 	current_file = _normalize_path(filename)
+	if not Path(current_file).is_file():
+		return None
 	workspace_root = _discover_workspace_root(current_file)
 	workspace_graph = _get_workspace_graph(workspace_root)
 	project = JsProjectIndex(files=dict(workspace_graph.files), workspace_root=workspace_root)

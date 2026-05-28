@@ -41,6 +41,7 @@ from __future__ import annotations
 import ast
 import io
 import re
+import warnings
 import tokenize as _tokenize
 from dataclasses import dataclass
 from pathlib import Path
@@ -6237,8 +6238,10 @@ def _rule_44(ctx: _Ctx) -> list[Finding]:
 def _detect(code: str, filename: str = "", global_graph: object = None) -> list[Finding]:
     """Run all deterministic detection rules. Returns findings sorted by severity."""
     try:
-        tree = ast.parse(code)
-    except SyntaxError:
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", SyntaxWarning)
+            tree = ast.parse(code)
+    except (SyntaxError, ValueError, UnicodeEncodeError):
         return []
 
     lines = code.splitlines()
@@ -6383,8 +6386,10 @@ def index_python_file(code: str, filename: str, global_graph):
         return
         
     try:
-        tree = ast.parse(code, filename=filename)
-    except SyntaxError:
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", SyntaxWarning)
+            tree = ast.parse(code, filename=filename)
+    except (SyntaxError, ValueError, UnicodeEncodeError):
         return
 
     func_defs: dict[str, ast.FunctionDef | ast.AsyncFunctionDef] = {}
@@ -6490,6 +6495,28 @@ def analyze_python(code: str, filename: str = "", global_graph=None) -> Analysis
         language="python",
         lines_scanned=len(code.splitlines()),
     )
+
+    # ── Rust fast-path: skip analysis for trivially clean files ────────
+    try:
+        from ansede_static.engine.rust_parser import HAS_RUST_CORE, fast_parse  # noqa: PLC0415
+    except ImportError:
+        HAS_RUST_CORE = False  # noqa: F811
+    if HAS_RUST_CORE:
+        try:
+            raw = fast_parse(code, "python", filename)
+            if raw and raw.get("nodes"):
+                nodes = raw["nodes"]
+                # Quick heuristic: no call expressions, no imports, no
+                # function or class definitions → trivially clean
+                has_calls = any(n.get("kind") in ("call", "call_expression") for n in nodes)
+                has_imports = any(n.get("kind") == "import_statement" for n in nodes)
+                has_defs = any(n.get("kind") in ("function_definition", "class_definition", "decorated_definition") for n in nodes)
+                has_assignments = any(n.get("kind") == "assignment" for n in nodes)
+                if not has_calls and not has_imports and not has_assignments and not has_defs:
+                    return result
+        except Exception:
+            pass
+
     try:
         findings = _detect(code, filename=filename, global_graph=global_graph)
     except (SyntaxError, ValueError, RecursionError, TypeError) as exc:

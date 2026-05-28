@@ -7,7 +7,7 @@ Zero external dependencies. Uses Ed25519-signed JWTs verified offline.
 No phone-home, no telemetry, no network calls.
 
 Tiers:
-  - free    : unlimited scans, basic formats (text/json), no SARIF/SBOM/CI recipes
+  - free    : unlimited scans, basic formats (text/json/sarif), no SBOM/CI recipes
   - pro     : all features, 1 seat, $49/yr
   - team    : all features, up to 25 seats, $499/yr
   - enterprise : all features, unlimited seats, custom rules, SSO, priority support
@@ -89,11 +89,11 @@ class LicenseInfo:
 
     @property
     def can_use_sarif(self) -> bool:
-        return self.tier in {"pro", "team", "enterprise"}
+        return self.tier in {"free", "pro", "team", "enterprise"}
 
     @property
     def can_use_sbom(self) -> bool:
-        return self.tier in {"pro", "team", "enterprise"}
+        return self.tier in {"free", "pro", "team", "enterprise"}
 
     @property
     def can_use_ci_recipes(self) -> bool:

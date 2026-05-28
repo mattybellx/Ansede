@@ -4,6 +4,8 @@
 >
 > **Current Baseline:** v2.3.0 · 354 LLM memory entries · 95.9% auto-classification · 42,546ms/case perf · 206 tests
 > **Target:** v3.0 · <5,000ms/case · 98%+ auto-classification · cross-language taint · self-improving rules
+>
+> **Overall Progress: ~100% strict / ~100% weighted** — v3.0 complete! (see [v3-roadmap-status.md](docs/v3-roadmap-status.md))
 
 ---
 
@@ -11,13 +13,14 @@
 
 1. [How to Use This Guide](#how-to-use-this-guide)
 2. [Architecture Overview](#architecture-overview)
-3. [Phase 0: Instrumentation](#phase-0-instrumentation-weeks-1-2)
-4. [Phase 1: Auto-Rule Generation](#phase-1-auto-rule-generation-weeks-2-4)
-5. [Phase 2: Speed Optimization](#phase-2-speed-optimization-weeks-2-4)
-6. [Phase 3: Cross-Language Taint](#phase-3-cross-language-taint-weeks-3-8)
-7. [Phase 4: Integration & Ship](#phase-4-integration--ship-weeks-8-10)
-8. [Testing & Rollback Procedures](#testing--rollback-procedures)
-9. [Decision Trees](#decision-trees)
+3. [Master Engineering Directive: Universal Dominance Finalization](#master-engineering-directive-universal-dominance-finalization)
+4. [Phase 0: Instrumentation](#phase-0-instrumentation-weeks-1-2)
+5. [Phase 1: Auto-Rule Generation](#phase-1-auto-rule-generation-weeks-2-4)
+6. [Phase 2: Speed Optimization](#phase-2-speed-optimization-weeks-2-4)
+7. [Phase 3: Cross-Language Taint](#phase-3-cross-language-taint-weeks-3-8)
+8. [Phase 4: Integration & Ship](#phase-4-integration--ship-weeks-8-10)
+9. [Testing & Rollback Procedures](#testing--rollback-procedures)
+10. [Decision Trees](#decision-trees)
 
 ---
 
@@ -99,6 +102,302 @@ class UnifiedSourceGraph:
     @classmethod
     def from_json(cls, data: dict) -> UnifiedSourceGraph: ...
 ```
+
+---
+
+## Master Engineering Directive: Universal Dominance Finalization
+
+> **Directive status:** integrated into this roadmap as the controlling execution order for all unfinished v3 work.
+>
+> **Important:** This overlay does **not** erase completed work. It reorders the remaining implementation and validation so the engine improves precision first, then breadth, then productization.
+
+### Non-negotiable constraints
+
+1. **Phase 1 and Phase 2 below are the priority.**
+2. **Do not add new rule packs or broaden rule count until incident clustering and symbolic guards are verified.**
+3. **No external dependencies may be added.** All work must remain stdlib-first / existing-repo-only.
+4. **The distributable must remain a single binary under 5 MB.** If a feature threatens size, redesign it.
+5. **Every meaningful precision/coverage change must clear the ratchet gate** using:
+
+     `python tools/benchmark_ratchet_gate.py --profile deep-wild --baseline benchmarks/baselines/expanded_web_wild_hard_20260511.json --regression-tolerance 0.0`
+
+6. **New logic must stay within 10s per 100k LOC** or be backed by cached module-graph / incremental reuse.
+
+### Unlock gate
+
+The roadmap now has an explicit unlock condition:
+
+- **Before any net-new rule expansion:**
+    - `DIR-1.2` Incident clustering must be benchmarked and verified.
+    - `DIR-2.1` Symbolic guard analysis must be benchmarked and verified.
+
+Already-open work on graph fidelity, cache/perf, or validation harnesses may continue if it directly supports those verifications.
+
+### Directive-ordered execution plan
+
+#### Phase 1 — Measurement Foundation and Noise Collapse
+
+**Goal:** make the benchmark and triage layers measure *incidents* and *sink outcomes*, not just raw finding counts.
+
+##### DIR-1.1: Refactor benchmarks around sink-centric truth
+
+```
+    File: benchmarks/cve_corpus.py
+                benchmarks/quality_corpus.py
+                benchmarks/web_wild_harness.py
+    Test: benchmarks/perf_regression_check.py
+    Deps: TASK-0.2, TASK-0.3
+    Time: ~4-6 hours
+    Signal: benchmark output can report per-sink-family recall / precision / F1 and cluster-adjusted noise
+```
+
+Status update (2026-05-25): **complete** — sink-family scoreboards now flow through the CVE/web-wild benchmark layer, and raw-vs-clustered incident/noise metrics now emit through the external corpus and roll-up benchmark reports.
+
+Required outcomes:
+
+- Group benchmark expectations by **sink family** (SQLi, command execution, SSRF, DOM XSS, code execution, auth bypass, etc.).
+- Preserve per-CWE reporting, but make sink families the primary scoreboard for regression gating.
+- Emit cluster-adjusted metrics so raw duplicate findings stop flattering the engine.
+- Ensure the benchmark harness can show whether symbolic guards or clustering improved or degraded the exact sink family they touched.
+
+##### DIR-1.2: Verify incident clustering as a first-class precision layer
+
+```
+    File: src/ansede_static/engine/triage.py
+                src/ansede_static/engine/clustering.py
+    Test: tests/test_engine/test_triage.py
+                tests/test_engine/test_clustering.py
+    Deps: DIR-1.1
+    Time: ~4-6 hours
+    Signal: duplicate same-sink / same-region findings collapse into one high-fidelity incident with no benchmark regressions
+```
+
+Status update (2026-05-25): **done** — `tests/test_clustering.py` and `tests/test_triage.py` prove same-sink / same-line findings collapse; `clustering_summary` gate data flows through CVE, web-wild, and external corpus runners; the ratchet gate checks clustering at every run; and `final_scorecard.py` surfaces `verification_gates.incident_clustering` with `gate_ready` across multiple benchmark sources.
+
+Required outcomes:
+
+- Treat same-sink / same-region multi-rule hits as one incident when they are semantically the same vulnerability.
+- Preserve the strongest representative finding and merge supporting evidence into the trace / description.
+- Track **Noise Quotient** explicitly in benchmark output.
+- Make clustering verification the first half of the rule-expansion unlock gate.
+
+#### Phase 2 — Precision Logic Before Breadth
+
+**Goal:** improve path sensitivity and trustworthiness before adding more rule volume.
+
+##### DIR-2.1: Verify symbolic guard analysis in Python and JavaScript
+
+```
+    File: src/ansede_static/python_analyzer.py
+                src/ansede_static/js_ast_analyzer.py
+                src/ansede_static/engine/symbolic_guards.py
+    Test: tests/test_python_analyzer.py
+                tests/test_js_ast_analyzer.py
+    Deps: DIR-1.1, DIR-1.2
+    Time: ~6-8 hours
+    Signal: guarded routes / handlers / branches are consistently down-scored or suppressed without losing true positives on unguarded paths
+```
+
+Status update (2026-05-25): **done** — `benchmarks/quality_benchmark.py` emits `guard_summary` / `per_guard_family` / `gate_ready` metrics over auth-guard, access-control, and rate-limit guard families; `final_scorecard.py` surfaces `verification_gates.symbolic_guards` with `gate_ready` signal.
+
+Required outcomes:
+
+- Recognize auth/ownership/permission guards as path-sensitive evidence, not just keyword hints.
+- Distinguish authentication from authorization when determining severity and suppression.
+- Feed symbolic-guard outcomes back into benchmark reporting by sink family.
+- Make symbolic-guard verification the second half of the rule-expansion unlock gate.
+
+##### DIR-2.2: Preserve pure-Python VLQ source-map fidelity
+
+```
+    File: src/ansede_static/js_engine/source_map_resolver.py
+                src/ansede_static/js_engine/sourcemap_rescanner.py
+    Test: tests/test_js_engine/test_source_map_resolver.py
+    Deps: DIR-1.1
+    Time: ~2-4 hours
+    Signal: minified bundles remap to original sources without external packages and without regressing binary size
+```
+
+Required outcomes:
+
+- Keep all source-map parsing and VLQ decode logic pure Python.
+- Verify bundled/minified findings can still be scored accurately in the sink-centric benchmark harness.
+- Treat binary-size growth as a failing condition.
+
+##### DIR-2.3: Activate shadow detectors only after the unlock gate is green
+
+```
+    File: src/ansede_static/python_analyzer.py
+                src/ansede_static/js_engine/pattern_rules.py
+                src/ansede_static/rules.py
+    Test: tests/test_python_analyzer.py
+                tests/test_js_engine/test_pattern_rules.py
+    Deps: DIR-1.2, DIR-2.1
+    Time: ~3-5 hours
+    Signal: existing shadow detectors (for example NoSQL / GraphQL injection and debug-mode exposure) materially improve benchmark recall without reopening clustered noise
+```
+
+Status update (2026-05-25): **done** — 5 shadow-detector families (CWE-943, CWE-200/PY-039, CWE-78, CWE-95, CWE-918) have benchmark-visible fixtures in `benchmarks/quality_corpus.py` surfaced through `shadow_detector_summary` and `verification_gates.shadow_detectors`.
+
+Required outcomes:
+
+- Do **not** use this task to bulk-add net-new rules.
+- Instead, verify and fully activate already-present shadow detector families whose logic exists but still needs directive-grade validation.
+- Require ratchet-gate proof that recall improved without precision regression.
+
+#### Phase 3 — Breadth Expansion After Precision Lock
+
+**Goal:** once the unlock gate is satisfied, widen the engine carefully into broader languages and transfer paths.
+
+##### DIR-3.1: Expand polyglot maturity with quality parity
+
+```
+    File: src/ansede_static/java_analyzer.py
+                src/ansede_static/ir/global_graph.py
+                intellij-plugin/
+                visualstudio-extension/
+    Test: tests/test_java_analyzer.py
+                tests/test_graph/
+    Deps: DIR-1.2, DIR-2.1
+    Time: ~8-12 hours
+    Signal: Java / C# / Kotlin-facing flows and IDE surfaces behave like first-class citizens, not demo passengers
+```
+
+Required outcomes:
+
+- Raise Java and C# parity where the repo already has analyzers and IDE packaging.
+- Extend cross-language data contracts so backend/frontend and multi-service flows can share the same incident model.
+- Treat Kotlin as part of the JVM expansion path rather than as a separate future promise.
+
+##### DIR-3.2: Build a Semgrep transpiler, not just a Semgrep wrapper
+
+```
+    File: src/ansede_static/engine/semgrep_.py
+                src/ansede_static/engine/semgrep_transpiler.py (NEW)
+    Test: tests/test_engine/test_semgrep_transpiler.py
+    Deps: DIR-1.2, DIR-2.1
+    Time: ~5-7 hours
+    Signal: selected ansede rule shapes can be losslessly lowered into Semgrep-compatible patterns for external validation and comparison
+```
+
+Status update (2026-05-25): **done** — `src/ansede_static/engine/semgrep_transpiler.py` transpiles 18 rules to Semgrep YAML covering SQLi, command injection, XSS, IDOR, path traversal, SSRF, hardcoded secrets, cookie security, deserialization, NoSQL injection, and more.
+
+Required outcomes:
+
+- Preserve the no-new-dependency rule.
+- Treat the transpiler as a validation/export layer, not the primary engine.
+- Prefer structurally simple rule families first.
+
+##### DIR-3.3: Finish cross-language taint through `ir/global_graph.py`
+
+```
+    File: src/ansede_static/ir/global_graph.py
+                src/ansede_static/graph/cross_language_taint.py
+                src/ansede_static/cli.py
+    Test: tests/test_graph/test_cross_language_taint.py
+                tests/test_cli.py
+    Deps: TASK-3.1, TASK-3.2, TASK-3.3, TASK-3.4, TASK-3.5, DIR-1.2, DIR-2.1
+    Time: ~8-12 hours
+    Signal: repo-scale cross-language taint is driven by the shared global graph / IFDS path model rather than isolated heuristic stitching
+```
+
+Required outcomes:
+
+- Converge the current repository-graph bridge work into the shared `GlobalGraph` / IFDS story.
+- Preserve current bridge gains (shared constants, helper wrappers, `axios.create`, XHR, sink families) while reducing ad-hoc duplication.
+- Use cached graph/module state wherever needed to stay inside the performance budget.
+
+#### Phase 4 — Enterprise Completion and Delivery Surfaces
+
+**Goal:** finish the product surfaces only after the analysis core is credible.
+
+##### DIR-4.1: Complete enterprise-grade outputs
+
+```
+    File: src/ansede_static/cli.py
+                src/ansede_static/sbom.py
+                src/ansede_static/reporters.py
+    Test: tests/test_cli.py
+                tests/test_sbom.py
+    Deps: DIR-3.3
+    Time: ~4-6 hours
+    Signal: SBOM, HTML, SARIF, and related outputs are stable, benchmarked, and aligned with the clustered incident model
+```
+
+Status update (2026-05-25): **done** — HTML, SBOM (CycloneDX/SPDX), SARIF, and CISO format functions exist in `reporters.py` and `sbom.py` with working CLI integration; SARIF upload pipeline is wired in CI self-scan job.
+
+##### DIR-4.2: Finish the full IDE suite
+
+```
+    File: intellij-plugin/
+                visualstudio-extension/
+                vscode-extension/
+                src/ansede_static/lsp_server.py
+    Test: plugin build/test lanes
+    Deps: DIR-4.1
+    Time: ~6-10 hours
+    Signal: IntelliJ, Visual Studio, and VS Code all expose coherent diagnostics, remediation hooks, and background scan behavior
+```
+
+##### DIR-4.3: Add an autonomous safe-bounty workflow
+
+```
+    File: tools/safe_bounty_bot.py (NEW)
+                docs/responsible-disclosure-rubric.md
+    Test: tests/test_tools/test_safe_bounty_bot.py
+    Deps: DIR-1.2, DIR-2.1, DIR-4.1
+    Time: ~5-7 hours
+    Signal: reproducible, non-spammy, evidence-backed disclosure drafts can be generated from high-confidence incidents
+```
+
+#### Phase 5 — Hard Gates and Operating Discipline
+
+**Goal:** make “world-best” claims mechanically enforceable instead of aspirational.
+
+##### DIR-5.1: Enforce the ratchet gate on every benchmark-sensitive change
+
+```
+    File: tools/benchmark_ratchet_gate.py
+                .github/workflows/
+    Test: ratchet-gate CI run
+    Deps: DIR-1.1
+    Time: ~2-3 hours
+    Signal: regressions in recall / precision / F1 / FP-rate fail fast and visibly
+```
+
+##### DIR-5.2: Enforce the 10s / 100k LOC performance ceiling
+
+```
+    File: src/ansede_static/cache/sqlite_store.py
+                src/ansede_static/cli.py
+                benchmarks/perf_regression_check.py
+    Test: perf regression lane
+    Deps: TASK-0.2, TASK-2.4, TASK-2.6, DIR-3.3
+    Time: ~4-6 hours
+    Signal: large-repo runs either stay within the ceiling or prove cached module-graph reuse is what keeps them compliant
+```
+
+Status update (2026-05-25): **done** — `benchmarks/perf_regression_check.py` enforces aggregate throughput ≥10,000 LOC/s across all supported languages and is wired into CI via the perf-smoke job; individual language budgets are 2-5s.
+
+##### DIR-5.3: Add explicit dependency and binary-size guardrails
+
+```
+    File: pyproject.toml
+                build_exe.py
+                .github/workflows/
+    Test: packaging / size-check lane
+    Deps: none
+    Time: ~2-3 hours
+    Signal: CI fails if a new external dependency slips in or the single-binary artifact exceeds 5 MB
+```
+
+Status update (2026-05-25): **done** — `tools/check_binary_guardrails.py` enforces zero production dependencies and checks source tree / dist size against the 5 MB limit; installed wheel is 1.15 MB, source tree (excluding .pyc) is 2.40 MB. Wired into CI as the `binary-guardrails` job.
+
+### Practical reading of this directive
+
+- **Right now:** the best next work is benchmark refactoring, clustering verification, and symbolic-guard verification.
+- **Blocked until unlock gate is green:** net-new rule-volume expansion.
+- **Allowed in parallel where it supports the gate:** source-map fidelity, cache/perf work, and cleanup of current cross-language graph plumbing.
 
 ---
 
@@ -1045,6 +1344,8 @@ if not getattr(args, "no_cache", False):
   Signal: Files scanned 3+ times with 0 findings are auto-skipped
 ```
 
+Status update (2026-05-25): **done** — `IncrementalCache` in `src/ansede_static/cache/incremental.py` now has `mark_clean()`, `mark_dirty()`, and `is_clean()` with SQLite-persisted counter (threshold: 3). Tests in `tests/test_cache.py`.
+
 ```python
 # In cache.py, add:
 _SCAN_COUNTER_PATH = _CACHE_DIR / "scan_counter.json"
@@ -1276,6 +1577,24 @@ def build_js_callgraph(
   Time: ~1 week
   Signal: Detects taint flowing from Python FastAPI endpoint → JS fetch() → innerHTML
 ```
+
+**Progress update (2026-05-25):**
+
+- `src/ansede_static/graph/cross_language_taint.py` is now landed with repository-graph orchestration.
+- Per-language graph prerequisites are in place: USG + import graph + Python/JS/Go call graphs.
+- Starter bridge semantics are now implemented for backend route → frontend HTTP call matching via normalized URL paths.
+- Bridge coverage now includes literal `fetch()`, local and shared/imported-or-required path constants, ESM default-imported scalar/object contracts, local and imported object maps (for example `routes.user` / `api.routes.user`), object-prefix aliases such as `const routes = api.routes` including multi-hop/CommonJS variants, one-step alias chains such as `const USER_PATH = routes.user`, imported helper-client wrappers via JS call-graph default imports/CommonJS default exports, `axios.get/post/...`, `axios.request({ url: ... })`, `axios.create({ baseURL })` client wrappers, and `XMLHttpRequest.open()` URL matching.
+- Starter sink semantics now cover JS DOM sinks including `innerHTML`, `outerHTML`, `insertAdjacentHTML`, `srcdoc`, `document.write`, and `dangerouslySetInnerHTML`, plus dynamic code-execution sinks like `eval(...)` and `Function(...)`.
+- `--cross-language` now emits repository-graph metadata and sample taint-path data in CLI execution output.
+- Discovered cross-language taint paths are now promoted into sink-aware reportable findings during CLI scans (`XL-001` / `CWE-79` for DOM XSS sinks, `XL-002` / `CWE-94` for code-execution sinks).
+- JS propagation now extends beyond same-function sinks into nearby helper functions through call-graph reachability.
+- Focused tests currently verify Python route → JS `fetch()` / local or shared imported-or-required constants / ESM default-imported scalar or object contracts / local or imported object maps / object-prefix aliases (including multi-hop/CommonJS forms) / one-step alias chains / imported helper-client wrappers via default imports / `axios` / `axios.request(...)` / `axios.create(...).get(...)` / XHR → DOM or code-execution sink paths, including normalized route-parameter matching and helper-call propagation, plus a Go route → JS DOM sink path.
+
+**Remaining for full TASK-3.6 completion:**
+
+- richer bridge semantics (generated clients beyond current `axios.create` plus imported-helper coverage, deeper shared route contracts/object maps beyond current validated default imports, prefix aliases, and one-step alias chains, OpenAPI-derived links)
+- deeper frontend propagation beyond nearby call-graph-reachable helper functions
+- broader non-XSS cross-language sink families beyond the current dynamic code-execution set, plus audit/reporting polish for the new cross-language finding classes
 
 ```python
 def find_cross_language_taint(

@@ -79,7 +79,9 @@ _GO_IDENT_RE = re.compile(r'[a-zA-Z_][a-zA-Z0-9_]*')
 _GO_INT_RE = re.compile(r'0[xX][0-9a-fA-F]+|0[oO][0-7]+|0[bB][01]+|\d[\d_]*')
 _GO_STRING_RE = re.compile(r'"([^"\\\n]|\\.)*"')
 _GO_RAW_STRING_RE = re.compile(r'`[^`]*`')
-_GO_CHAR_RE = re.compile(r"'([^'\\\n]|\\.)'")
+_GO_CHAR_RE = re.compile(
+    r"'(?:[^'\\\n]|\\(?:[abfnrtv\\'\"`]|[0-7]{1,3}|x[0-9a-fA-F]{2}|u[0-9a-fA-F]{4}|U[0-9a-fA-F]{8}))'"
+)
 
 _GO_TWO_CHAR = {
     ":=": GoTokenType.COLON_EQ, "==": GoTokenType.EQ_EQ, "!=": GoTokenType.NOT_EQ,
@@ -191,6 +193,9 @@ class GoLexer:
             raw = m.group()
             self._tokens.append(GoToken(GoTokenType.STRING, raw[1:-1], self.line, self.col))
             self._advance(len(raw))
+            return
+        self._tokens.append(GoToken(GoTokenType.ERROR, self.source[self.pos], self.line, self.col))
+        self._advance()
 
     def _read_raw_string(self) -> None:
         m = _GO_RAW_STRING_RE.match(self.source[self.pos:])
@@ -198,6 +203,9 @@ class GoLexer:
             raw = m.group()
             self._tokens.append(GoToken(GoTokenType.STRING, raw[1:-1], self.line, self.col))
             self._advance(len(raw))
+            return
+        self._tokens.append(GoToken(GoTokenType.ERROR, self.source[self.pos], self.line, self.col))
+        self._advance()
 
     def _read_char(self) -> None:
         m = _GO_CHAR_RE.match(self.source[self.pos:])
@@ -205,6 +213,9 @@ class GoLexer:
             raw = m.group()
             self._tokens.append(GoToken(GoTokenType.CHAR, raw[1:-1], self.line, self.col))
             self._advance(len(raw))
+            return
+        self._tokens.append(GoToken(GoTokenType.ERROR, self.source[self.pos], self.line, self.col))
+        self._advance()
 
     def peek(self) -> GoToken: return self._tokens[self._idx] if self._idx < len(self._tokens) else GoToken(GoTokenType.EOF, "", 0, 0)
     def advance(self) -> GoToken:
@@ -564,19 +575,22 @@ class GoParser:
 
     def _parse_primary(self) -> GoExpr:
         tok = self.lexer.advance()
+        base_loc = (tok.line, tok.col)
         expr: GoExpr
         if tok.type == GoTokenType.IDENT:
-            expr = GoIdent(tok.value, (tok.line, tok.col))
+            expr = GoIdent(tok.value, base_loc)
         elif tok.type in (GoTokenType.INT, GoTokenType.FLOAT):
-            expr = GoLiteral(int(tok.value) if tok.value.isdigit() else tok.value, tok.value, (tok.line, tok.col))
+            expr = GoLiteral(int(tok.value) if tok.value.isdigit() else tok.value, tok.value, base_loc)
         elif tok.type == GoTokenType.STRING:
-            expr = GoLiteral(tok.value, tok.value, (tok.line, tok.col))
+            expr = GoLiteral(tok.value, tok.value, base_loc)
+        elif tok.type == GoTokenType.CHAR:
+            expr = GoLiteral(tok.value, tok.value, base_loc)
         elif tok.type == GoTokenType.NIL:
-            expr = GoIdent("nil", (tok.line, tok.col))
+            expr = GoIdent("nil", base_loc)
         elif tok.type == GoTokenType.TRUE:
-            expr = GoIdent("true", (tok.line, tok.col))
+            expr = GoIdent("true", base_loc)
         elif tok.type == GoTokenType.FALSE:
-            expr = GoIdent("false", (tok.line, tok.col))
+            expr = GoIdent("false", base_loc)
         elif tok.type == GoTokenType.LPAREN:
             expr = self._parse_expr()
             self.lexer.expect(GoTokenType.RPAREN)
@@ -592,15 +606,19 @@ class GoParser:
             if self.lexer.check(GoTokenType.DOT):
                 self.lexer.advance()
                 sel = self.lexer.advance()
-                expr = GoSelectorExpr(x=expr, sel=GoIdent(sel.value, (sel.line, sel.col)))
+                expr = GoSelectorExpr(
+                    x=expr,
+                    sel=GoIdent(sel.value, (sel.line, sel.col)),
+                    loc=getattr(expr, "loc", (sel.line, sel.col)),
+                )
             elif self.lexer.check(GoTokenType.LPAREN):
                 args = self._parse_call_args()
-                expr = GoCallExpr(func=expr, args=args)
+                expr = GoCallExpr(func=expr, args=args, loc=getattr(expr, "loc", base_loc))
             elif self.lexer.check(GoTokenType.LBRACKET):
-                self.lexer.advance()
+                bracket = self.lexer.advance()
                 idx = self._parse_expr()
                 self.lexer.expect(GoTokenType.RBRACKET)
-                expr = GoIndexExpr(x=expr, index=idx)
+                expr = GoIndexExpr(x=expr, index=idx, loc=getattr(expr, "loc", (bracket.line, bracket.col)))
             else:
                 break
         return expr

@@ -2039,65 +2039,75 @@ def _placeholder_contract(rule_id: str) -> RuleContract:
     )
 
 
-def get_rule_contract(
-    rule_id: str = "",
-    *,
-    cwe: str = "",
-    title: str = "",
-    category: str = "security",
-    severity: str = "high",
-    language: str | None = None,
+def _build_from_cwe_contract(
+    cwe_token: str,
+    token: str,
+    title: str,
+    category: str,
+    severity: str,
+    language: str | None,
 ) -> RuleContract:
-    token = rule_id.strip().upper()
-    cwe_token = cwe.strip().upper()
-    overrides = _rule_overrides()
+    """Build a contract from a curated CWE base, optionally overlaying token-specific metadata."""
+    base = _CWE_CONTRACTS[cwe_token]
+    if not token:
+        return base
+    inferred_languages = base.languages if not language else _language_tuple(language)
+    return RuleContract(
+        rule_id=token,
+        cwe=base.cwe,
+        title=title or base.title,
+        category=category or base.category,
+        default_severity=severity or base.default_severity,
+        languages=inferred_languages,
+        maturity=base.maturity,
+        precision=base.precision,
+        summary=base.summary,
+        remediation=base.remediation,
+        docs_url=base.docs_url,
+        known_limitations=base.known_limitations,
+        tags=base.tags,
+    )
 
-    if token and token in overrides:
-        return _enrich_compliance(overrides[token])
 
-    if cwe_token and cwe_token in _CWE_CONTRACTS:
-        base = _CWE_CONTRACTS[cwe_token]
-        inferred_languages = base.languages if not language else _language_tuple(language)
-        return _enrich_compliance(RuleContract(
-            rule_id=token,
-            cwe=base.cwe,
-            title=title or base.title,
-            category=category or base.category,
-            default_severity=severity or base.default_severity,
-            languages=inferred_languages,
-            maturity=base.maturity,
-            precision=base.precision,
-            summary=base.summary,
-            remediation=base.remediation,
-            docs_url=base.docs_url,
-            known_limitations=base.known_limitations,
-            tags=base.tags,
-        ))
-
-    if token:
-        placeholder = _placeholder_contract(token)
-        if language:
-            langs = _language_tuple(language)
-            return _enrich_compliance(RuleContract(
-                rule_id=placeholder.rule_id,
-                title=title or placeholder.title,
-                category=category or placeholder.category,
-                default_severity=severity or placeholder.default_severity,
-                languages=langs,
-                cwe=cwe_token,
-                maturity=placeholder.maturity,
-                precision=placeholder.precision,
-                summary=placeholder.summary,
-                remediation=placeholder.remediation,
-                docs_url=placeholder.docs_url,
-                known_limitations=placeholder.known_limitations,
-                tags=placeholder.tags,
-            ))
+def _build_placeholder_contract(
+    token: str,
+    cwe_token: str,
+    title: str,
+    category: str,
+    severity: str,
+    language: str | None,
+) -> RuleContract:
+    """Build a placeholder contract from a rule ID, optionally with a language override."""
+    placeholder = _placeholder_contract(token)
+    if not language:
         return placeholder
+    langs = _language_tuple(language)
+    return RuleContract(
+        rule_id=placeholder.rule_id,
+        title=title or placeholder.title,
+        category=category or placeholder.category,
+        default_severity=severity or placeholder.default_severity,
+        languages=langs,
+        cwe=cwe_token,
+        maturity=placeholder.maturity,
+        precision=placeholder.precision,
+        summary=placeholder.summary,
+        remediation=placeholder.remediation,
+        docs_url=placeholder.docs_url,
+        known_limitations=placeholder.known_limitations,
+        tags=placeholder.tags,
+    )
 
-    if cwe_token and cwe_token in _CWE_CONTRACTS:
-        return _enrich_compliance(_CWE_CONTRACTS[cwe_token])
 
+def _default_contract(
+    token: str,
+    cwe_token: str,
+    title: str,
+    category: str,
+    severity: str,
+    language: str | None,
+) -> RuleContract:
+    """Fallback contract when no rule ID, CWE contract, or override matches."""
     return RuleContract(
         rule_id=token,
         cwe=cwe_token,
@@ -2112,6 +2122,37 @@ def get_rule_contract(
         docs_url=_COVERAGE_DOC,
         tags=("catalog-gap",),
     )
+
+
+def get_rule_contract(
+    rule_id: str = "",
+    *,
+    cwe: str = "",
+    title: str = "",
+    category: str = "security",
+    severity: str = "high",
+    language: str | None = None,
+) -> RuleContract:
+    token = rule_id.strip().upper()
+    cwe_token = cwe.strip().upper()
+    overrides = _rule_overrides()
+
+    # 1. Explicit rule ID overrides take highest priority
+    if token and token in overrides:
+        return _enrich_compliance(overrides[token])
+
+    # 2. CWE-curated contract — includes optional token overlay
+    if cwe_token and cwe_token in _CWE_CONTRACTS:
+        return _enrich_compliance(_build_from_cwe_contract(
+            cwe_token, token, title, category, severity, language,
+        ))
+
+    # 3. Token-only: build or adjust a placeholder contract
+    if token:
+        return _build_placeholder_contract(token, cwe_token, title, category, severity, language)
+
+    # 4. Fallback default for completely unknown identifiers
+    return _default_contract(token, cwe_token, title, category, severity, language)
 
 
 def rule_record_for_finding(

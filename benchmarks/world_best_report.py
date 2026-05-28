@@ -48,6 +48,15 @@ def _noise_quotient(samples: list[dict[str, Any]]) -> float:
     return round(_safe_div(total_findings * 1000.0, total_lines), 2)
 
 
+def _cluster_adjusted_noise_quotient(samples: list[dict[str, Any]]) -> float:
+    total_findings = sum(
+        int(sample.get("clustered_finding_count_scored", sample.get("finding_count_scored", sample.get("finding_count", 0))))
+        for sample in samples
+    )
+    total_lines = sum(int(sample.get("lines_scanned", 0)) for sample in samples)
+    return round(_safe_div(total_findings * 1000.0, total_lines), 2)
+
+
 def _core_regression(cve_report_before: dict[str, Any], cve_report_after: dict[str, Any]) -> dict[str, Any]:
     before_cases = cve_report_before.get("cases", [])
     after_cases = cve_report_after.get("cases", [])
@@ -143,6 +152,8 @@ def build_world_best_report(
     samples_post = web_report_post.get("samples", [])
     noise_quotient_pre = _noise_quotient(samples_pre if isinstance(samples_pre, list) else [])
     noise_quotient_post = _noise_quotient(samples_post if isinstance(samples_post, list) else [])
+    cluster_adjusted_noise_pre = _cluster_adjusted_noise_quotient(samples_pre if isinstance(samples_pre, list) else [])
+    cluster_adjusted_noise_post = _cluster_adjusted_noise_quotient(samples_post if isinstance(samples_post, list) else [])
     cve_report_post = run_cve_recall(suppression_config=suppression_output, quiet=quiet)
     cve_summary_post = cve_report_post.get("summary", {})
     regression = _core_regression(cve_report_pre, cve_report_post)
@@ -152,6 +163,7 @@ def build_world_best_report(
         "fp_rate_pct": float(cve_summary_post.get("fp_rate", 0.0)),
         "precision_pct": float(cve_summary_post.get("precision", 0.0)),
         "f1_pct": float(cve_summary_post.get("f1", 0.0)),
+        "cluster_adjusted_cve_noise_quotient": float(cve_summary_post.get("cluster_adjusted_noise_quotient", 0.0)),
     }
 
     gates = {
@@ -176,6 +188,8 @@ def build_world_best_report(
             "true_recall": truth,
             "noise_quotient_findings_per_1k_loc": noise_quotient_post,
             "noise_quotient_pre_suppression": noise_quotient_pre,
+            "cluster_adjusted_noise_quotient_findings_per_1k_loc": cluster_adjusted_noise_post,
+            "cluster_adjusted_noise_quotient_pre_suppression": cluster_adjusted_noise_pre,
             "cve_fp_rate_pre_suppression": float(cve_summary_pre.get("fp_rate", 0.0)),
             "regression_check": regression,
             "gates": gates,

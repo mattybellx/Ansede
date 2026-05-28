@@ -38,37 +38,46 @@ def _parse_web_wild_report(report_path: str | Path | None) -> dict[str, Any] | N
         return None
 
     summary = payload.get("summary", {}) if isinstance(payload.get("summary"), dict) else {}
-    total_loc = int(summary.get("total_loc", 0) or 0)
-    high_critical_count = int(summary.get("high_critical_count", 0) or 0)
+    total_loc = int(summary.get("total_lines_scanned", summary.get("total_loc", 0)) or 0)
+    high_critical_count = int(summary.get("total_findings_scored", summary.get("high_critical_count", 0)) or 0)
+    cluster_adjusted_count = int(summary.get("total_clustered_findings_scored", high_critical_count) or 0)
+    raw_noise_quotient = float(summary.get("raw_noise_quotient", 0.0) or 0.0)
+    cluster_adjusted_noise_quotient = float(summary.get("cluster_adjusted_noise_quotient", raw_noise_quotient) or 0.0)
 
     if total_loc > 0:
-        noise_quotient = round(high_critical_count / total_loc * 1000.0, 3)
+        noise_quotient = raw_noise_quotient or round(high_critical_count / total_loc * 1000.0, 3)
     else:
         # Derive from sample-level data if summary is unavailable
         samples = payload.get("samples", []) if isinstance(payload.get("samples"), list) else []
         sample_loc = 0
         sample_hc = 0
+        sample_clustered = 0
         for sample in samples:
             if not isinstance(sample, dict):
                 continue
-            sample_loc += int(sample.get("loc", 0) or 0)
-            for f in (sample.get("findings") or []):
-                if isinstance(f, dict) and str(f.get("severity", "")).lower() in ("high", "critical"):
-                    sample_hc += 1
+            sample_loc += int(sample.get("lines_scanned", sample.get("loc", 0)) or 0)
+            sample_hc += int(sample.get("finding_count_scored", 0) or 0)
+            sample_clustered += int(sample.get("clustered_finding_count_scored", sample.get("finding_count_scored", 0)) or 0)
         noise_quotient = round(sample_hc / sample_loc * 1000.0, 3) if sample_loc else 0.0
+        cluster_adjusted_noise_quotient = round(sample_clustered / sample_loc * 1000.0, 3) if sample_loc else 0.0
         total_loc = sample_loc
         high_critical_count = sample_hc
+        cluster_adjusted_count = sample_clustered
 
     fp_rate_pct = _safe_pct(float(summary.get("fp_rate", 0.0) or 0.0))
     recall_pct = _safe_pct(float(summary.get("recall", 0.0) or 0.0))
+    clustering_summary = payload.get("clustering_summary", {}) if isinstance(payload.get("clustering_summary"), dict) else {}
 
     return {
         "noise_quotient_per_1k_loc": noise_quotient,
+        "cluster_adjusted_noise_quotient_per_1k_loc": cluster_adjusted_noise_quotient,
         "total_loc": total_loc,
         "high_critical_findings": high_critical_count,
+        "cluster_adjusted_high_critical_findings": cluster_adjusted_count,
         "fp_rate_pct": fp_rate_pct,
         "recall_pct": recall_pct,
         "n_files": int(summary.get("n_files", 0) or 0),
+        "clustering_summary": clustering_summary,
         "report_path": str(report_path),
     }
 
@@ -121,6 +130,22 @@ def generate_final_scorecard(
     # Primary noise quotient: use web-wild real-world corpus if available,
     # otherwise fall back to the CVE-corpus-derived metric.
     noise_per_1k_loc = wild_metrics["noise_quotient_per_1k_loc"] if wild_metrics else cve_noise_per_1k_loc
+    guard_summary = quality_report.get("guard_summary", {}) if isinstance(quality_report, dict) else {}
+    shadow_detector_summary = quality_report.get("shadow_detector_summary", {}) if isinstance(quality_report, dict) else {}
+    clustering_summary = external_report.get("clustering_summary", {}) if isinstance(external_report, dict) else {}
+    cve_clustering_summary = cve_report.get("clustering_summary", {}) if isinstance(cve_report, dict) else {}
+    wild_clustering_summary = wild_metrics.get("clustering_summary", {}) if wild_metrics else {}
+    symbolic_guard_gate = bool(guard_summary.get("gate_ready", False))
+    shadow_detector_gate = bool(shadow_detector_summary.get("gate_ready", False))
+    clustering_sources = {
+        "external": clustering_summary,
+        "cve": cve_clustering_summary,
+        **({"web_wild": wild_clustering_summary} if wild_metrics else {}),
+    }
+    incident_clustering_gate = bool(clustering_sources) and all(
+        isinstance(source, dict) and bool(source.get("gate_ready", False))
+        for source in clustering_sources.values()
+    )
 
     payload: dict[str, Any] = {
         "kind": "ansede-final-scorecard",
@@ -141,11 +166,14 @@ def generate_final_scorecard(
                 "score_pct": _safe_pct(quality_summary.get("score_pct", 0.0) or 0.0),
                 "checks_passed": int(quality_summary.get("checks_passed", 0) or 0),
                 "checks_total": int(quality_summary.get("checks_total", 0) or 0),
+                "guard_summary": guard_summary,
+                "shadow_detector_summary": shadow_detector_summary,
             },
             "external": {
                 "score_pct": _safe_pct(external_summary.get("score_pct", 0.0) or 0.0),
                 "checks_passed": int(external_summary.get("checks_passed", 0) or 0),
                 "checks_total": int(external_summary.get("checks_total", 0) or 0),
+                "clustering_summary": clustering_summary,
             },
             "noise_quotient": {
                 "unit": "fp_per_1k_loc",
@@ -155,6 +183,20 @@ def generate_final_scorecard(
                 "cve_corpus_noise_per_1k_loc": cve_noise_per_1k_loc,
             },
             **({"web_wild": wild_metrics} if wild_metrics else {}),
+        },
+        "verification_gates": {
+            "incident_clustering": {
+                "passed": incident_clustering_gate,
+                "details": clustering_sources,
+            },
+            "symbolic_guards": {
+                "passed": symbolic_guard_gate,
+                "details": guard_summary,
+            },
+            "shadow_detectors": {
+                "passed": shadow_detector_gate,
+                "details": shadow_detector_summary,
+            },
         },
     }
 

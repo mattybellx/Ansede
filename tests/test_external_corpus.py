@@ -68,6 +68,9 @@ def test_external_corpus_manifest_is_green():
 
     assert report["summary"]["checks_total"] > 0
     assert report["summary"]["score_pct"] == 100.0
+    assert "total_clustered_findings" in report["summary"]
+    assert report["summary"]["total_clustered_findings"] <= report["summary"]["total_findings"]
+    assert report["clustering_summary"]["gate_ready"] is True
 
 
 def test_external_corpus_case_filter_runs_single_entry():
@@ -314,8 +317,11 @@ def test_external_corpus_reports_noise_gate(tmp_path):
 
     assert report["summary"]["score_pct"] < 100.0
     assert report["summary"]["noise_quotient"] > 0.5
+    assert report["summary"]["cluster_adjusted_noise_quotient"] <= report["summary"]["raw_noise_quotient"]
     assert report["noise_gate"]["passed"] is False
     assert report["noise_gate"]["failures"][0]["case_id"] == "git-python-admin-vuln"
+    assert "clustered_findings_count" in report["noise_gate"]["failures"][0]
+    assert report["clustering_summary"]["noise_improved_or_equal"] is True
 
 
 def test_external_corpus_run_git_enables_core_longpaths_on_windows(monkeypatch):

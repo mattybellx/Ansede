@@ -173,6 +173,23 @@ def _is_auth_guard_call(call: CallExpr) -> bool:
 
 # ── AST walker ────────────────────────────────────────────────────────────
 
+# ── Statement type → handler dispatch table ──────────────────────────
+_STATEMENT_HANDLERS: Dict[type, str] = {
+    FunctionDeclaration: "_walk_function_declaration",
+    VariableDeclaration: "_walk_variable_declaration",
+    ExpressionStatement: "_walk_expression_statement",
+    IfStatement: "_walk_if_statement",
+    ReturnStatement: "_walk_return_statement",
+    BlockStatement: "_walk_block_statement",
+    TryStatement: "_walk_try_statement",
+    ThrowStatement: "_walk_throw_statement",
+    WhileStatement: "_walk_while_statement",
+    ForStatement: "_walk_for_statement",
+    ImportDeclaration: "_walk_import",
+    ClassDeclaration: "_walk_class",
+}
+
+
 class PrattSecurityWalker:
     """Walk a Pratt AST and collect security findings."""
 
@@ -202,48 +219,52 @@ class PrattSecurityWalker:
             self._walk_statement(stmt)
 
     def _walk_statement(self, stmt: Statement) -> None:
-        if isinstance(stmt, FunctionDeclaration):
-            self._walk_function_declaration(stmt)
-        elif isinstance(stmt, VariableDeclaration):
-            self._walk_variable_declaration(stmt)
-        elif isinstance(stmt, ExpressionStatement):
-            self._walk_expression(stmt.expression)
-        elif isinstance(stmt, IfStatement):
+        """Dispatch statement walking by type using the handler lookup table."""
+        handler_name = _STATEMENT_HANDLERS.get(type(stmt))
+        if handler_name:
+            getattr(self, handler_name)(stmt)
+
+    def _walk_expression_statement(self, stmt: ExpressionStatement) -> None:
+        self._walk_expression(stmt.expression)
+
+    def _walk_block_statement(self, stmt: BlockStatement) -> None:
+        self._walk_statement_list(stmt.body)
+
+    def _walk_throw_statement(self, stmt: ThrowStatement) -> None:
+        self._walk_expression(stmt.argument)
+
+    def _walk_if_statement(self, stmt: IfStatement) -> None:
+        self._walk_expression(stmt.test)
+        self._walk_statement(stmt.consequent)
+        if stmt.alternate:
+            self._walk_statement(stmt.alternate)
+
+    def _walk_for_statement(self, stmt: ForStatement) -> None:
+        if stmt.init:
+            if isinstance(stmt.init, VariableDeclaration):
+                self._walk_variable_declaration(stmt.init)
+            else:
+                self._walk_expression(stmt.init)
+        if stmt.test:
             self._walk_expression(stmt.test)
-            self._walk_statement(stmt.consequent)
-            if stmt.alternate:
-                self._walk_statement(stmt.alternate)
-        elif isinstance(stmt, ReturnStatement):
-            if stmt.argument:
-                self._walk_expression(stmt.argument)
-        elif isinstance(stmt, BlockStatement):
-            self._walk_statement_list(stmt.body)
-        elif isinstance(stmt, TryStatement):
-            self._walk_statement(stmt.block)
-            if stmt.handler:
-                self._walk_statement(stmt.handler.body)
-            if stmt.finalizer:
-                self._walk_statement(stmt.finalizer)
-        elif isinstance(stmt, ThrowStatement):
+        if stmt.update:
+            self._walk_expression(stmt.update)
+        self._walk_statement(stmt.body)
+
+    def _walk_return_statement(self, stmt: ReturnStatement) -> None:
+        if stmt.argument:
             self._walk_expression(stmt.argument)
-        elif isinstance(stmt, WhileStatement):
-            self._walk_expression(stmt.test)
-            self._walk_statement(stmt.body)
-        elif isinstance(stmt, ForStatement):
-            if stmt.init:
-                if isinstance(stmt.init, VariableDeclaration):
-                    self._walk_variable_declaration(stmt.init)
-                else:
-                    self._walk_expression(stmt.init)
-            if stmt.test:
-                self._walk_expression(stmt.test)
-            if stmt.update:
-                self._walk_expression(stmt.update)
-            self._walk_statement(stmt.body)
-        elif isinstance(stmt, ImportDeclaration):
-            self._walk_import(stmt)
-        elif isinstance(stmt, ClassDeclaration):
-            self._walk_class(stmt)
+
+    def _walk_try_statement(self, stmt: TryStatement) -> None:
+        self._walk_statement(stmt.block)
+        if stmt.handler:
+            self._walk_statement(stmt.handler.body)
+        if stmt.finalizer:
+            self._walk_statement(stmt.finalizer)
+
+    def _walk_while_statement(self, stmt: WhileStatement) -> None:
+        self._walk_expression(stmt.test)
+        self._walk_statement(stmt.body)
 
     def _walk_expression(self, expr: Expr) -> None:
         if isinstance(expr, CallExpr):
@@ -339,6 +360,38 @@ class PrattSecurityWalker:
             self._walk_expression(arg)
         self._walk_expression(call.callee)
 
+    def _extract_route_path(self, path_arg: Expr) -> str:
+        """Extract a route path string from a call argument."""
+        if isinstance(path_arg, Literal) and isinstance(path_arg.value, str):
+            return path_arg.value
+        if isinstance(path_arg, Identifier):
+            return f"<{path_arg.name}>"
+        return "/unknown"
+
+    def _check_auth_middleware(self, arg: Expr) -> tuple[bool, str]:
+        """Check if a route handler argument is an auth middleware.
+        Returns (has_auth, handler_name)."""
+        if isinstance(arg, Identifier):
+            if arg.name.lower() in _AUTH_MIDDLEWARE_NAMES:
+                return True, arg.name
+            return False, arg.name
+        if isinstance(arg, CallExpr):
+            if _is_auth_guard_call(arg):
+                return True, ""
+            callee = _resolve_identifier_name(arg.callee)
+            return False, callee or ""
+        if isinstance(arg, (ArrowFunctionExpr, FunctionExpr)):
+            has_auth = False
+            if isinstance(arg.body, BlockStatement):
+                for stmt in arg.body.body:
+                    if isinstance(stmt, IfStatement):
+                        test_str = str(stmt.test) if hasattr(stmt.test, '__str__') else ""
+                        if "auth" in test_str.lower() or "token" in test_str.lower():
+                            has_auth = True
+                            break
+            return has_auth, "(inline)"
+        return False, "anonymous"
+
     def _detect_route_registration(self, call: CallExpr) -> Optional[Tuple[str, str, str, bool]]:
         """Detect Express-style route registration: app.get('/path', handler)."""
         if not isinstance(call.callee, MemberExpr):
@@ -351,40 +404,16 @@ class PrattSecurityWalker:
         if len(call.arguments) < 2:
             return None
 
-        # Extract path
-        path_arg = call.arguments[0]
-        path = "/unknown"
-        if isinstance(path_arg, Literal) and isinstance(path_arg.value, str):
-            path = path_arg.value
-        elif isinstance(path_arg, Identifier):
-            path = f"<{path_arg.name}>"
+        path = self._extract_route_path(call.arguments[0])
 
-        # Check remaining args for auth middleware
         has_auth = False
         handler_name = "anonymous"
         for arg in call.arguments[1:]:
-            if isinstance(arg, Identifier):
-                handler_name = arg.name
-                # Check if the handler name is an auth middleware
-                if arg.name.lower() in _AUTH_MIDDLEWARE_NAMES:
-                    has_auth = True
-            elif isinstance(arg, CallExpr):
-                if _is_auth_guard_call(arg):
-                    has_auth = True
-                else:
-                    callee = _resolve_identifier_name(arg.callee)
-                    if callee:
-                        handler_name = callee
-            elif isinstance(arg, ArrowFunctionExpr) or isinstance(arg, FunctionExpr):
-                handler_name = "(inline)"
-                # Check if arrow function body starts with auth check
-                if isinstance(arg.body, BlockStatement):
-                    for stmt in arg.body.body:
-                        if isinstance(stmt, IfStatement):
-                            test_str = str(stmt.test) if hasattr(stmt.test, '__str__') else ""
-                            if "auth" in test_str.lower() or "token" in test_str.lower():
-                                has_auth = True
-                                break
+            auth, name = self._check_auth_middleware(arg)
+            if auth:
+                has_auth = True
+            if name:
+                handler_name = name
 
         return (method_name.upper(), path, handler_name, has_auth)
 
@@ -551,7 +580,7 @@ def run_pratt_analysis(
 
     try:
         program = parse(code, filename)
-    except Exception as exc:
+    except (SyntaxError, ValueError, TypeError, KeyError, IndexError) as exc:
         result.parse_error = f"Pratt parse error: {exc}"
         return result
 
@@ -559,7 +588,7 @@ def run_pratt_analysis(
         walker = PrattSecurityWalker(filename)
         findings = walker.walk(program)
         result.findings = findings
-    except Exception as exc:
+    except (SyntaxError, ValueError, TypeError, KeyError, IndexError, AttributeError) as exc:
         result.parse_error = f"Pratt analysis error: {exc}"
 
     return result

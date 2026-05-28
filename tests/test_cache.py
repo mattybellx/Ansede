@@ -58,6 +58,47 @@ def test_sqlite_store_missing_key_returns_none(tmp_path):
     store.close()
 
 
+def test_incremental_cache_known_clean_tracking(tmp_path):
+    from ansede_static.cache.incremental import IncrementalCache
+    cache = IncrementalCache(tmp_path / "test_clean.db")
+    test_file = tmp_path / "test.py"
+    test_file.write_text("x = 1")
+
+    assert cache.is_clean(test_file) is False
+
+    cache.mark_clean(test_file)
+    assert cache.is_clean(test_file) is False  # 1 < 3
+
+    cache.mark_clean(test_file)
+    assert cache.is_clean(test_file) is False  # 2 < 3
+
+    cache.mark_clean(test_file)
+    assert cache.is_clean(test_file) is True  # 3 >= 3
+
+    cache.mark_dirty(test_file)
+    assert cache.is_clean(test_file) is False  # reset to 0
+
+    cache.close()
+
+
+def test_incremental_cache_clean_count_survives_reopen(tmp_path):
+    from ansede_static.cache.incremental import IncrementalCache
+    db_path = tmp_path / "test_persist.db"
+    test_file = tmp_path / "test.py"
+    test_file.write_text("x = 1")
+
+    cache = IncrementalCache(db_path)
+    cache.mark_clean(test_file)
+    cache.mark_clean(test_file)
+    cache.mark_clean(test_file)
+    assert cache.is_clean(test_file) is True
+    cache.close()
+
+    cache2 = IncrementalCache(db_path)
+    assert cache2.is_clean(test_file) is True
+    cache2.close()
+
+
 def test_sqlite_store_context_manager(tmp_path):
     path = tmp_path / "cache.db"
     with SQLiteStore(path) as store:
@@ -71,6 +112,45 @@ def test_sqlite_store_context_manager(tmp_path):
 def test_stable_hash_is_deterministic():
     assert stable_hash("hello") == stable_hash("hello")
     assert stable_hash("hello") != stable_hash("world")
+
+
+def test_get_cached_result_round_trip(tmp_path):
+    from ansede_static.cache.sqlite_store import SQLiteStore
+    from pathlib import Path
+
+    store = SQLiteStore(tmp_path / "result_cache.db")
+    test_file = tmp_path / "test.py"
+    test_file.write_text("x = 1")
+
+    # First call: no cache hit
+    code = test_file.read_text(encoding="utf-8")
+    cached = store.get_cached_result(str(test_file), code)
+    assert cached is None, "Should be None on first access"
+
+    # Run analysis and cache it
+    from ansede_static import scan_code
+    result = scan_code(code, language="python", filename=str(test_file))
+
+    # Store the result using the same bucket the CLI uses
+    store.set_json("file_results_v1", f"{test_file}:{stable_hash(code)}", {
+        "findings": [f.as_dict() for f in result.findings],
+        "lines_scanned": result.lines_scanned,
+        "language": result.language,
+    })
+
+    # Second call: should hit cache
+    cached2 = store.get_cached_result(str(test_file), code)
+    assert cached2 is not None, "Should return cached result"
+    assert cached2.lines_scanned == result.lines_scanned
+    assert cached2.language == result.language
+
+    # Change file content: should miss cache
+    test_file.write_text("y = 2")
+    code2 = test_file.read_text(encoding="utf-8")
+    cached3 = store.get_cached_result(str(test_file), code2)
+    assert cached3 is None, "Should miss cache after content change"
+
+    store.close()
     assert len(stable_hash("any string")) == 40  # BLAKE2b-20 hex (Phase 4 §4.3 upgrade from SHA-256)
 
 

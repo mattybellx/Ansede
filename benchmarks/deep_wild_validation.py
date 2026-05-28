@@ -102,8 +102,10 @@ def main() -> int:
 
     total_lines = summary.get("lines_scanned", 0)
     total_findings = summary.get("total_findings", 0)
+    total_clustered_findings = summary.get("total_clustered_findings", total_findings)
     file_count = sum(c.get("files_scanned", 0) for c in cases)
     noise_q = summary.get("raw_noise_quotient", 0.0)
+    clustered_noise_q = summary.get("cluster_adjusted_noise_quotient", noise_q)
 
     per_language: dict[str, dict] = {}
     entry_results: list[dict] = []
@@ -147,7 +149,9 @@ def main() -> int:
         "total_files": file_count,
         "total_lines": total_lines,
         "total_findings": total_findings,
+        "total_clustered_findings": total_clustered_findings,
         "noise_quotient": round(noise_q, 2),
+        "cluster_adjusted_noise_quotient": round(clustered_noise_q, 2),
         "file_threshold_met": file_count >= MIN_FILE_THRESHOLD,
         "noise_within_bounds": noise_q <= MAX_NOISE_QUOTIENT,
         "per_language": per_language,
@@ -161,7 +165,9 @@ def main() -> int:
         print(f"  Total files: {file_count:,}")
         print(f"  Total lines: {total_lines:,}")
         print(f"  Total findings: {total_findings}")
+        print(f"  Clustered incidents: {total_clustered_findings}")
         print(f"  Noise quotient: {noise_q:.2f} findings/kLOC")
+        print(f"  Cluster-adjusted noise quotient: {clustered_noise_q:.2f} findings/kLOC")
         print(f"  Threshold {MIN_FILE_THRESHOLD:,} files: {'PASS' if file_count >= MIN_FILE_THRESHOLD else 'FAIL'}")
         print(f"  Noise bound {MAX_NOISE_QUOTIENT}: {'PASS' if noise_q <= MAX_NOISE_QUOTIENT else 'FAIL'}")
         print()

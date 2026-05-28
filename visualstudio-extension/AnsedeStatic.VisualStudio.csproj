@@ -24,6 +24,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Reference Include="System.ComponentModel.Composition" />
+  </ItemGroup>
+
+  <ItemGroup>
     <VSIXSourceItem Include="$(OutputPath)\AnsedeStatic.VisualStudio.dll" />
     <VSIXSourceItem Include="$(OutputPath)\AnsedeStatic.VisualStudio.pkgdef" />
   </ItemGroup>

@@ -19,16 +19,31 @@ from ansede_static._types import AnalysisResult, Finding, Severity
 
 _ROUTE_ATTRIBUTES = {"HttpGet", "HttpPost", "HttpPut", "HttpDelete", "Route"}
 _MUTATING_ATTRIBUTES = {"HttpPut", "HttpDelete"}
+_PUBLIC_ACCESS_ATTRIBUTES = {"AllowAnonymous", "CheckAccessPublicStore"}
 _PUBLIC_ROUTE_RE = re.compile(r"/(?:login|logout|register|signup|health|ready|status|public|swagger|docs)", re.IGNORECASE)
-_AUTHZ_RE = re.compile(r"Authorize|User\.Identity\.IsAuthenticated|User\.IsInRole|ClaimsPrincipal|RequireAuthorization", re.IGNORECASE)
-_OWNERSHIP_RE = re.compile(r"UserId|OwnerId|AccountId|TenantId|currentUser|GetUserId\(|User\.FindFirst|User\.Identity\.Name|Where\s*\([^)]*UserId", re.IGNORECASE)
+_PUBLIC_ACTION_NAME_RE = re.compile(r"^(?:SendOtp|CommonVerificationOtp|CheckBalance|BackToCart)$", re.IGNORECASE)
+_AUTHZ_RE = re.compile(
+    r"Authorize|User\.Identity\.IsAuthenticated|User\.IsInRole|ClaimsPrincipal|RequireAuthorization|"
+    r"Check\w*Permission(?:Async)?\s*\(|AuthorizeAsync\s*\(|Challenge\s*\(|AccessDenied",
+    re.IGNORECASE,
+)
+_OWNERSHIP_RE = re.compile(
+    r"UserId|OwnerId|AccountId|TenantId|currentUser|currentCustomer|GetUserId\(|GetCurrentCustomerAsync\(|"
+    r"User\.FindFirst|User\.Identity\.Name|Where\s*\([^)]*(?:UserId|CustomerId)|"
+    r"(?:ToCustomerId|FromCustomerId|CustomerId)\s*==\s*(?:customer|currentCustomer)\.Id|"
+    r"(?:customer|currentCustomer)\.Id\s*==\s*(?:ToCustomerId|FromCustomerId|CustomerId)",
+    re.IGNORECASE,
+)
 _SQLI_RE = re.compile(r"(?:SqlCommand\s*\(|CommandText\s*=\s*)(?:\$\"|[^;\n]*\+[^;\n]*)", re.IGNORECASE)
 _HARDCODED_CONN_RE = re.compile(r'\"[^\"]*(?:Password=|pwd=|ApiKey=)[^\"]*\"', re.IGNORECASE)
 _METHOD_RE = re.compile(
     r"^\s*(?:public|protected|private|internal)\s+(?:async\s+)?(?:static\s+)?(?:virtual\s+)?(?:override\s+)?[\w<>,\[\]\.\?\s]+\s+(?P<name>[A-Za-z_]\w*)\s*\((?P<params>[^)]*)\)\s*(?:\{\s*)?$"
 )
 _CLASS_RE = re.compile(r"\bclass\s+(?P<name>[A-Za-z_]\w*)")
-_ATTRIBUTE_LINE_RE = re.compile(r"^\s*\[(?P<content>.+)\]\s*$")
+_ATTRIBUTE_LINE_RE = re.compile(r"^\s*\[(?P<content>.+?)\]\s*(?://.*)?$")
+_ADMIN_CONTROLLER_RE = re.compile(r"\bclass\s+[A-Za-z_]\w*\s*:\s*BaseAdmin\w*Controller\b")
+_ADMIN_CONTROLLER_IMPORT_RE = re.compile(r"using\s+Nop\.Web\.Areas\.Admin\.Controllers\s*;")
+_ADMIN_DERIVED_CONTROLLER_RE = re.compile(r"\bclass\s+[A-Za-z_]\w*\s*:\s*[A-Za-z_]\w*Controller\b")
 _ID_ROUTE_RE = re.compile(r"\{[^}]*id[^}]*\}", re.IGNORECASE)
 _FINDASYNC_RE = re.compile(r"\.(?:FindAsync|FirstOrDefaultAsync|FirstOrDefault)\s*\([^\n;]*\bid\b", re.IGNORECASE)
 _SAVE_RE = re.compile(r"SaveChanges(?:Async)?\s*\(", re.IGNORECASE)
@@ -135,6 +150,7 @@ def _collect_methods(source: str) -> list[_CSharpMethod]:
     while index < len(lines):
         line = lines[index]
         stripped = line.strip()
+        defer_scope_cleanup = False
         attr_match = _ATTRIBUTE_LINE_RE.match(line)
         if attr_match:
             pending_attribute_lines.append(attr_match.group("content"))
@@ -144,11 +160,27 @@ def _collect_methods(source: str) -> list[_CSharpMethod]:
             index += 1
             continue
 
-        if _CLASS_RE.search(line) and '{' in line:
+        class_match = _CLASS_RE.search(line)
+        class_opens_next_line = False
+        if class_match and '{' not in line:
+            lookahead = index + 1
+            while lookahead < len(lines):
+                next_stripped = lines[lookahead].strip()
+                if not next_stripped or next_stripped.startswith("//"):
+                    lookahead += 1
+                    continue
+                class_opens_next_line = next_stripped == '{'
+                break
+
+        if class_match and ('{' in line or class_opens_next_line):
             parsed_attrs = []
             for raw in pending_attribute_lines[-10:]:
                 parsed_attrs.extend(_parse_attribute_items(raw))
-            class_stack.append(_ClassScope(tuple(parsed_attrs), brace_depth + line.count('{') - line.count('}')))
+            class_depth = brace_depth + line.count('{') - line.count('}')
+            if class_opens_next_line and '{' not in line:
+                class_depth += 1
+                defer_scope_cleanup = True
+            class_stack.append(_ClassScope(tuple(parsed_attrs), class_depth))
             pending_attribute_lines = []
         else:
             method_match = _METHOD_RE.match(line)
@@ -192,8 +224,9 @@ def _collect_methods(source: str) -> list[_CSharpMethod]:
                 pending_attribute_lines = []
 
         brace_depth += line.count('{') - line.count('}')
-        while class_stack and brace_depth < class_stack[-1].depth:
-            class_stack.pop()
+        if not defer_scope_cleanup:
+            while class_stack and brace_depth < class_stack[-1].depth:
+                class_stack.pop()
         index += 1
 
     return methods
@@ -208,17 +241,23 @@ def _has_attribute(attributes: tuple[str, ...], names: set[str]) -> bool:
 
 
 def _is_public_route(method: _CSharpMethod) -> bool:
-    return any(_PUBLIC_ROUTE_RE.search(path) for path in method.route_paths)
+    return bool(_PUBLIC_ACTION_NAME_RE.match(method.name)) or any(_PUBLIC_ROUTE_RE.search(path) for path in method.route_paths)
 
 
 def _has_auth(method: _CSharpMethod) -> bool:
-    if _has_attribute(method.attributes, {"Authorize"}) or _has_attribute(method.class_attributes, {"Authorize"}):
+    def _looks_like_auth_attribute(raw: str) -> bool:
+        short = _short_name(raw.strip()[1:-1].split('(', 1)[0].strip())
+        return short == "CheckPermission" or "Authorize" in short
+
+    if any(_looks_like_auth_attribute(raw) for raw in (*method.attributes, *method.class_attributes)):
+        return True
+    if _has_ownership_guard(method.body):
         return True
     return bool(_AUTHZ_RE.search(method.body))
 
 
 def _has_allow_anonymous(method: _CSharpMethod) -> bool:
-    return _has_attribute(method.attributes, {"AllowAnonymous"}) or _has_attribute(method.class_attributes, {"AllowAnonymous"})
+    return _has_attribute(method.attributes, _PUBLIC_ACCESS_ATTRIBUTES) or _has_attribute(method.class_attributes, _PUBLIC_ACCESS_ATTRIBUTES)
 
 
 def _has_route(method: _CSharpMethod) -> bool:
@@ -233,6 +272,12 @@ def _has_id_route(method: _CSharpMethod) -> bool:
 
 def _has_ownership_guard(body: str) -> bool:
     return bool(_OWNERSHIP_RE.search(body))
+
+
+def _is_admin_controller_source(source: str) -> bool:
+    if _ADMIN_CONTROLLER_RE.search(source):
+        return True
+    return bool(_ADMIN_CONTROLLER_IMPORT_RE.search(source) and _ADMIN_DERIVED_CONTROLLER_RE.search(source))
 
 
 def _first_matching_line(text: str, pattern: re.Pattern[str], start_line: int) -> int:
@@ -298,12 +343,13 @@ def analyze_csharp(source: str, filename: str = "<input>") -> AnalysisResult:
     result.lines_scanned = len(lines)
 
     methods = _collect_methods(source)
+    is_admin_controller = _is_admin_controller_source(source)
     findings: list[Finding] = []
 
     for method in methods:
         attr_names = {_short_name(raw.strip()[1:-1].split('(', 1)[0].strip()) for raw in method.attributes}
 
-        if _has_route(method) and not _is_public_route(method) and not _has_auth(method) and not _has_allow_anonymous(method):
+        if _has_route(method) and not is_admin_controller and not _is_public_route(method) and not _has_auth(method) and not _has_allow_anonymous(method):
             findings.append(Finding(
                 category="security",
                 severity=Severity.HIGH,
@@ -460,6 +506,73 @@ def analyze_csharp(source: str, filename: str = "<input>") -> AnalysisResult:
                         confidence=0.75,
                         analysis_kind="route_heuristic",
                     ))
+
+        # ── CS-010: OS command injection via Process.Start ─────────────────
+        _CMD_INJECTION_CS_RE = re.compile(
+            r"Process\.Start\s*\([^)]*\)|new\s+ProcessStartInfo\s*\(",
+            re.IGNORECASE,
+        )
+        if _CMD_INJECTION_CS_RE.search(method.body):
+            findings.append(Finding(
+                category="security",
+                severity=Severity.CRITICAL,
+                title=f"CWE-78: OS command injection in `{method.name}()`",
+                description="Process.Start or ProcessStartInfo is used. If the command or arguments are derived from user input this allows arbitrary command execution.",
+                line=_first_matching_line(method.body, _CMD_INJECTION_CS_RE, method.start_line),
+                suggestion="Avoid passing user input directly to Process.Start. Use argument arrays and validate the executable name against an allowlist.",
+                rule_id="CS-010",
+                cwe="CWE-78",
+                agent="csharp-analyzer",
+                confidence=0.92,
+                analysis_kind="pattern",
+            ))
+
+        # ── CS-011: Path traversal via File I/O (CWE-22) ──────────────────
+        _PATH_TRAV_CS_RE = re.compile(
+            r"File\.(ReadAllText|ReadAllBytes|ReadAllLines|WriteAllText|Delete|Copy|Move|Open)\s*\(|"
+            r"Path\.Combine\s*\([^)]*\+\s*|"
+            r"new\s+StreamReader\s*\(",
+            re.IGNORECASE,
+        )
+        if _PATH_TRAV_CS_RE.search(method.body):
+            findings.append(Finding(
+                category="security",
+                severity=Severity.HIGH,
+                title=f"CWE-22: Path traversal via file I/O in `{method.name}()`",
+                description="File I/O is performed with user-controllable input. Without path normalization this allows directory traversal.",
+                line=_first_matching_line(method.body, _PATH_TRAV_CS_RE, method.start_line),
+                suggestion="Validate and normalize file paths. Use Path.GetFullPath and verify it stays within the allowed base directory.",
+                rule_id="CS-011",
+                cwe="CWE-22",
+                agent="csharp-analyzer",
+                confidence=0.78,
+                analysis_kind="pattern",
+            ))
+
+        # ── CS-012: SSRF via HttpClient (CWE-918) ─────────────────────────
+        _SSRF_CS_RE = re.compile(
+            r"HttpClient|WebClient|HttpWebRequest|RestClient",
+            re.IGNORECASE,
+        )
+        if _SSRF_CS_RE.search(method.body) and _has_route(method):
+            _SSRF_SAFE_CS_RE = re.compile(
+                r"BaseAddress|baseAddress|base_url|baseUrl",
+                re.IGNORECASE,
+            )
+            if not _SSRF_SAFE_CS_RE.search(method.body):
+                findings.append(Finding(
+                    category="security",
+                    severity=Severity.HIGH,
+                    title=f"CWE-918: SSRF via HTTP client in `{method.name}()`",
+                    description="HttpClient/WebClient usage in a routed action may allow server-side request forgery with user-controlled URLs.",
+                    line=_first_matching_line(method.body, _SSRF_CS_RE, method.start_line),
+                    suggestion="Use a base URL allowlist or disable external redirects. Validate outbound URLs against a trusted host list.",
+                    rule_id="CS-012",
+                    cwe="CWE-918",
+                    agent="csharp-analyzer",
+                    confidence=0.75,
+                    analysis_kind="pattern",
+                ))
 
     for lineno, line in enumerate(source.splitlines(), start=1):
         if _HARDCODED_CONN_RE.search(line):

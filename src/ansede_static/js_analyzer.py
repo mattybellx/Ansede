@@ -137,7 +137,7 @@ def analyze_js(
                 ),
             ))
     except Exception:
-        pass
+        _log.exception("Template engine detection failed for %s", filename)
 
     try:
         for node in template_taint_nodes(code, filename=filename):
@@ -162,12 +162,12 @@ def analyze_js(
                 ),
             ))
     except Exception:
-        pass
+        _log.exception("Template taint analysis failed for %s", filename)
 
     try:
         all_findings = analyze_guards_js(code, all_findings, filename=filename)
     except Exception:
-        pass
+        _log.exception("Symbolic guard analysis failed for %s", filename)
 
     deduped = dedup_findings(all_findings)
     result.findings = filter_inline_suppressions(deduped, code)

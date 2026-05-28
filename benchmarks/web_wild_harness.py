@@ -42,6 +42,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 from ansede_static import _JS_EXTS, _PYTHON_EXTS, scan_file
 from ansede_static.engine.triage import apply_active_suppressions
 from ansede_static.engine.dump_failures import run_failure_diagnostics, diagnostic_report_to_dict
+from benchmarks.benchmark_metrics import cluster_adjusted_stats
+from benchmarks.cve_corpus import sink_families_for_cwes
 
 
 _DEFAULT_REPOS: tuple[str, ...] = (
@@ -792,12 +794,21 @@ def _score_sample(
             file_path=str(sample.path),
             suppression_config_path=suppression_config,
         )
-    findings_payload = [f.as_dict(language=result.language) for f in result.sorted_findings()]
+    sorted_findings = result.sorted_findings()
+    findings_payload = [f.as_dict(language=result.language) for f in sorted_findings]
     scored_findings = [f for f in findings_payload if f.get("cwe") and _severity_allows(f, severity_min)]
+    scored_finding_objects = [
+        finding
+        for finding in sorted_findings
+        if finding.cwe and _severity_allows(finding.as_dict(language=result.language), severity_min)
+    ]
+    cluster_stats = cluster_adjusted_stats(scored_finding_objects, result.lines_scanned)
     predicted_labels = {
         str(f.get("cwe"))
         for f in scored_findings
     }
+    expected_sink_families = set(sink_families_for_cwes(expected_labels))
+    predicted_sink_families = set(sink_families_for_cwes(predicted_labels))
 
     if expected_labels:
         tp = len(predicted_labels & expected_labels)
@@ -813,6 +824,19 @@ def _score_sample(
         fn = 0
         fp = len(predicted_labels)
 
+    if expected_labels:
+        sink_tp = len(predicted_sink_families & expected_sink_families)
+        sink_fn = len(expected_sink_families - predicted_sink_families)
+        sink_fp = len(predicted_sink_families - expected_sink_families)
+    elif label_source == "vendor-unlabeled":
+        sink_tp = 0
+        sink_fn = 0
+        sink_fp = 0
+    else:
+        sink_tp = 0
+        sink_fn = 0
+        sink_fp = len(predicted_sink_families)
+
     return {
         "repo": sample.repo,
         "file": sample.relative_path,
@@ -820,16 +844,70 @@ def _score_sample(
         "lines_scanned": result.lines_scanned,
         "finding_count": len(findings_payload),
         "finding_count_scored": len(scored_findings),
+        "clustered_finding_count_scored": int(cluster_stats["clustered_count"]),
+        "cluster_scored_reduction_count": int(cluster_stats["reduced_count"]),
+        "cluster_scored_reduction_pct": float(cluster_stats["reduction_pct"]),
+        "scored_noise_quotient": float(cluster_stats["raw_noise_quotient"]),
+        "cluster_adjusted_scored_noise_quotient": float(cluster_stats["cluster_adjusted_noise_quotient"]),
         "expected_labels": sorted(expected_labels),
         "label_reasons": label_reasons,
         "label_source": label_source,
         "predicted_labels": sorted(predicted_labels),
+        "expected_sink_families": sorted(expected_sink_families),
+        "predicted_sink_families": sorted(predicted_sink_families),
         "vendor_or_minified": _is_vendor_or_minified_relative_path(sample.relative_path),
         "tp": tp,
         "fp": fp,
         "fn": fn,
+        "sink_family_tp": sink_tp,
+        "sink_family_fp": sink_fp,
+        "sink_family_fn": sink_fn,
         "findings": findings_payload,
     }
+
+
+def _summarize_sink_families(sample_reports: list[dict[str, Any]]) -> tuple[dict[str, Any], dict[str, dict[str, Any]]]:
+    total_tp = sum(int(item.get("sink_family_tp", 0) or 0) for item in sample_reports)
+    total_fp = sum(int(item.get("sink_family_fp", 0) or 0) for item in sample_reports)
+    total_fn = sum(int(item.get("sink_family_fn", 0) or 0) for item in sample_reports)
+
+    per_sink_family: dict[str, dict[str, Any]] = {}
+    for item in sample_reports:
+        expected = {str(value) for value in item.get("expected_sink_families", [])}
+        predicted = {str(value) for value in item.get("predicted_sink_families", [])}
+        label_source = str(item.get("label_source", ""))
+        for family in sorted(expected | predicted):
+            bucket = per_sink_family.setdefault(
+                family,
+                {
+                    "sampled_files": 0,
+                    "labeled_files": 0,
+                    "tp": 0,
+                    "fp": 0,
+                    "fn": 0,
+                },
+            )
+            bucket["sampled_files"] += 1
+            if expected:
+                bucket["labeled_files"] += 1
+
+            if family in expected and family in predicted:
+                bucket["tp"] += 1
+            elif family in expected:
+                bucket["fn"] += 1
+            elif family in predicted and label_source != "vendor-unlabeled":
+                bucket["fp"] += 1
+
+    for bucket in per_sink_family.values():
+        bucket.update(_metrics(bucket["tp"], bucket["fp"], bucket["fn"]))
+
+    sink_summary = {
+        "tp": total_tp,
+        "fp": total_fp,
+        "fn": total_fn,
+        **_metrics(total_tp, total_fp, total_fn),
+    }
+    return sink_summary, dict(sorted(per_sink_family.items()))
 
 
 def run_web_wild_harness(
@@ -880,6 +958,13 @@ def run_web_wild_harness(
                 "fn": 0,
                 **_metrics(0, 0, 0),
             },
+            "sink_family_summary": {
+                "tp": 0,
+                "fp": 0,
+                "fn": 0,
+                **_metrics(0, 0, 0),
+            },
+            "per_sink_family": {},
         }
 
     candidates = sorted(candidates, key=lambda x: (x.repo, x.relative_path))
@@ -909,16 +994,40 @@ def run_web_wild_harness(
     fp = sum(item["fp"] for item in sample_reports)
     fn = sum(item["fn"] for item in sample_reports)
     labeled_files = sum(1 for item in sample_reports if item["expected_labels"])
+    total_lines_scanned = sum(int(item.get("lines_scanned", 0) or 0) for item in sample_reports)
+    total_scored_findings = sum(int(item.get("finding_count_scored", 0) or 0) for item in sample_reports)
+    total_clustered_scored_findings = sum(int(item.get("clustered_finding_count_scored", 0) or 0) for item in sample_reports)
+    total_cluster_reduction = max(0, total_scored_findings - total_clustered_scored_findings)
+    cluster_reduction_pct = round((total_cluster_reduction / total_scored_findings * 100.0), 2) if total_scored_findings else 0.0
 
     summary = {
         "sampled_files": len(sample_reports),
         "labeled_files": labeled_files,
         "labeled_candidate_pool": labeled_pool,
+        "total_lines_scanned": total_lines_scanned,
+        "total_findings_scored": total_scored_findings,
+        "total_clustered_findings_scored": total_clustered_scored_findings,
+        "cluster_reduction_count": total_cluster_reduction,
+        "cluster_reduction_pct": cluster_reduction_pct,
+        "raw_noise_quotient": round((total_scored_findings * 1000.0 / total_lines_scanned), 4) if total_lines_scanned else 0.0,
+        "cluster_adjusted_noise_quotient": round((total_clustered_scored_findings * 1000.0 / total_lines_scanned), 4) if total_lines_scanned else 0.0,
         "tp": tp,
         "fp": fp,
         "fn": fn,
         **_metrics(tp, fp, fn),
     }
+    clustering_summary = {
+        "raw_findings": total_scored_findings,
+        "clustered_findings": total_clustered_scored_findings,
+        "reduced_findings": total_cluster_reduction,
+        "reduction_pct": cluster_reduction_pct,
+        "raw_noise_quotient": summary["raw_noise_quotient"],
+        "cluster_adjusted_noise_quotient": summary["cluster_adjusted_noise_quotient"],
+        "noise_improved_or_equal": summary["cluster_adjusted_noise_quotient"] <= summary["raw_noise_quotient"],
+        "gate_ready": total_clustered_scored_findings <= total_scored_findings
+        and summary["cluster_adjusted_noise_quotient"] <= summary["raw_noise_quotient"],
+    }
+    sink_family_summary, per_sink_family = _summarize_sink_families(sample_reports)
 
     report = {
         "seed": seed,
@@ -932,6 +1041,9 @@ def run_web_wild_harness(
         "repos": repo_meta,
         "samples": sample_reports,
         "summary": summary,
+        "clustering_summary": clustering_summary,
+        "sink_family_summary": sink_family_summary,
+        "per_sink_family": per_sink_family,
     }
 
     if not quiet:
@@ -957,8 +1069,23 @@ def run_web_wild_harness(
             f"FP-rate {summary['fp_rate']:.2f}%"
         )
         print(
+            "  Sink families: "
+            f"Recall {sink_family_summary['recall']:.2f}% | "
+            f"Precision {sink_family_summary['precision']:.2f}% | "
+            f"F1 {sink_family_summary['f1']:.2f}% | "
+            f"FP-rate {sink_family_summary['fp_rate']:.2f}%"
+        )
+        print(
             f"  Sampled files: {summary['sampled_files']} "
             f"(labeled in sample: {summary['labeled_files']}, labeled pool: {summary['labeled_candidate_pool']})"
+        )
+        print(
+            f"  Noise: {summary['total_findings_scored']} scored findings ({summary['raw_noise_quotient']:.4f} / kLOC raw), "
+            f"{summary['total_clustered_findings_scored']} clustered incidents ({summary['cluster_adjusted_noise_quotient']:.4f} / kLOC clustered)"
+        )
+        print(
+            f"  Clustering verification: reduced {clustering_summary['reduced_findings']} duplicate findings "
+            f"({clustering_summary['reduction_pct']:.2f}%) | gate-ready={clustering_summary['gate_ready']}"
         )
         print()
 

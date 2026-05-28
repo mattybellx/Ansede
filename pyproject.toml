@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "ansede-static"
-version = "2.3.1"
+version = "2.3.2"
 description = "AST-based SAST for Python and JavaScript — detects IDOR, auth bypass, and ownership flaws that Bandit misses."
 readme = "README.md"
 license = "MIT"
@@ -71,3 +71,9 @@ include = [
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+filterwarnings = [
+    # Suppress SyntaxWarnings from dynamically compiled rule pattern code
+    # (Python 3.13+ warns about invalid escape sequences in test fixture
+    #  code strings compiled by the scanner's ast.parse() calls)
+    "ignore::SyntaxWarning",
+]

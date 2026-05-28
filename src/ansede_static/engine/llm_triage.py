@@ -46,7 +46,7 @@ def _load_llm_memory() -> list[dict[str, Any]]:
             with open(_LLM_MEMORY_PATH, encoding="utf-8") as f:
                 return json.load(f)
     except Exception:
-        pass
+        _log.debug("No LLM memory file found at %s", _LLM_MEMORY_PATH)
     return []
 
 
@@ -248,10 +248,13 @@ def _call_ollama(
     # Strategy 3: Shell pipe (fallback for older setups)
     import subprocess as sp
     import os
+    import shlex
     try:
+        # Use shlex.quote to prevent shell injection from model name
+        safe_model = shlex.quote(model)
         result = sp.run(
-            f'echo "$PROMPT" | ollama run {model}',
-            shell=True, capture_output=True, text=True, timeout=timeout,
+            ["sh", "-c", f'echo "$PROMPT" | ollama {safe_model}'],
+            capture_output=True, text=True, timeout=timeout,
             env={"PROMPT": prompt, **os.environ},
             errors="replace",
         )
@@ -423,7 +426,8 @@ def triage_report(
             ))
             triaged += 1
             if verbose:
-                print(f"  [{new_verdict.name:12s}] {af.finding.cwe:8s} L{af.line} {result.reasoning[:80]}")
+                safe_reasoning = result.reasoning[:80].replace('\n', '').replace('\r', '')
+                _log.info("[%12s] %8s L%d %s", new_verdict.name, af.finding.cwe, af.line, safe_reasoning)
         else:
             # Keep as NEEDS_REVIEW but add LLM reasoning
             updated.append(AuditedFinding(

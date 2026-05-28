@@ -24,6 +24,7 @@ class QualityCase:
     filename: str = ""
     js_backend: str = "auto"
     notes: str = ""
+    guard_family: str = ""
 
 
 QUALITY_CORPUS: tuple[QualityCase, ...] = (
@@ -109,6 +110,7 @@ def delete_post(post_id):
         forbidden_cwes=("CWE-285", "CWE-639"),
         forbidden_rule_ids=("PY-024", "PY-025"),
         notes="Explicit owner guard should suppress route ownership findings.",
+        guard_family="access-control",
     ),
     QualityCase(
         case_id="js-dom-xss-unsafe",
@@ -176,6 +178,7 @@ app.get('/account/profile', requireAuth, (req, res) => {
         forbidden_cwes=("CWE-862",),
         forbidden_rule_ids=("JS-034",),
         notes="Authenticated non-admin route should stay quiet for missing-auth heuristics.",
+        guard_family="access-control",
     ),
     QualityCase(
         case_id="js-open-redirect",
@@ -315,6 +318,7 @@ def login():
         forbidden_cwes=("CWE-307",),
         forbidden_rule_ids=("PY-038",),
         notes="flask_limiter with @limiter.limit should suppress the CWE-307 finding.",
+        guard_family="rate-limit",
     ),
     QualityCase(
         case_id="py-fastapi-no-auth",
@@ -348,5 +352,292 @@ async def list_users(user=Depends(get_current_user)):
 """,
         forbidden_cwes=("CWE-862",),
         notes="FastAPI route with Depends() auth should not trigger missing-auth.",
+        guard_family="access-control",
+    ),
+    QualityCase(
+        case_id="py-auth-none-guard-safe",
+        language="python",
+        filename="auth_none_guard.py",
+        snippet="""
+from flask import Flask, g, abort
+app = Flask(__name__)
+
+@app.get('/admin/users')
+def admin_users():
+    if g.user is None:
+        return abort(401)
+    return list_users()
+""",
+        forbidden_cwes=("CWE-862",),
+        notes="Explicit None-check auth guard should suppress missing-auth findings.",
+        guard_family="auth-guard",
+    ),
+    QualityCase(
+        case_id="js-auth-null-guard-safe",
+        language="javascript",
+        filename="js_auth_null_guard.js",
+        js_backend="structural",
+        snippet="""
+app.get('/admin/users', (req, res) => {
+  if (!req.user) {
+    return res.status(401).send('unauthorized');
+  }
+  res.json(User.findAll());
+});
+""",
+        forbidden_cwes=("CWE-862",),
+        notes="Explicit JS null-user auth guard should suppress missing-auth findings.",
+        guard_family="auth-guard",
+    ),
+    QualityCase(
+        case_id="py-nosql-injection-unsafe",
+        language="python",
+        filename="nosql_unsafe.py",
+        snippet="""
+from flask import request
+from flask import Flask
+import pymongo
+
+app = Flask(__name__)
+client = pymongo.MongoClient()
+db = client['users']
+
+@app.route('/find')
+def find_user():
+    username = request.args.get('user')
+    result = db.users.find({'$where': f'this.username == "{username}"'})
+    return str(list(result))
+""",
+        expected_cwes=("CWE-943",),
+        notes="NoSQL injection via $where with user input should fire CWE-943.",
+        guard_family="shadow-detector",
+    ),
+    QualityCase(
+        case_id="py-debug-traceback-unsafe",
+        language="python",
+        filename="debug_traceback.py",
+        snippet="""
+from flask import Flask
+import traceback
+
+app = Flask(__name__)
+app.debug = True
+
+@app.route('/crash')
+def crash():
+    try:
+        1 / 0
+    except Exception:
+        return traceback.print_exc()
+""",
+        expected_cwes=("CWE-200",),
+        expected_rule_ids=("PY-039",),
+        notes="Debug mode with traceback exposure should fire CWE-200 / PY-039.",
+        guard_family="shadow-detector",
+    ),
+    QualityCase(
+        case_id="js-nosql-injection-unsafe",
+        language="javascript",
+        filename="nosql_unsafe.js",
+        js_backend="auto",
+        snippet="""
+const express = require('express');
+const app = express();
+
+app.post('/search', (req, res) => {
+  const query = { $where: req.body.q };
+  db.collection('items').find(query).toArray((err, items) => {
+    res.json(items);
+  });
+});
+""",
+        expected_cwes=("CWE-943",),
+        expected_rule_ids=("JS-051",),
+        notes="NoSQL injection via $where operator with unsanitized input should fire CWE-943.",
+        guard_family="shadow-detector",
+    ),
+    QualityCase(
+        case_id="py-command-injection-unsafe",
+        language="python",
+        filename="cmd_injection.py",
+        snippet="""
+from flask import request
+import subprocess
+
+def run():
+    user_cmd = request.args.get('cmd')
+    subprocess.call(user_cmd, shell=True)
+""",
+        expected_cwes=("CWE-78",),
+        notes="Shell injection via subprocess with user input should fire CWE-78.",
+        guard_family="shadow-detector",
+    ),
+    QualityCase(
+        case_id="py-eval-injection-unsafe",
+        language="python",
+        filename="eval_injection.py",
+        snippet="""
+from flask import request
+
+def run():
+    user = request.args.get('input')
+    eval(user)
+""",
+        expected_cwes=("CWE-95",),
+        notes="Code injection via eval with user input should fire CWE-95.",
+        guard_family="shadow-detector",
+    ),
+    QualityCase(
+        case_id="py-ssrf-unsafe",
+        language="python",
+        filename="ssrf_unsafe.py",
+        snippet="""
+from flask import request
+import requests
+
+def fetch():
+    url = request.args.get('url')
+    return requests.get(url)
+""",
+        expected_cwes=("CWE-918",),
+        notes="SSRF via requests.get with user input should fire CWE-918.",
+        guard_family="shadow-detector",
+    ),
+    QualityCase(
+        case_id="py-deserialization-unsafe",
+        language="python",
+        filename="deserialize_unsafe.py",
+        snippet="""
+from flask import request
+import pickle
+
+def load():
+    data = request.args.get('data')
+    return pickle.loads(data)
+""",
+        expected_cwes=("CWE-502",),
+        notes="Unsafe deserialization via pickle.loads should fire CWE-502.",
+        guard_family="shadow-detector",
+    ),
+    QualityCase(
+        case_id="py-open-redirect-unsafe",
+        language="python",
+        filename="redirect_unsafe.py",
+        snippet="""
+from flask import request, redirect
+
+def go():
+    next_url = request.args.get('next')
+    return redirect(next_url)
+""",
+        expected_cwes=("CWE-601",),
+        notes="Open redirect via unvalidated next parameter should fire CWE-601.",
+        guard_family="shadow-detector",
+    ),
+    QualityCase(
+        case_id="py-path-traversal-unsafe",
+        language="python",
+        filename="path_traversal.py",
+        snippet="""
+from flask import request
+import os
+
+def read():
+    filename = request.args.get('file')
+    path = os.path.join('/var/data', filename)
+    with open(path) as f:
+        return f.read()
+""",
+        expected_cwes=("CWE-22",),
+        notes="Path traversal via user-controlled filename should fire CWE-22.",
+        guard_family="shadow-detector",
+    ),
+    QualityCase(
+        case_id="py-weak-crypto-unsafe",
+        language="python",
+        filename="weak_crypto.py",
+        snippet="""
+import hashlib
+
+def hash_password(password):
+    return hashlib.md5(password.encode()).hexdigest()
+""",
+        expected_cwes=("CWE-327",),
+        notes="Use of weak hash algorithm MD5 should fire CWE-327.",
+        guard_family="shadow-detector",
+    ),
+    QualityCase(
+        case_id="py-hardcoded-secret-unsafe",
+        language="python",
+        filename="hardcoded_secret.py",
+        snippet="""
+API_SECRET = "sk-live-a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6"
+""",
+        expected_cwes=("CWE-798",),
+        notes="Hardcoded API secret key should fire CWE-798.",
+        guard_family="shadow-detector",
+    ),
+    QualityCase(
+        case_id="js-redos-unsafe",
+        language="javascript",
+        filename="redos_unsafe.js",
+        js_backend="classic",
+        snippet="""
+function validate(input) {
+    const re = new RegExp('^(a+)+b$');
+    return re.test(input);
+}
+""",
+        expected_cwes=("CWE-1333",),
+        notes="ReDoS-vulnerable regex pattern should fire CWE-1333.",
+        guard_family="shadow-detector",
+    ),
+    QualityCase(
+        case_id="py-xss-unsafe",
+        language="python",
+        filename="xss_unsafe.py",
+        snippet="""
+from flask import request, render_template_string
+
+def render():
+    name = request.args.get('name')
+    return render_template_string('<h1>Hello ' + name + '</h1>')
+""",
+        expected_cwes=("CWE-79",),
+        expected_rule_ids=("PY-009",),
+        notes="Reflected XSS via Flask render_template_string with user input should fire CWE-79.",
+        guard_family="shadow-detector",
+    ),
+    QualityCase(
+        case_id="py-cleartext-logging-unsafe",
+        language="python",
+        filename="cleartext_logging.py",
+        snippet="""
+import logging
+from flask import request
+
+def login():
+    password = request.form.get('password')
+    logging.info('Login attempt with password: %s', password)
+""",
+        expected_cwes=("CWE-532",),
+        expected_rule_ids=("PY-033",),
+        notes="Logging sensitive data (password) should fire CWE-532.",
+        guard_family="shadow-detector",
+    ),
+    QualityCase(
+        case_id="py-weak-prng-token",
+        language="python",
+        filename="weak_prng.py",
+        snippet="""
+import random
+
+def generate_token():
+    return str(random.randint(0, 999999))
+""",
+        expected_cwes=("CWE-338",),
+        expected_rule_ids=("PY-018",),
+        notes="Weak PRNG for security token generation should fire CWE-338.",
+        guard_family="shadow-detector",
     ),
 )

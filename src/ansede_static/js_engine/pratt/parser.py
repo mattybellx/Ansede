@@ -158,7 +158,7 @@ class PrattParser:
         if tok.type == TokenType.NULL:
             self.lexer.advance()
             return Literal(None, "null", (tok.line, tok.col))
-        if tok.type in (TokenType.TEMPLATE_HEAD, TokenType.STRING) and tok.raw.startswith("`"):
+        if tok.type == TokenType.TEMPLATE_HEAD:
             return self._parse_template(tok)
 
         # Identifier
@@ -310,10 +310,7 @@ class PrattParser:
         expressions: List["Expr"] = []
         line, col = tok.line, tok.col
 
-        if tok.type == TokenType.STRING:
-            # Simple template with no expressions
-            quasis.append(TemplateElement(value=tok.value, raw=tok.raw, tail=True))
-            return TemplateLiteral(quasis=tuple(quasis), expressions=(), loc=(line, col))
+        self.lexer.advance()  # eat current TEMPLATE_HEAD token
 
         # Template head: `text${
         quasis.append(TemplateElement(value=tok.value, raw=tok.raw, tail=False))
@@ -322,10 +319,29 @@ class PrattParser:
             # Parse expression inside ${ ... }
             expr = self._parse_expr(0)
             expressions.append(expr)
-            # Expect } ... ` — the lexer gives us TEMPLATE_SPAN tokens
-            # In our simplified lexer, backtick resumes after }
-            # We handle this at the statement level
-            break  # Simplified — full template parsing needs state
+
+            if not self._check(TokenType.RBRACE):
+                self._error("unterminated template expression")
+                quasis.append(TemplateElement(value="", raw="", tail=True))
+                break
+
+            self.lexer.advance()  # eat }
+
+            tail_tok = self.lexer.peek()
+            if tail_tok.type == TokenType.STRING and tail_tok.raw.startswith("`"):
+                self.lexer.advance()
+                quasis.append(TemplateElement(
+                    value="" if tail_tok.raw == "`" else tail_tok.value,
+                    raw=tail_tok.raw,
+                    tail=True,
+                ))
+                break
+
+            # Our lexer does not yet emit template middle/tail spans after `}`.
+            # Finalize the literal so callers can keep analyzing the expression
+            # without getting stuck on the opening TEMPLATE_HEAD token.
+            quasis.append(TemplateElement(value="", raw="", tail=True))
+            break
 
         return TemplateLiteral(quasis=tuple(quasis), expressions=tuple(expressions), loc=(line, col))
 
@@ -639,6 +655,13 @@ class PrattParser:
     def _parse_variable_declaration(self, kind: str, in_for: bool = False) -> VariableDeclaration:
         declarations: List[VariableDeclarator] = []
         tok = self.lexer.peek()
+        keyword_type = {
+            "var": TokenType.VAR,
+            "let": TokenType.LET,
+            "const": TokenType.CONST,
+        }.get(kind)
+        if keyword_type is not None and tok.type == keyword_type:
+            tok = self.lexer.advance()
         while True:
             id_tok = self.lexer.advance()
             if id_tok.type != TokenType.IDENTIFIER:

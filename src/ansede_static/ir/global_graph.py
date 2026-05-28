@@ -5,6 +5,7 @@ from functools import lru_cache
 from enum import IntEnum
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
+import sqlite3
 
 from ansede_static._types import TraceFrame
 from ansede_static.cache.sqlite_store import SQLiteStore, stable_hash
@@ -408,7 +409,7 @@ class GlobalGraph:
                     depends_on=(),
                 )
                 self.record_function_summary(summary)
-        except Exception:
+        except (AttributeError, ValueError, TypeError):
             pass
 
     def record_call_dependency(
@@ -474,17 +475,21 @@ class GlobalGraph:
     def save_summaries(self) -> None:
         if not self.function_summaries and not self.reverse_summary_dependencies:
             return
-        with SQLiteStore(self._cache_path) as store:
-            for summary in self.function_summaries.values():
-                cache_key = self._summary_key(summary.file_path, summary.function_name)
-                store.set_json(self._SUMMARY_BUCKET, cache_key, summary.as_dict())
-            for (dep_file, dep_fn), callers in self.reverse_summary_dependencies.items():
-                dep_key = self._summary_key(dep_file, dep_fn)
-                payload = {
-                    "dependency": f"{dep_file}::{dep_fn}",
-                    "callers": [f"{caller_file}::{caller_fn}" for caller_file, caller_fn in sorted(callers)],
-                }
-                store.set_json(self._DEPENDENCY_BUCKET, dep_key, payload)
+        try:
+            with SQLiteStore(self._cache_path) as store:
+                for summary in self.function_summaries.values():
+                    cache_key = self._summary_key(summary.file_path, summary.function_name)
+                    store.set_json(self._SUMMARY_BUCKET, cache_key, summary.as_dict())
+                for (dep_file, dep_fn), callers in self.reverse_summary_dependencies.items():
+                    dep_key = self._summary_key(dep_file, dep_fn)
+                    payload = {
+                        "dependency": f"{dep_file}::{dep_fn}",
+                        "callers": [f"{caller_file}::{caller_fn}" for caller_file, caller_fn in sorted(callers)],
+                    }
+                    store.set_json(self._DEPENDENCY_BUCKET, dep_key, payload)
+        except sqlite3.OperationalError:
+            # Database unavailable — summaries remain in memory only
+            pass
 
     def load_summary(self, file_path: str, function_name: str) -> Optional[FunctionSummary]:
         key = self._summary_tuple_key(file_path, function_name)
@@ -494,9 +499,14 @@ class GlobalGraph:
             return None
 
         cache_key = self._summary_key(file_path, function_name)
-        with SQLiteStore(self._cache_path) as store:
-            payload = store.get_json(self._SUMMARY_BUCKET, cache_key)
-            dep_payload = store.get_json(self._DEPENDENCY_BUCKET, cache_key)
+        try:
+            with SQLiteStore(self._cache_path) as store:
+                payload = store.get_json(self._SUMMARY_BUCKET, cache_key)
+                dep_payload = store.get_json(self._DEPENDENCY_BUCKET, cache_key)
+        except sqlite3.OperationalError:
+            # Database locked or unavailable — fall back to in-memory state
+            self._missing_summary_keys.add(key)
+            return None
         if not isinstance(payload, dict):
             self._missing_summary_keys.add(key)
             return None
@@ -911,20 +921,18 @@ class GlobalGraph:
         paths: List[List[NodeID]] = []
 
         def dfs(current: NodeID, path: List[NodeID], visited: Set[NodeID]) -> None:
-            if len(path) > max_depth:
-                return
-            if current == sink_id:
-                paths.append(list(path))
-                return
-            for edge in self.adjacency.get(current, []):
-                neighbor = edge.target
-                if neighbor in visited:
-                    continue
-                visited.add(neighbor)
-                path.append(neighbor)
-                dfs(neighbor, path, visited)
-                path.pop()
-                visited.remove(neighbor)
+            if len(path) <= max_depth:
+                if current == sink_id:
+                    paths.append(list(path))
+                else:
+                    for edge in self.adjacency.get(current, []):
+                        neighbor = edge.target
+                        if neighbor not in visited:
+                            visited.add(neighbor)
+                            path.append(neighbor)
+                            dfs(neighbor, path, visited)
+                            path.pop()
+                            visited.remove(neighbor)
 
         dfs(source_id, [source_id], {source_id})
         return paths

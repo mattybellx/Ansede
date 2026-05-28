@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
+from typing import Iterable
 
 
 @dataclass
@@ -30,12 +31,75 @@ class CVEEntry:
     snippet: str               # minimal reproducing code
     expected_hit: str          # regex that must match a finding
     severity_min: str = "high" # minimum severity expected
+    sink_family: str = ""      # optional explicit sink-family override for scoreboards
     # Sink-centric coordinate matching (Phase 1 enhancement).
     # When set, a finding whose reported line number matches sink_line is also
     # counted as a True Positive even if expected_hit does not match the text.
     # This prevents false-negatives caused solely by CWE label text mismatch.
     sink_line: int | None = None
     sink_col: int | None = None
+
+
+_SINK_FAMILY_BY_CWE: dict[str, str] = {
+    "CWE-22": "path-traversal",
+    "CWE-78": "command-execution",
+    "CWE-79": "xss-template-injection",
+    "CWE-89": "data-injection",
+    "CWE-90": "data-injection",
+    "CWE-94": "code-execution",
+    "CWE-95": "code-execution",
+    "CWE-98": "code-loading",
+    "CWE-113": "header-injection",
+    "CWE-200": "information-exposure",
+    "CWE-285": "access-control",
+    "CWE-287": "access-control",
+    "CWE-295": "transport-security",
+    "CWE-307": "rate-limit-bruteforce",
+    "CWE-327": "weak-crypto",
+    "CWE-345": "token-trust",
+    "CWE-347": "token-trust",
+    "CWE-352": "csrf",
+    "CWE-377": "race-condition",
+    "CWE-400": "denial-of-service",
+    "CWE-434": "unsafe-upload",
+    "CWE-470": "unsafe-reflection",
+    "CWE-494": "supply-chain-execution",
+    "CWE-502": "unsafe-deserialization",
+    "CWE-601": "open-redirect",
+    "CWE-611": "xxe",
+    "CWE-614": "cookie-session-security",
+    "CWE-639": "access-control",
+    "CWE-732": "permission-misconfiguration",
+    "CWE-798": "hardcoded-secret",
+    "CWE-862": "access-control",
+    "CWE-918": "ssrf",
+    "CWE-942": "cors-misconfiguration",
+    "CWE-943": "data-injection",
+    "CWE-1321": "prototype-pollution",
+    "CWE-1333": "regex-dos",
+}
+
+
+def sink_family_for_cwe(cwe: str | None) -> str:
+    normalized = (cwe or "").strip().upper()
+    if not normalized:
+        return "other"
+    return _SINK_FAMILY_BY_CWE.get(normalized, "other")
+
+
+def entry_sink_family(entry: CVEEntry) -> str:
+    if entry.sink_family:
+        return entry.sink_family.strip().lower()
+    return sink_family_for_cwe(entry.cwe)
+
+
+def sink_families_for_cwes(cwes: Iterable[str | None]) -> tuple[str, ...]:
+    families = {
+        sink_family_for_cwe(cwe)
+        for cwe in cwes
+        if str(cwe or "").strip()
+    }
+    return tuple(sorted(families))
 
 
 CVE_CORPUS: list[CVEEntry] = [
@@ -1652,17 +1716,13 @@ def parse_config():
         description="Third-party API key hardcoded as a module-level constant.",
         snippet="""\
 import stripe
-
-# Vulnerable: API key hardcoded in source code
-STRIPE_SECRET_KEY = "stripe_live_key_placeholder_for_test"
-stripe.api_key = STRIPE_SECRET_KEY
-
-def charge_customer(amount, token):
-    charge = stripe.Charge.create(amount=amount, currency="usd", source=token)
-    return charge
+import os
+stripe.api_key = "sk_live_a1b2c3d4e5f6g7h"
+def charge():
+    stripe.Charge.create(amount=1000)
 """,
         expected_hit=r"CWE-798|hardcoded|API.?key|credential",
-        sink_line=4,
+        sink_line=2,
     ),
 
     # TOCTOU Ã¢â‚¬â€ tempfile.mktemp() (CWE-377)
@@ -1794,6 +1854,621 @@ def render_user_template():
 """,
         expected_hit=r"CWE-94|template|SSTI|jinja",
         sink_line=7,
+    ),
+    # ------------------------------------------------------------------ #
+    # ── Java CVEs ──────────────────────────────────────────────────────
+    # ------------------------------------------------------------------ #
+
+    # Java Command Injection — Runtime.exec via ProcessBuilder (CWE-78)
+    CVEEntry(
+        cve_id="CVE-2024-JAVA-CMD-INJECT-PB",
+        language="java",
+        cwe="CWE-78",
+        description="ProcessBuilder used with unsanitized user input, leading to OS command injection.",
+        snippet="""\
+import java.io.*;
+public class FileManager {
+    public void deleteFile(String filename) throws Exception {
+        ProcessBuilder pb = new ProcessBuilder("rm", "-rf", filename);
+        pb.start();
+    }
+}
+""",
+        expected_hit=r"CWE-78|command.injection|ProcessBuilder",
+        sink_line=4,
+    ),
+
+    # Java Command Injection — Runtime.exec (CWE-78)
+    CVEEntry(
+        cve_id="CVE-2024-JAVA-CMD-INJECT-EXEC",
+        language="java",
+        cwe="CWE-78",
+        description="Runtime.getRuntime().exec() with unsanitized user input.",
+        snippet="""\
+import java.io.*;
+public class AdminPanel {
+    public void execute(String cmd) throws Exception {
+        Runtime.getRuntime().exec(cmd);
+    }
+}
+""",
+        expected_hit=r"CWE-78|command.injection|Runtime",
+        sink_line=4,
+    ),
+
+    # Java SQL Injection — JDBC Statement concatenation (CWE-89)
+    CVEEntry(
+        cve_id="CVE-2024-JAVA-SQLI-JDBC",
+        language="java",
+        cwe="CWE-89",
+        description="SQL injection via Statement.executeQuery() with string concatenation.",
+        snippet="""\
+import java.sql.*;
+public class UserDAO {
+    public void lookup(String username) throws Exception {
+        Statement stmt = DriverManager.getConnection("jdbc:h2:mem:").createStatement();
+        stmt.executeQuery("SELECT * FROM users WHERE name = '" + username + "'");
+    }
+}
+""",
+        expected_hit=r"CWE-89|SQL.injection|executeQuery",
+        sink_line=5,
+    ),
+
+    # Java Path Traversal — File with user input (CWE-22)
+    CVEEntry(
+        cve_id="CVE-2024-JAVA-PATH-TRAV",
+        language="java",
+        cwe="CWE-22",
+        description="Path traversal via java.io.File with unsanitized user-controlled filename.",
+        snippet="""\
+import java.io.*;
+public class FileDownload {
+    public void download(String file) throws Exception {
+        File f = new File("/var/data/" + file);
+        FileInputStream fis = new FileInputStream(f);
+    }
+}
+""",
+        expected_hit=r"CWE-22|path.traversal|File",
+        sink_line=4,
+    ),
+
+    # Java SSRF — HttpURLConnection (CWE-918)
+    CVEEntry(
+        cve_id="CVE-2024-JAVA-SSRF-URL",
+        language="java",
+        cwe="CWE-918",
+        description="SSRF via URL.openConnection() with unsanitized user-controlled URL.",
+        snippet="""\
+import java.net.*;
+import javax.servlet.http.*;
+public class T extends HttpServlet {
+  public void doGet(HttpServletRequest req, HttpServletResponse res) throws Exception {
+    String url = req.getParameter("url");
+    URL u = new URL(url);
+    HttpURLConnection c = (HttpURLConnection)u.openConnection();
+    c.connect();
+  }
+}
+""",
+        expected_hit=r"CWE-918|SSRF|URL",
+        sink_line=6,
+    ),
+
+    # Java Open Redirect — sendRedirect (CWE-601)
+    CVEEntry(
+        cve_id="CVE-2024-JAVA-REDIRECT",
+        language="java",
+        cwe="CWE-601",
+        description="Open redirect via HttpServletResponse.sendRedirect() with unsanitized URL.",
+        snippet="""\
+import javax.servlet.http.*;
+public class T extends HttpServlet {
+  protected void doGet(HttpServletRequest req, HttpServletResponse res) throws Exception {
+    String target = req.getParameter("url");
+    res.sendRedirect(target);
+  }
+}
+""",
+        expected_hit=r"CWE-601|redirect|sendRedirect",
+        severity_min="medium",
+        sink_line=4,
+    ),
+
+    # Java XSS — Response write without encoding (CWE-79)
+    CVEEntry(
+        cve_id="CVE-2024-JAVA-XSS-WRITE",
+        language="java",
+        cwe="CWE-79",
+        description="XSS via response.getWriter().write() with unsanitized user input.",
+        snippet="""\
+import javax.servlet.http.*;
+import java.io.*;
+public class T extends HttpServlet {
+  protected void doGet(HttpServletRequest req, HttpServletResponse res) throws Exception {
+    String name = req.getParameter("name");
+    res.getWriter().write("<h1>Hello " + name + "</h1>");
+  }
+}
+""",
+        expected_hit=r"CWE-79|XSS|cross.site",
+        sink_line=5,
+    ),
+
+    # Java Deserialization — ObjectInputStream (CWE-502)
+    CVEEntry(
+        cve_id="CVE-2024-JAVA-DESER",
+        language="java",
+        cwe="CWE-502",
+        description="Unsafe deserialization via ObjectInputStream.readObject().",
+        snippet="""\
+import java.io.*;
+public class DeserializeServlet extends HttpServlet {
+    protected void doPost(HttpServletRequest req, HttpServletResponse resp) throws Exception {
+        ObjectInputStream ois = new ObjectInputStream(req.getInputStream());
+        Object obj = ois.readObject();
+    }
+}
+""",
+        expected_hit=r"CWE-502|deserialization|readObject",
+        sink_line=4,
+    ),
+
+    # Java Hardcoded Secret (CWE-798)
+    CVEEntry(
+        cve_id="CVE-2024-JAVA-HARDCODE",
+        language="java",
+        cwe="CWE-798",
+        description="Hardcoded API secret key in Java source.",
+        snippet="""\
+public class Config {
+    private static final String secret = "sk-live-a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6";
+    public String get() { return secret; }
+}
+""",
+        expected_hit=r"CWE-798|hardcoded|secret",
+        sink_line=2,
+    ),
+
+    # Java Weak Crypto — MD5 (CWE-327)
+    CVEEntry(
+        cve_id="CVE-2024-JAVA-MD5",
+        language="java",
+        cwe="CWE-327",
+        description="Use of weak MD5 MessageDigest for password hashing.",
+        snippet="""\
+import java.security.*;
+public class PasswordHasher {
+    public String hash(String password) throws Exception {
+        MessageDigest md = MessageDigest.getInstance("MD5");
+        byte[] hash = md.digest(password.getBytes());
+        return new String(hash);
+    }
+}
+""",
+        expected_hit=r"CWE-327|MD5|weak.crypto",
+        sink_line=4,
+    ),
+
+    # ------------------------------------------------------------------ #
+    # ── C# CVEs ────────────────────────────────────────────────────────
+    # ------------------------------------------------------------------ #
+
+    # C# Command Injection — Process.Start (CWE-78)
+    CVEEntry(
+        cve_id="CVE-2024-CS-CMD-INJECT",
+        language="csharp",
+        cwe="CWE-78",
+        description="OS command injection via Process.Start with unsanitized user input.",
+        snippet="""\
+using System.Diagnostics;
+public class CommandHandler {
+    public void Run(string cmd) {
+        Process.Start(cmd);
+    }
+}
+""",
+        expected_hit=r"CWE-78|command|Process.Start",
+        sink_line=4,
+    ),
+
+    # C# SQL Injection — SqlCommand (CWE-89)
+    CVEEntry(
+        cve_id="CVE-2024-CS-SQLI",
+        language="csharp",
+        cwe="CWE-89",
+        description="SQL injection via SqlCommand with string concatenation.",
+        snippet="""\
+using System.Data.SqlClient;
+public class UserRepo {
+    public void Lookup(string username) {
+        var conn = new SqlConnection("Server=localhost;Database=test;");
+        var cmd = new SqlCommand("SELECT * FROM users WHERE name = '" + username + "'", conn);
+        conn.Open();
+        cmd.ExecuteReader();
+    }
+}
+""",
+        expected_hit=r"CWE-89|SQL|SqlCommand",
+        sink_line=5,
+    ),
+
+    # C# Path Traversal — File.ReadAllText (CWE-22)
+    CVEEntry(
+        cve_id="CVE-2024-CS-PATH-TRAV",
+        language="csharp",
+        cwe="CWE-22",
+        description="Path traversal via File.ReadAllText with unsanitized user input.",
+        snippet="""\
+using System.IO;
+public class FileService {
+    public string Read(string filename) {
+        return File.ReadAllText(filename);
+    }
+}
+""",
+        expected_hit=r"CWE-22|path|File",
+        sink_line=3,
+    ),
+
+    # C# SSRF — HttpClient (CWE-918)
+    CVEEntry(
+        cve_id="CVE-2024-CS-SSRF-HTTP",
+        language="csharp",
+        cwe="CWE-918",
+        description="SSRF via HttpClient.GetStringAsync with unsanitized user URL.",
+        snippet="""\
+using System.Net.Http;
+using Microsoft.AspNetCore.Mvc;
+public class ProxyController : Controller {
+  [HttpGet]
+  public async Task<string> Fetch(string url) {
+    var client = new HttpClient();
+    return await client.GetStringAsync(url);
+  }
+}
+""",
+        expected_hit=r"CWE-918|SSRF|HttpClient",
+        sink_line=6,
+    ),
+
+    # C# XSS — Response.Write (CWE-79)
+    CVEEntry(
+        cve_id="CVE-2024-CS-XSS-WRITE",
+        language="csharp",
+        cwe="CWE-79",
+        description="XSS via HttpContext.Response.WriteAsync without encoding.",
+        snippet="""\
+using Microsoft.AspNetCore.Mvc;
+public class XSSController : Controller {
+  [HttpGet]
+  public async Task XSS(string name) {
+    await Response.WriteAsync("<h1>Hello " + name + "</h1>");
+  }
+}
+""",
+        expected_hit=r"CWE-79|XSS|WriteAsync",
+        sink_line=5,
+    ),
+
+    # C# Insecure Deserialization — BinaryFormatter (CWE-502)
+    CVEEntry(
+        cve_id="CVE-2024-CS-DESER",
+        language="csharp",
+        cwe="CWE-502",
+        description="Unsafe deserialization via BinaryFormatter.Deserialize.",
+        snippet="""\
+using System.IO;
+using System.Runtime.Serialization.Formatters.Binary;
+public class DeserializeService {
+    public object Load(Stream stream) {
+        var formatter = new BinaryFormatter();
+        return formatter.Deserialize(stream);
+    }
+}
+""",
+        expected_hit=r"CWE-502|deserialization|BinaryFormatter",
+        sink_line=5,
+    ),
+
+    # C# XXE — XmlDocument (CWE-611)
+    CVEEntry(
+        cve_id="CVE-2024-CS-XXE",
+        language="csharp",
+        cwe="CWE-611",
+        description="XXE via XmlDocument without DTD processing disabled.",
+        snippet="""\
+using System.Xml;
+public class XmlService {
+    public void Parse(string xml) {
+        var doc = new XmlDocument();
+        doc.LoadXml(xml);
+    }
+}
+""",
+        expected_hit=r"CWE-611|XXE|XmlDocument",
+        sink_line=4,
+    ),
+
+    # C# Hardcoded Connection String (CWE-798)
+    CVEEntry(
+        cve_id="CVE-2024-CS-HARDCODE",
+        language="csharp",
+        cwe="CWE-798",
+        description="Hardcoded database connection string with password.",
+        snippet="""\
+public class DbConfig {
+    private string connStr = "Server=localhost;Database=test;User=sa;Password=P@ssw0rd;";
+}
+""",
+        expected_hit=r"CWE-798|hardcoded|Password",
+        sink_line=2,
+    ),
+
+    # ------------------------------------------------------------------ #
+    # ── Go CVEs ────────────────────────────────────────────────────────
+    # ------------------------------------------------------------------ #
+
+    # Go Command Injection — exec.Command (CWE-78)
+    CVEEntry(
+        cve_id="CVE-2024-GO-CMD-INJECT",
+        language="go",
+        cwe="CWE-78",
+        description="OS command injection via exec.Command with user input.",
+        snippet="""\
+package main
+import "os/exec"
+func run(cmd string) {
+    exec.Command("bash", "-c", cmd).Run()
+}
+""",
+        expected_hit=r"CWE-78|command|exec",
+        sink_line=4,
+    ),
+
+    # Go SQL Injection — database/sql with concatenation (CWE-89)
+    CVEEntry(
+        cve_id="CVE-2024-GO-SQLI",
+        language="go",
+        cwe="CWE-89",
+        description="SQL injection via database/sql with string concatenation.",
+        snippet="""\
+package main
+import "database/sql"
+func lookup(username string) {
+    db, _ := sql.Open("mysql", "user:pass@/db")
+    db.Query("SELECT * FROM users WHERE name = '" + username + "'")
+}
+""",
+        expected_hit=r"CWE-89|SQL|sql",
+        sink_line=5,
+    ),
+
+    # Go SSRF — http.Get with user URL (CWE-918)
+    CVEEntry(
+        cve_id="CVE-2024-GO-SSRF",
+        language="go",
+        cwe="CWE-918",
+        description="SSRF via http.Get with unsanitized user URL.",
+        snippet="""\
+package main
+import "net/http"
+func fetch(url string) {
+    resp, _ := http.Get(url)
+    defer resp.Body.Close()
+}
+""",
+        expected_hit=r"CWE-918|SSRF|http.Get",
+        sink_line=3,
+    ),
+
+    # Go Path Traversal — os.Open with user input (CWE-22)
+    CVEEntry(
+        cve_id="CVE-2024-GO-PATH",
+        language="go",
+        cwe="CWE-22",
+        description="Path traversal via os.Open with unsanitized user input.",
+        snippet="""\
+package main
+import "os"
+func read(filename string) {
+    f, _ := os.Open(filename)
+    defer f.Close()
+}
+""",
+        expected_hit=r"CWE-22|path|os.Open",
+        sink_line=3,
+    ),
+
+    # ------------------------------------------------------------------ #
+    # ── More Python CVEs ───────────────────────────────────────────────
+    # ------------------------------------------------------------------ #
+
+    # Python Open Redirect — Flask redirect (CWE-601)
+    CVEEntry(
+        cve_id="CVE-2024-PY-OPEN-REDIRECT",
+        language="python",
+        cwe="CWE-601",
+        description="Open redirect via Flask.redirect with user-controlled URL.",
+        snippet="""\
+from flask import request, redirect
+def login():
+    next_url = request.args.get('next')
+    return redirect(next_url)
+""",
+        expected_hit=r"CWE-601|redirect",
+        sink_line=3,
+    ),
+
+    # Python LDAP Injection — ldap3 (CWE-90)
+    CVEEntry(
+        cve_id="CVE-2024-PY-LDAP",
+        language="python",
+        cwe="CWE-90",
+        description="LDAP injection via unsanitized user input in search filter.",
+        snippet="""\
+import ldap3
+from flask import request
+def lookup():
+    username = request.args.get("user")
+    server = ldap3.Server("ldap://localhost")
+    conn = ldap3.Connection(server)
+    conn.search("dc=example,dc=com", f"(uid={username})")
+""",
+        expected_hit=r"CWE-90|LDAP",
+        sink_line=6,
+    ),
+
+    # Python Log Injection (CWE-117)
+    CVEEntry(
+        cve_id="CVE-2024-PY-LOG-INJECT",
+        language="python",
+        cwe="CWE-117",
+        description="Log injection via unsanitized user input in log message.",
+        snippet="""\
+import logging
+from flask import request
+def handle_login():
+    user = request.args.get('user')
+    logging.info(f'Login attempt from {user}')
+""",
+        expected_hit=r"CWE-117|log.injection",
+        sink_line=5,
+    ),
+
+    # Python Mass Assignment (CWE-915)
+    CVEEntry(
+        cve_id="CVE-2024-PY-MASS-ASSIGN",
+        language="python",
+        cwe="CWE-915",
+        description="Mass assignment via updating all request.form fields on a model.",
+        snippet="""\
+from flask import request, jsonify
+def update_user():
+    data = request.get_json()
+    for key, val in data.items():
+        setattr(current_user, key, val)
+    return jsonify(ok=True)
+""",
+        expected_hit=r"CWE-915|mass.assignment|setattr",
+        severity_min="high",
+        sink_line=4,
+    ),
+
+    # Python Debug Mode (CWE-200)
+    CVEEntry(
+        cve_id="CVE-2024-PY-DEBUG-ON",
+        language="python",
+        cwe="CWE-200",
+        description="Flask app with debug=True enabled in production.",
+        snippet="""\
+from flask import Flask
+app = Flask(__name__)
+app.run(debug=True)
+""",
+        expected_hit=r"CWE-200|debug",
+        sink_line=3,
+    ),
+
+    # Python Hardcoded Secret (CWE-798)
+    CVEEntry(
+        cve_id="CVE-2024-PY-HARDCODE",
+        language="python",
+        cwe="CWE-798",
+        description="Hardcoded AWS secret key in Python source.",
+        snippet="""\
+AWS_SECRET_KEY = "AKIAIOSFODNN7EXAMPLE"
+def get_secret():
+    return AWS_SECRET_KEY
+""",
+        expected_hit=r"CWE-798|hardcoded|secret",
+        sink_line=1,
+    ),
+
+    # ------------------------------------------------------------------ #
+    # ── More JavaScript CVEs ───────────────────────────────────────────
+    # ------------------------------------------------------------------ #
+
+    # JS Prototype Pollution (CWE-1321)
+    CVEEntry(
+        cve_id="CVE-2024-JS-PROTO-POLLUTE",
+        language="javascript",
+        cwe="CWE-1321",
+        description="Prototype pollution via unsafe merge of user input.",
+        snippet="""\
+var user = {};
+var data = JSON.parse(userInput);
+user["__proto__"]["admin"] = true;
+""",
+        expected_hit=r"CWE-1321|prototype.pollution|__proto__",
+        severity_min="high",
+        sink_line=3,
+    ),
+
+    # JS Stored XSS — innerHTML (CWE-79)
+    CVEEntry(
+        cve_id="CVE-2024-JS-STORED-XSS",
+        language="javascript",
+        cwe="CWE-79",
+        description="XSS via innerHTML with unsanitized user-controlled data.",
+        snippet="""\
+function displayComment(comment) {
+    document.getElementById('comments').innerHTML += '<div>' + comment + '</div>';
+}
+""",
+        expected_hit=r"CWE-79|XSS|innerHTML",
+        sink_line=2,
+    ),
+
+    # JS CSRF — mutating route (CWE-352)
+    CVEEntry(
+        cve_id="CVE-2024-JS-CSRF",
+        language="javascript",
+        cwe="CWE-352",
+        description="Express.js POST route without CSRF protection.",
+        snippet="""\
+const express = require('express');
+const app = express();
+app.post('/api/transfer', (req, res) => {
+    transferFunds(req.body.amount, req.body.to);
+    res.send('OK');
+});
+""",
+        expected_hit=r"CWE-352|CSRF",
+        sink_line=4,
+    ),
+
+    # JS Insecure Direct Object Reference (CWE-639)
+    CVEEntry(
+        cve_id="CVE-2024-JS-IDOR",
+        language="javascript",
+        cwe="CWE-639",
+        description="IDOR via user-controllable ID parameter without ownership check.",
+        snippet="""\
+app.get('/api/order/:id', (req, res) => {
+    const order = db.orders.findById(req.params.id);
+    res.json(order);
+});
+""",
+        expected_hit=r"CWE-639|IDOR|access.control",
+        sink_line=2,
+    ),
+
+    # JS ReDoS — catastrophic regex (CWE-1333)
+    CVEEntry(
+        cve_id="CVE-2024-JS-REDOS",
+        language="javascript",
+        cwe="CWE-1333",
+        description="ReDoS via user-controlled input matched against catastrophic regex.",
+        snippet="""\
+function validate(input) {
+    const re = /^(a+)+b$/;
+    return re.test(input);
+}
+""",
+        expected_hit=r"CWE-1333|ReDoS|catastrophic",
+        sink_line=2,
     ),
     # ------------------------------------------------------------------ #
 ]

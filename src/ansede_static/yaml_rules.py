@@ -92,15 +92,15 @@ def _parse_scalar(value: str) -> Any:
     if value.startswith(("'", '"')) and value.endswith(("'", '"')) and len(value) >= 2:
         try:
             return ast.literal_eval(value)
-        except Exception:
+        except (ValueError, SyntaxError):
             return value[1:-1]
     if value.startswith("[") and value.endswith("]"):
         try:
             return json.loads(value)
-        except Exception:
+        except json.JSONDecodeError:
             try:
                 return ast.literal_eval(value)
-            except Exception:
+            except (ValueError, SyntaxError):
                 return value
     lowered = value.lower()
     if lowered == "true":
@@ -245,7 +245,7 @@ def _load_yaml_text(text: str) -> Any:
 def _load_yaml_or_json_text(text: str) -> Any:
     try:
         return json.loads(text)
-    except Exception:
+    except json.JSONDecodeError:
         return _load_yaml_text(text)
 
 
@@ -280,35 +280,46 @@ def _normalise_languages(raw_langs: object, *, is_community: bool) -> tuple[str,
     return tuple(normalized)
 
 
-def _parse_rule_entry(
-    entry: object,
-    *,
+def _parse_confidence(entry: dict[str, Any]) -> float | None:
+    raw_confidence = entry.get("confidence")
+    if raw_confidence is not None:
+        try:
+            val = float(raw_confidence)
+            if 0.0 <= val <= 1.0:
+                return val
+        except (ValueError, TypeError):
+            pass
+    return None
+
+
+def _parse_path_exclude(entry: dict[str, Any]) -> re.Pattern[str] | None:
+    raw_path_exclude = entry.get("path_exclude", "")
+    if isinstance(raw_path_exclude, str) and raw_path_exclude.strip():
+        try:
+            return re.compile(raw_path_exclude.strip())
+        except re.error:
+            pass
+    return None
+
+
+def _parse_common_rule_metadata(
+    entry: dict[str, Any],
     source_label: str,
     default_rule_id: str,
     is_community: bool,
-) -> CustomRule | None:
-    if not isinstance(entry, dict):
-        _log.warning("Rule %r in %s is not a mapping — skipping", default_rule_id, source_label)
-        return None
-
+) -> dict[str, Any] | None:
     rule_id = str(entry.get("id", default_rule_id)).strip()
     title = str(entry.get("title", "")).strip()
-    description = str(entry.get("description", title)).strip()
-    severity_str = str(entry.get("severity", "medium")).strip().lower() or "medium"
-    cwe = str(entry.get("cwe", "")).strip().upper()
-    category = str(entry.get("category", "security")).strip().lower() or "security"
-    suggestion = str(entry.get("suggestion", "")).strip()
-    auto_fix = str(entry.get("auto_fix", "")).strip()
-    maturity = str(entry.get("maturity", "beta")).strip().lower() or "beta"
-    raw_tags = entry.get("tags", [])
-    tags = tuple(str(tag).strip() for tag in (raw_tags if isinstance(raw_tags, list) else []) if str(tag).strip())
-
     if not title:
         _log.warning("Rule %r in %s is missing 'title' — skipping", rule_id, source_label)
         return None
+
+    severity_str = str(entry.get("severity", "medium")).strip().lower() or "medium"
     if severity_str not in _VALID_SEVERITIES:
         _log.warning("Rule %r: invalid severity %r, defaulting to 'medium'", rule_id, severity_str)
         severity_str = "medium"
+
+    cwe = str(entry.get("cwe", "")).strip().upper()
     if cwe and not _is_valid_cwe(cwe):
         _log.warning("Rule %r in %s has invalid CWE %r — skipping", rule_id, source_label, cwe)
         return None
@@ -322,61 +333,43 @@ def _parse_rule_entry(
         _log.warning("Community rule %r in %s is missing a valid 'language' — skipping", rule_id, source_label)
         return None
 
+    confidence = _parse_confidence(entry)
+    path_exclude = _parse_path_exclude(entry)
+
     test_block = entry.get("test", {}) if isinstance(entry.get("test", {}), dict) else {}
     test_positive = str(test_block.get("positive", "")).rstrip()
     test_negative = str(test_block.get("negative", "")).rstrip()
 
-    # Optional per-rule confidence override
-    raw_confidence = entry.get("confidence")
-    confidence: float | None = None
-    if raw_confidence is not None:
-        try:
-            val = float(raw_confidence)
-            if 0.0 <= val <= 1.0:
-                confidence = val
-        except (ValueError, TypeError):
-            pass
+    raw_tags = entry.get("tags", [])
+    tags = tuple(str(tag).strip() for tag in (raw_tags if isinstance(raw_tags, list) else []) if str(tag).strip())
 
-    # Optional path exclusion regex
-    raw_path_exclude = entry.get("path_exclude", "")
-    path_exclude: re.Pattern[str] | None = None
-    if isinstance(raw_path_exclude, str) and raw_path_exclude.strip():
-        try:
-            path_exclude = re.compile(raw_path_exclude.strip())
-        except re.error:
-            pass
+    return {
+        "rule_id": rule_id,
+        "title": title,
+        "description": str(entry.get("description", title)).strip(),
+        "severity": Severity(severity_str),
+        "cwe": cwe,
+        "category": str(entry.get("category", "security")).strip().lower() or "security",
+        "suggestion": str(entry.get("suggestion", "")).strip(),
+        "auto_fix": str(entry.get("auto_fix", "")).strip(),
+        "maturity": str(entry.get("maturity", "beta")).strip().lower() or "beta",
+        "tags": tags,
+        "languages": languages,
+        "confidence": confidence,
+        "path_exclude": path_exclude,
+        "test_positive": test_positive,
+        "test_negative": test_negative,
+    }
 
-    if not is_community:
-        pattern_str = str(entry.get("pattern", "")).strip()
-        if not pattern_str:
-            _log.warning("Rule %r in %s is missing 'pattern' — skipping", rule_id, source_label)
-            return None
-        compiled = _compile_regex(rule_id, pattern_str)
-        if compiled is None:
-            return None
-        return CustomRule(
-            rule_id=rule_id,
-            title=title,
-            description=description,
-            severity=Severity(severity_str),
-            cwe=cwe if cwe.startswith("CWE-") else "",
-            category=category,
-            languages=languages,
-            pattern_type="regex",
-            pattern=compiled,
-            raw_pattern=pattern_str,
-            suggestion=suggestion,
-            auto_fix=auto_fix,
-            maturity=maturity,
-            tags=tags,
-            source_path=source_label,
-            confidence=confidence,
-            path_exclude=path_exclude,
-        )
 
+def _parse_community_pattern(
+    entry: dict[str, Any],
+    meta: dict[str, Any],
+    source_label: str,
+) -> CustomRule | None:
     pattern_data = entry.get("pattern", {})
     if not isinstance(pattern_data, dict):
-        _log.warning("Community rule %r in %s is missing a pattern object — skipping", rule_id, source_label)
+        _log.warning("Community rule %r in %s is missing a pattern object — skipping", meta["rule_id"], source_label)
         return None
 
     pattern_type = str(pattern_data.get("type", "regex")).strip().lower() or "regex"
@@ -389,9 +382,9 @@ def _parse_rule_entry(
     if pattern_type == "regex":
         raw_pattern = str(pattern_data.get("regex", pattern_data.get("pattern", ""))).strip()
         if not raw_pattern:
-            _log.warning("Community rule %r in %s is missing pattern.regex — skipping", rule_id, source_label)
+            _log.warning("Community rule %r in %s is missing pattern.regex — skipping", meta["rule_id"], source_label)
             return None
-        compiled = _compile_regex(rule_id, raw_pattern)
+        compiled = _compile_regex(meta["rule_id"], raw_pattern)
         if compiled is None:
             return None
     elif pattern_type == "ast_structural":
@@ -403,7 +396,7 @@ def _parse_rule_entry(
         if not route_decorator or not missing_decorators:
             _log.warning(
                 "Community rule %r in %s must define pattern.route_decorator and pattern.missing_decorator — skipping",
-                rule_id,
+                meta["rule_id"],
                 source_label,
             )
             return None
@@ -414,37 +407,83 @@ def _parse_rule_entry(
         elif isinstance(raw_sinks, list):
             sink_names = tuple(str(item).strip() for item in raw_sinks if str(item).strip())
         if not sink_names:
-            _log.warning("Community rule %r in %s is missing pattern.sink — skipping", rule_id, source_label)
+            _log.warning("Community rule %r in %s is missing pattern.sink — skipping", meta["rule_id"], source_label)
             return None
     else:
-        _log.warning("Community rule %r in %s uses unsupported pattern type %r — skipping", rule_id, source_label, pattern_type)
+        _log.warning("Community rule %r in %s uses unsupported pattern type %r — skipping", meta["rule_id"], source_label, pattern_type)
         return None
 
     return CustomRule(
-        rule_id=rule_id,
-        title=title,
-        description=description,
-        severity=Severity(severity_str),
-        cwe=cwe,
-        category=category,
-        languages=languages,
+        rule_id=meta["rule_id"],
+        title=meta["title"],
+        description=meta["description"],
+        severity=meta["severity"],
+        cwe=meta["cwe"],
+        category=meta["category"],
+        languages=meta["languages"],
         pattern_type=pattern_type,
         pattern=compiled,
         raw_pattern=raw_pattern,
         route_decorator=route_decorator,
         missing_decorators=missing_decorators,
         sink_names=sink_names,
-        suggestion=suggestion,
-        auto_fix=auto_fix,
-        maturity=maturity,
-        tags=tags,
-        test_positive=test_positive,
-        test_negative=test_negative,
+        suggestion=meta["suggestion"],
+        auto_fix=meta["auto_fix"],
+        maturity=meta["maturity"],
+        tags=meta["tags"],
+        test_positive=meta["test_positive"],
+        test_negative=meta["test_negative"],
         source_path=source_label,
         is_community=True,
-        confidence=confidence,
-        path_exclude=path_exclude,
+        confidence=meta["confidence"],
+        path_exclude=meta["path_exclude"],
     )
+
+
+def _parse_rule_entry(
+    entry: object,
+    *,
+    source_label: str,
+    default_rule_id: str,
+    is_community: bool,
+) -> CustomRule | None:
+    if not isinstance(entry, dict):
+        _log.warning("Rule %r in %s is not a mapping — skipping", default_rule_id, source_label)
+        return None
+
+    meta = _parse_common_rule_metadata(entry, source_label, default_rule_id, is_community)
+    if meta is None:
+        return None
+
+    if not is_community:
+        pattern_str = str(entry.get("pattern", "")).strip()
+        if not pattern_str:
+            _log.warning("Rule %r in %s is missing 'pattern' — skipping", meta["rule_id"], source_label)
+            return None
+        compiled = _compile_regex(meta["rule_id"], pattern_str)
+        if compiled is None:
+            return None
+        return CustomRule(
+            rule_id=meta["rule_id"],
+            title=meta["title"],
+            description=meta["description"],
+            severity=meta["severity"],
+            cwe=meta["cwe"] if meta["cwe"].startswith("CWE-") else "",
+            category=meta["category"],
+            languages=meta["languages"],
+            pattern_type="regex",
+            pattern=compiled,
+            raw_pattern=pattern_str,
+            suggestion=meta["suggestion"],
+            auto_fix=meta["auto_fix"],
+            maturity=meta["maturity"],
+            tags=meta["tags"],
+            source_path=source_label,
+            confidence=meta["confidence"],
+            path_exclude=meta["path_exclude"],
+        )
+
+    return _parse_community_pattern(entry, meta, source_label)
 
 
 def _dedupe_rules(rules: list[CustomRule]) -> list[CustomRule]:
@@ -633,8 +672,43 @@ def _apply_regex_rule(code_lines: list[str], rule: CustomRule) -> list[Finding]:
     return findings
 
 
-def _apply_ast_structural_rule(code_lines: list[str], rule: CustomRule) -> list[Finding]:
+def _apply_ast_structural_rule(code_lines: list[str], rule: CustomRule, code: str = "", language: str = "") -> list[Finding]:
     findings: list[Finding] = []
+    # If language is Python, try using our real AST DSL Matcher for maximum structural accuracy!
+    if language == "python" and code.strip():
+        try:
+            from ansede_static.dsl.bridge import parse_python_to_dsl
+            from ansede_static.dsl.engine import query_ast
+            # Let's map route_decorator & missing_decorators to our schema patterns
+            # Route decorator pattern can be compiled simply below:
+            from ansede_static.dsl.compiler import compile_pattern
+            
+            dsl_tree = parse_python_to_dsl(code)
+            
+            # The rule detects when route_decorator is present,
+            # but NONE of the missing_decorators are within the corresponding tree/scope.
+            # So, find any route decorator call in the AST first.
+            route_pattern = compile_pattern(rule.route_decorator)
+            route_nodes = query_ast(dsl_tree, route_pattern)
+            
+            for rn in route_nodes:
+                # For each API route, verify if any missing_decorator is present within 3 lines or same function body scope
+                # Since we have unified ASTNode representations, let's look up nearby text in AST
+                # Or check children/parent contexts.
+                # A fallback check within nearby lines is robust if matched via structured nodes:
+                lineno = rn.start_line
+                upper_bound = min(len(code_lines), lineno + 8)
+                window = code_lines[lineno - 1:upper_bound]
+                if any(token in window_line for token in rule.missing_decorators for window_line in window):
+                    continue
+                line_text = code_lines[lineno - 1] if lineno <= len(code_lines) else ""
+                if _line_suppresses_rule(line_text, rule):
+                    continue
+                findings.append(_build_custom_finding(rule, line=lineno, line_text=line_text))
+            return findings
+        except (ImportError, AttributeError, ValueError, TypeError, SyntaxError):
+            pass  # Fall back to standard sliding window below if AST parsing fails slightly
+
     if not rule.route_decorator or not rule.missing_decorators:
         return findings
     for lineno, line_text in enumerate(code_lines, start=1):

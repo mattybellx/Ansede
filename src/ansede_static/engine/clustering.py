@@ -180,83 +180,90 @@ def cluster_findings(findings: list[Finding]) -> list[Finding]:
         sorted_group = sorted(group, key=_score_finding, reverse=True)
         representative_map[key] = sorted_group[0]
 
+    # Pre-partition keys by CWE Family to collapse O(N^2) comparison space into isolated family segments
+    partition_reps = defaultdict(list)
+    for key in representative_map:
+        cwe_family, _, _ = key
+        partition_reps[cwe_family].append(key)
+
     # Phase 3: Cross-cluster merging — merge clusters that overlap in
     # (cwe_family, line) even if sink identity differs slightly
     # (e.g., "db.query()" and "db.execute()" for same SQL injection line)
     merged: list[Finding] = []
     used_keys: set[tuple[str, int, str]] = set()
 
-    for key, rep in representative_map.items():
-        if key in used_keys:
-            continue
-
-        cwe_family, region, sink = key
-        overlap_keys: set[tuple[str, int, str]] = set()
-
-        # Find overlapping clusters: same cwe_family, adjacent 3-line regions
-        for other_key in representative_map:
-            if other_key in used_keys or other_key == key:
-                continue
-            other_family, other_region, other_sink = other_key
-
-            if other_family != cwe_family:
-                continue
-            if abs(other_region - region) > 1:
+    for cwe_family, family_keys in partition_reps.items():
+        for key in family_keys:
+            if key in used_keys:
                 continue
 
-            # CWEs must be mergeable
-            if not _are_cwes_mergeable(rep.cwe, representative_map[other_key].cwe):
+            _, region, sink = key
+            overlap_keys: set[tuple[str, int, str]] = set()
+
+            # Find overlapping clusters in identical CWE partition only!
+            for other_key in family_keys:
+                if other_key in used_keys or other_key == key:
+                    continue
+                _, other_region, other_sink = other_key
+
+                if abs(other_region - region) > 1:
+                    continue
+
+                rep = representative_map[key]
+                # CWEs must be mergeable
+                if not _are_cwes_mergeable(rep.cwe, representative_map[other_key].cwe):
+                    continue
+
+                overlap_keys.add(other_key)
+
+            rep = representative_map[key]
+            if not overlap_keys:
+                merged.append(rep)
+                used_keys.add(key)
                 continue
 
-            overlap_keys.add(other_key)
+            # Build merged incident
+            all_findings = [rep] + [representative_map[k] for k in overlap_keys]
+            best = max(all_findings, key=_score_finding)
 
-        if not overlap_keys:
-            merged.append(rep)
+            # Collect all rule IDs and CWEs
+            sibling_rules: set[str] = {f.rule_id for f in all_findings if f.rule_id}
+            all_cwes: set[str] = {f.cwe for f in all_findings if f.cwe}
+
+            # Build merged description
+            if len(all_findings) > 1:
+                sibling_cwes = sorted(c for c in all_cwes if c != best.cwe)
+                merged_desc = best.description
+                if sibling_cwes:
+                    merged_desc += (
+                        f" (also triggers {' / '.join(sibling_cwes)}; "
+                        "merged into single incident)"
+                    )
+            else:
+                merged_desc = best.description
+
+            merged_title = _merge_title(best, len(all_findings) - 1, sibling_rules)
+
+            merged.append(Finding(
+                category=best.category,
+                severity=best.severity,
+                title=merged_title,
+                description=merged_desc,
+                line=best.line,
+                suggestion=best.suggestion,
+                rule_id=best.rule_id,
+                cwe=best.cwe,
+                agent=best.agent,
+                confidence=max(f.confidence for f in all_findings),
+                auto_fix=best.auto_fix,
+                explanation=best.explanation,
+                trace=best.trace,
+                analysis_kind=best.analysis_kind,
+                triggering_code=best.triggering_code,
+            ))
+
             used_keys.add(key)
-            continue
-
-        # Build merged incident
-        all_findings = [rep] + [representative_map[k] for k in overlap_keys]
-        best = max(all_findings, key=_score_finding)
-
-        # Collect all rule IDs and CWEs
-        sibling_rules: set[str] = {f.rule_id for f in all_findings if f.rule_id}
-        all_cwes: set[str] = {f.cwe for f in all_findings if f.cwe}
-
-        # Build merged description
-        if len(all_findings) > 1:
-            sibling_cwes = sorted(c for c in all_cwes if c != best.cwe)
-            merged_desc = best.description
-            if sibling_cwes:
-                merged_desc += (
-                    f" (also triggers {' / '.join(sibling_cwes)}; "
-                    "merged into single incident)"
-                )
-        else:
-            merged_desc = best.description
-
-        merged_title = _merge_title(best, len(all_findings) - 1, sibling_rules)
-
-        merged.append(Finding(
-            category=best.category,
-            severity=best.severity,
-            title=merged_title,
-            description=merged_desc,
-            line=best.line,
-            suggestion=best.suggestion,
-            rule_id=best.rule_id,
-            cwe=best.cwe,
-            agent=best.agent,
-            confidence=max(f.confidence for f in all_findings),
-            auto_fix=best.auto_fix,
-            explanation=best.explanation,
-            trace=best.trace,
-            analysis_kind=best.analysis_kind,
-            triggering_code=best.triggering_code,
-        ))
-
-        used_keys.add(key)
-        used_keys.update(overlap_keys)
+            used_keys.update(overlap_keys)
 
     # Final sort: by line, then severity
     merged.sort(key=lambda f: (f.line or 0, f.severity.sort_key, f.title.lower()))

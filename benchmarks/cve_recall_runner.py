@@ -43,7 +43,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 from ansede_static import scan_code
 from ansede_static._types import Finding
 from ansede_static.engine.triage import apply_active_suppressions
-from benchmarks.cve_corpus import CVE_CORPUS, CVEEntry
+from benchmarks.benchmark_metrics import cluster_adjusted_stats, noise_quotient
+from benchmarks.cve_corpus import CVE_CORPUS, CVEEntry, entry_sink_family, sink_families_for_cwes
 
 
 _SEVERITY_ORDER: dict[str, int] = {
@@ -60,6 +61,7 @@ class CaseScore:
     cve_id: str
     language: str
     expected_cwe: str
+    sink_family: str
     severity_min: str
     passed: bool
     tp: int
@@ -67,6 +69,7 @@ class CaseScore:
     fn: int
     findings_total: int
     findings_considered: int
+    findings_clustered: int
     findings_suppressed: int
     matched_finding_indexes: tuple[int, ...]
     notes: str
@@ -310,10 +313,12 @@ def _score_case_sink_centric(
         "csharp": "cs",
     }.get(entry.language, "txt")
     filename = f"{entry.cve_id}.{extension}"
+    # Use empty filename for JS to avoid triggering workspace-level project indexing
+    scan_filename = "" if entry.language == "javascript" else filename
     result = scan_code(
         entry.snippet,
         language=entry.language,
-        filename=filename,
+        filename=scan_filename,
         js_backend=js_backend if entry.language == "javascript" else "auto",
     )
     if suppression_config is not None:
@@ -357,6 +362,9 @@ def _score_case_sink_centric(
         has_expected_match=has_expected_match,
         config=NoiseSuppressionConfig(),
     )
+    cluster_stats = cluster_adjusted_stats(suppressed_considered, result.lines_scanned)
+    sink_family = entry_sink_family(entry)
+    scored_cwes = {finding.cwe for finding in suppressed_considered if finding.cwe}
 
     # STEP 2: FP calculation - only count findings from unmatched incidents
     # (Findings in matched incidents are "explained" by the incident)
@@ -383,6 +391,7 @@ def _score_case_sink_centric(
         cve_id=entry.cve_id,
         language=entry.language,
         expected_cwe=entry.cwe,
+        sink_family=sink_family,
         severity_min=entry.severity_min,
         passed=bool(tp),
         tp=tp,
@@ -390,6 +399,7 @@ def _score_case_sink_centric(
         fn=fn,
         findings_total=len(result.findings),
         findings_considered=len(suppressed_considered),
+        findings_clustered=int(cluster_stats["clustered_count"]),
         findings_suppressed=max(0, len(considered) - len(suppressed_considered)),
         matched_finding_indexes=tuple(matched_indexes),
         notes=entry.description,
@@ -399,17 +409,27 @@ def _score_case_sink_centric(
         "cve_id": entry.cve_id,
         "language": entry.language,
         "expected_cwe": entry.cwe,
+        "expected_sink_family": sink_family,
         "severity_min": entry.severity_min,
+        "lines_scanned": result.lines_scanned,
         "passed": case_score.passed,
         "tp": tp,
         "fp": fp,
         "fn": fn,
         "predicted_cwes": sorted(fp_cwes),
+        "scored_cwes": sorted(scored_cwes),
+        "predicted_sink_families": list(sink_families_for_cwes(scored_cwes)),
+        "unexpected_sink_families": list(sink_families_for_cwes(fp_cwes)),
         "matched_finding_indexes": list(matched_indexes),
         "matched_incidents": sorted(matched_incidents),
         "findings_total": len(result.findings),
         "findings_considered": len(suppressed_considered),
+        "findings_clustered": int(cluster_stats["clustered_count"]),
         "findings_suppressed": max(0, len(considered) - len(suppressed_considered)),
+        "cluster_reduction_count": int(cluster_stats["reduced_count"]),
+        "cluster_reduction_pct": float(cluster_stats["reduction_pct"]),
+        "considered_noise_quotient": float(cluster_stats["raw_noise_quotient"]),
+        "cluster_adjusted_noise_quotient": float(cluster_stats["cluster_adjusted_noise_quotient"]),
         "suppression": suppression_log,
         "description": entry.description,
         "findings": [f.as_dict(language=result.language) for f in result.sorted_findings()],
@@ -444,6 +464,35 @@ def _metrics(tp: int, fp: int, fn: int) -> dict[str, float]:
     }
 
 
+def _aggregate_case_scores_by(case_scores: list[CaseScore], key_fn) -> dict[str, dict[str, Any]]:
+    buckets: dict[str, dict[str, Any]] = {}
+    for score in case_scores:
+        bucket_key = str(key_fn(score))
+        bucket = buckets.setdefault(
+            bucket_key,
+            {
+                "cases": 0,
+                "passed_cases": 0,
+                "tp": 0,
+                "fp": 0,
+                "fn": 0,
+                "suppressed_findings": 0,
+                "clustered_findings": 0,
+            },
+        )
+        bucket["cases"] += 1
+        bucket["passed_cases"] += 1 if score.passed else 0
+        bucket["tp"] += score.tp
+        bucket["fp"] += score.fp
+        bucket["fn"] += score.fn
+        bucket["suppressed_findings"] += score.findings_suppressed
+        bucket["clustered_findings"] += score.findings_clustered
+
+    for bucket in buckets.values():
+        bucket.update(_metrics(bucket["tp"], bucket["fp"], bucket["fn"]))
+    return dict(sorted(buckets.items()))
+
+
 def run_cve_recall(
     *,
     lang_filter: str | None = None,
@@ -465,6 +514,10 @@ def run_cve_recall(
     total_tp = sum(s.tp for s in case_scores)
     total_fp = sum(s.fp for s in case_scores)
     total_fn = sum(s.fn for s in case_scores)
+    total_findings_considered = sum(s.findings_considered for s in case_scores)
+    total_clustered_findings = sum(s.findings_clustered for s in case_scores)
+    total_lines_scanned = sum(int(payload.get("lines_scanned", 0) or 0) for payload in case_payloads)
+    total_cluster_reduction = max(0, total_findings_considered - total_clustered_findings)
 
     summary = {
         "total_cases": len(case_scores),
@@ -472,8 +525,25 @@ def run_cve_recall(
         "tp": total_tp,
         "fp": total_fp,
         "fn": total_fn,
+        "total_findings_considered": total_findings_considered,
+        "total_clustered_findings": total_clustered_findings,
+        "cluster_reduction_count": total_cluster_reduction,
+        "cluster_reduction_pct": round((total_cluster_reduction / total_findings_considered * 100.0), 2) if total_findings_considered else 0.0,
+        "considered_noise_quotient": noise_quotient(total_findings_considered, total_lines_scanned),
+        "cluster_adjusted_noise_quotient": noise_quotient(total_clustered_findings, total_lines_scanned),
         "suppressed_findings": sum(s.findings_suppressed for s in case_scores),
         **_metrics(total_tp, total_fp, total_fn),
+    }
+    clustering_summary = {
+        "raw_findings": total_findings_considered,
+        "clustered_findings": total_clustered_findings,
+        "reduced_findings": total_cluster_reduction,
+        "reduction_pct": summary["cluster_reduction_pct"],
+        "raw_noise_quotient": summary["considered_noise_quotient"],
+        "cluster_adjusted_noise_quotient": summary["cluster_adjusted_noise_quotient"],
+        "noise_improved_or_equal": summary["cluster_adjusted_noise_quotient"] <= summary["considered_noise_quotient"],
+        "gate_ready": total_clustered_findings <= total_findings_considered
+        and summary["cluster_adjusted_noise_quotient"] <= summary["considered_noise_quotient"],
     }
 
     per_language: dict[str, dict[str, Any]] = {}
@@ -487,14 +557,19 @@ def run_cve_recall(
             "tp": tp,
             "fp": fp,
             "fn": fn,
+            "clustered_findings": sum(s.findings_clustered for s in case_scores if s.language == language),
             "suppressed_findings": sum(s.findings_suppressed for s in case_scores if s.language == language),
             **_metrics(tp, fp, fn),
         }
 
+    per_sink_family = _aggregate_case_scores_by(case_scores, lambda score: score.sink_family)
+
     report = {
         "cases": case_payloads,
         "summary": summary,
+        "clustering_summary": clustering_summary,
         "per_language": per_language,
+        "per_sink_family": per_sink_family,
     }
 
     if not quiet:
@@ -519,6 +594,22 @@ def run_cve_recall(
             f"F1 {summary['f1']:.2f}% | "
             f"FP-rate {summary['fp_rate']:.2f}%"
         )
+        print(
+            f"  Clustered findings: {summary['total_clustered_findings']}/{summary['total_findings_considered']} considered "
+            f"({summary['cluster_adjusted_noise_quotient']:.4f} / kLOC clustered vs {summary['considered_noise_quotient']:.4f} raw)"
+        )
+        print(
+            f"  Clustering verification: reduced {clustering_summary['reduced_findings']} duplicate findings "
+            f"({clustering_summary['reduction_pct']:.2f}%) | gate-ready={clustering_summary['gate_ready']}"
+        )
+        if per_sink_family:
+            print("  Sink-family scoreboard:")
+            for family, bucket in per_sink_family.items():
+                print(
+                    f"    - {family:<24} cases={bucket['cases']:<3} "
+                    f"recall={bucket['recall']:.2f}% precision={bucket['precision']:.2f}% "
+                    f"f1={bucket['f1']:.2f}% fp_rate={bucket['fp_rate']:.2f}%"
+                )
         print(f"  Noise suppression removed {summary['suppressed_findings']} considered findings")
         print(f"  Cases:   {summary['passed_cases']}/{summary['total_cases']} expected-positive CVEs detected")
         print()

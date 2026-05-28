@@ -40,6 +40,11 @@ _SQLI_RE = re.compile(
     r"(?:createQuery|JdbcTemplate\.(?:query|execute)|\w+\.executeQuery)\s*\((?:[^\n;]*\+[^\n;]*|[^\n;]*String\.format\s*\()",
     re.IGNORECASE,
 )
+_CMD_INJECTION_RE = re.compile(r"Runtime\.getRuntime\(\)\.exec\s*\(|new\s+ProcessBuilder\s*\(", re.IGNORECASE)
+_WEAK_CRYPTO_JAVA_RE = re.compile(r"MessageDigest\.getInstance\(\s*[\"']MD5[\"']|MessageDigest\.getInstance\(\s*[\"']SHA1[\"']|[\"']MD5[\"']|[\"']SHA-?1[\"']", re.IGNORECASE)
+_SSRF_JAVA_RE = re.compile(r"URL\s*\([^)]*\)|HttpURLConnection|openConnection\(", re.IGNORECASE)
+_REDIRECT_JAVA_RE = re.compile(r"sendRedirect\s*\(", re.IGNORECASE)
+_XSS_WRITE_JAVA_RE = re.compile(r"\.(?:getWriter|getOutputStream|write)\s*\(\s*.*\+.*\)", re.IGNORECASE)
 _HARDCODED_SECRET_RE = re.compile(
     r"\b(?:password|passwd|pwd|apiKey|apikey|secret|secretKey)\b\s*=\s*\"[^\"]{3,}\"",
     re.IGNORECASE,
@@ -225,6 +230,12 @@ def _has_id_route(method: _JavaMethod) -> bool:
 
 def _has_ownership_guard(body: str) -> bool:
     return bool(_OWNERSHIP_RE.search(body))
+
+
+def _has_tainted_param(method: _JavaMethod) -> bool:
+    """Check if a method has parameters that look user-controlled (request-derived)."""
+    body = method.body
+    return bool(re.search(r"getParameter\(|getQueryString\(|getHeader\(|getInputStream\(", body, re.IGNORECASE))
 
 
 def _collect_tainted_names(method: _JavaMethod) -> set[str]:
@@ -510,6 +521,51 @@ def analyze_java(
                 confidence=0.98, analysis_kind="pattern",
             ))
 
+        if _CMD_INJECTION_RE.search(method.body):
+            findings.append(Finding(
+                category="security", severity=Severity.CRITICAL,
+                title=f"CWE-78: OS command injection in `{method.name}()`",
+                description="Runtime.exec() or ProcessBuilder is invoked — if constructed from user input this allows arbitrary command execution.",
+                line=_first_matching_line(method.body, _CMD_INJECTION_RE, method.start_line),
+                suggestion="Avoid passing user input directly to exec/ProcessBuilder. Use argument arrays and validate the command name against an allowlist.",
+                rule_id="JV-008", cwe="CWE-78", agent="java-analyzer",
+                confidence=0.95, analysis_kind="pattern",
+            ))
+        # JV-009: SSRF via URL.openConnection (CWE-918)
+        if _SSRF_JAVA_RE.search(method.body) and _has_tainted_param(method):
+            findings.append(Finding(
+                category="security", severity=Severity.HIGH,
+                title=f"CWE-918: SSRF via URL connection in `{method.name}()`",
+                description="HttpURLConnection or URL.openConnection() is called with a user-controlled URL parameter, enabling server-side request forgery.",
+                line=_first_matching_line(method.body, _SSRF_JAVA_RE, method.start_line),
+                suggestion="Validate and restrict outbound URLs to an allowlist of trusted hosts.",
+                rule_id="JV-009", cwe="CWE-918", agent="java-analyzer",
+                confidence=0.78, analysis_kind="taint_flow",
+            ))
+
+        # JV-010: Open redirect via sendRedirect (CWE-601)
+        if _REDIRECT_JAVA_RE.search(method.body):
+            findings.append(Finding(
+                category="security", severity=Severity.MEDIUM,
+                title=f"CWE-601: Open redirect via sendRedirect in `{method.name}()`",
+                description="HttpServletResponse.sendRedirect() is called with a URL that may be attacker-influenced.",
+                line=_first_matching_line(method.body, _REDIRECT_JAVA_RE, method.start_line),
+                suggestion="Validate the redirect target against an allowlist or use a mapping instead of user-supplied URLs.",
+                rule_id="JV-010", cwe="CWE-601", agent="java-analyzer",
+                confidence=0.72, analysis_kind="pattern",
+            ))
+
+        # JV-011: XSS via response.getWriter().write (CWE-79)
+        if _XSS_WRITE_JAVA_RE.search(method.body):
+            findings.append(Finding(
+                category="security", severity=Severity.HIGH,
+                title=f"CWE-79: XSS via unencoded response write in `{method.name}()`",
+                description="response.getWriter().write() outputs user-controlled data without HTML encoding.",
+                line=_first_matching_line(method.body, _XSS_WRITE_JAVA_RE, method.start_line),
+                suggestion="Encode output with an HTML encoder or use a template engine that auto-escapes.",
+                rule_id="JV-011", cwe="CWE-79", agent="java-analyzer",
+                confidence=0.7, analysis_kind="pattern",
+            ))
         tainted_names = _collect_tainted_names(method)
         if tainted_names and _FILE_SINK_RE.search(method.body):
             for name in sorted(tainted_names):
@@ -524,6 +580,18 @@ def analyze_java(
                         confidence=0.82, analysis_kind="taint_flow",
                     ))
                     break
+
+        # JV-012: Weak cryptographic algorithm (CWE-327)
+        if _WEAK_CRYPTO_JAVA_RE.search(method.body):
+            findings.append(Finding(
+                category="security", severity=Severity.HIGH,
+                title=f"CWE-327: Weak cryptographic algorithm in `{method.name}()`",
+                description="MD5 or SHA1 MessageDigest is used. These algorithms are cryptographically broken.",
+                line=_first_matching_line(method.body, _WEAK_CRYPTO_JAVA_RE, method.start_line),
+                suggestion="Use a strong hash like SHA-256, SHA-3, or bcrypt/argon2 for password hashing.",
+                rule_id="JV-012", cwe="CWE-327", agent="java-analyzer",
+                confidence=0.95, analysis_kind="pattern",
+            ))
 
     for lineno, line in enumerate(source.splitlines(), start=1):
         if _HARDCODED_SECRET_RE.search(line):

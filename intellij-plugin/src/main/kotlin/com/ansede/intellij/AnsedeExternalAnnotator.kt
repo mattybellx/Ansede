@@ -3,6 +3,7 @@ package com.ansede.intellij
 import com.intellij.lang.annotation.AnnotationHolder
 import com.intellij.lang.annotation.ExternalAnnotator
 import com.intellij.lang.annotation.HighlightSeverity
+import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.editor.Editor
 import com.intellij.openapi.util.TextRange
@@ -49,11 +50,11 @@ class AnsedeExternalAnnotator : ExternalAnnotator<PsiFile, List<AnsedeCliService
         }
 
         return try {
-            val service = AnsedeCliService.getInstance(project)
+            val service = ApplicationManager.getApplication().getService(AnsedeCliService::class.java)
             val code = String(virtualFile.contentsToByteArray())
-            val response = service.scanCode(code, virtualFile.name)
-            if (response.status == "error") {
-                log.warn("Annotator scan failed for ${virtualFile.name}: ${response.message}")
+            val response = service.scanStdin(code, virtualFile.extension ?: "py")
+            if (response.exitCode != 0) {
+                log.warn("Annotator scan failed for ${virtualFile.name}: ${response.stderr}")
                 null
             } else {
                 response.findings

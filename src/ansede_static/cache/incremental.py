@@ -42,6 +42,10 @@ from ansede_static.cache.sqlite_store import SQLiteStore
 _BUCKET_HASH = "file_hashes"
 _BUCKET_FINDINGS = "file_findings"
 _BUCKET_IMPORTS = "file_imports"
+_BUCKET_CLEAN_COUNT = "clean_counts"
+
+# TASK-2.5: A file is "known clean" after this many consecutive zero-finding scans
+_CLEAN_THRESHOLD = 3
 
 
 def _resolve_import_target(module_name: str, current_file: Path, level: int) -> str:
@@ -259,6 +263,27 @@ class IncrementalCache:
         self._store.set_json(_BUCKET_FINDINGS, key, serialisable)
 
     # ------------------------------------------------------------------
+    # Clean-file tracking (TASK-2.5)
+    # ------------------------------------------------------------------
+
+    def mark_clean(self, path: str | Path) -> None:
+        """Increment the consecutive clean-scan counter for *path*."""
+        key = self._normalise(path)
+        count = self._store.get_json(_BUCKET_CLEAN_COUNT, key) or 0
+        self._store.set_json(_BUCKET_CLEAN_COUNT, key, count + 1)
+
+    def mark_dirty(self, path: str | Path) -> None:
+        """Reset the clean-scan counter for *path* (findings were found)."""
+        key = self._normalise(path)
+        self._store.set_json(_BUCKET_CLEAN_COUNT, key, 0)
+
+    def is_clean(self, path: str | Path) -> bool:
+        """Return ``True`` if *path* is known-clean (=3 consecutive zero-finding scans)."""
+        key = self._normalise(path)
+        count = self._store.get_json(_BUCKET_CLEAN_COUNT, key) or 0
+        return count >= _CLEAN_THRESHOLD
+
+    # ------------------------------------------------------------------
     # Bulk invalidation
     # ------------------------------------------------------------------
 
@@ -269,6 +294,7 @@ class IncrementalCache:
         self._store.set_json(_BUCKET_HASH, key, None)
         self._store.set_json(_BUCKET_FINDINGS, key, None)
         self._store.set_json(_BUCKET_IMPORTS, key, None)
+        self._store.set_json(_BUCKET_CLEAN_COUNT, key, None)
 
     def close(self) -> None:
         """Close the backing SQLite connection."""

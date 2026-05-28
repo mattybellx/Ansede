@@ -38,7 +38,7 @@ class SQLiteStore:
         """Open the backing database and initialise the schema if needed."""
         if self._connection is None:
             self.path.parent.mkdir(parents=True, exist_ok=True)
-            self._connection = sqlite3.connect(self.path)
+            self._connection = sqlite3.connect(str(self.path), timeout=30.0)
             self._connection.row_factory = sqlite3.Row
             # Phase 4: WAL mode for concurrent-safe reads during parallel scans
             self._connection.execute("PRAGMA journal_mode=WAL")

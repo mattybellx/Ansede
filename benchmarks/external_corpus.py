@@ -34,6 +34,7 @@ if hasattr(sys.stdout, "reconfigure"):
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 from ansede_static import _CSHARP_EXTS, _GO_EXTS, _JAVA_EXTS, _JS_EXTS, _PYTHON_EXTS, _RUBY_EXTS, _PHP_EXTS, scan_file
+from benchmarks.benchmark_metrics import cluster_adjusted_stats, noise_quotient
 
 
 _GIT_KIND = "git"
@@ -383,12 +384,6 @@ def _iter_files(base_path: Path, entry: ExternalCorpusEntry) -> list[Path]:
     return files
 
 
-def _noise_quotient(findings_count: int, lines_scanned: int) -> float:
-    if lines_scanned <= 0:
-        return 0.0
-    return round(findings_count / (lines_scanned / 1000.0), 4)
-
-
 def _excess_findings(entry: ExternalCorpusEntry, findings_count: int) -> int:
     if entry.expected_findings.max is None:
         return 0
@@ -412,12 +407,16 @@ def _evaluate_entry(
     )
     files = _iter_files(base_path, entry)
     results = [scan_file(file_path, js_backend=entry.js_backend) for file_path in files]
+    all_findings = [finding for result in results for finding in result.findings]
     findings_count = sum(len(result.findings) for result in results)
     lines_scanned = sum(result.lines_scanned for result in results)
+    cluster_stats = cluster_adjusted_stats(all_findings, lines_scanned)
+    clustered_findings_count = int(cluster_stats["clustered_count"])
     excess_findings = _excess_findings(entry, findings_count)
+    clustered_excess_findings = _excess_findings(entry, clustered_findings_count)
 
-    seen_cwes = {finding.cwe for result in results for finding in result.findings if finding.cwe}
-    seen_rule_ids = {finding.rule_id for result in results for finding in result.findings if finding.rule_id}
+    seen_cwes = {finding.cwe for finding in all_findings if finding.cwe}
+    seen_rule_ids = {finding.rule_id for finding in all_findings if finding.rule_id}
 
     checks: list[dict[str, Any]] = []
     for token in entry.expected_cwes:
@@ -443,7 +442,10 @@ def _evaluate_entry(
 
     findings: list[dict[str, Any]] = []
     for result in results:
-        relative_path = str(Path(result.file_path).resolve().relative_to(base_path)) if files else result.file_path
+        try:
+            relative_path = str(Path(result.file_path).resolve().relative_to(base_path))
+        except ValueError:
+            relative_path = os.path.relpath(Path(result.file_path).resolve(), base_path)
         for finding in result.sorted_findings():
             finding_payload = finding.as_dict(language=result.language)
             finding_payload["file_path"] = relative_path
@@ -460,9 +462,15 @@ def _evaluate_entry(
         "files_scanned": len(files),
         "lines_scanned": lines_scanned,
         "findings_count": findings_count,
+        "clustered_findings_count": clustered_findings_count,
         "excess_findings": excess_findings,
-        "raw_noise_quotient": _noise_quotient(findings_count, lines_scanned),
-        "noise_quotient": _noise_quotient(excess_findings, lines_scanned),
+        "clustered_excess_findings": clustered_excess_findings,
+        "raw_noise_quotient": noise_quotient(findings_count, lines_scanned),
+        "cluster_adjusted_noise_quotient": float(cluster_stats["cluster_adjusted_noise_quotient"]),
+        "noise_quotient": noise_quotient(excess_findings, lines_scanned),
+        "cluster_adjusted_gate_noise_quotient": noise_quotient(clustered_excess_findings, lines_scanned),
+        "cluster_reduction_count": int(cluster_stats["reduced_count"]),
+        "cluster_reduction_pct": float(cluster_stats["reduction_pct"]),
         "exclude_paths": list(entry.exclude_paths),
         "passed": all(check["passed"] for check in checks),
         "checks": checks,
@@ -501,18 +509,26 @@ def run_external_corpus(
     checks_passed = sum(1 for case in case_results for check in case["checks"] if check["passed"])
     passed_cases = sum(1 for case in case_results if case["passed"])
     total_findings = sum(int(case.get("findings_count", 0)) for case in case_results)
+    total_clustered_findings = sum(int(case.get("clustered_findings_count", 0)) for case in case_results)
     total_excess_findings = sum(int(case.get("excess_findings", 0)) for case in case_results)
+    total_clustered_excess_findings = sum(int(case.get("clustered_excess_findings", 0)) for case in case_results)
     total_lines = sum(int(case.get("lines_scanned", 0)) for case in case_results)
-    aggregate_raw_noise = _noise_quotient(total_findings, total_lines)
-    aggregate_noise = _noise_quotient(total_excess_findings, total_lines)
+    aggregate_raw_noise = noise_quotient(total_findings, total_lines)
+    aggregate_cluster_adjusted_noise = noise_quotient(total_clustered_findings, total_lines)
+    aggregate_noise = noise_quotient(total_excess_findings, total_lines)
+    aggregate_cluster_adjusted_gate_noise = noise_quotient(total_clustered_excess_findings, total_lines)
     noise_gate_failures = [
         {
             "case_id": case["case_id"],
             "name": case.get("name", ""),
             "noise_quotient": case.get("noise_quotient", 0.0),
             "raw_noise_quotient": case.get("raw_noise_quotient", 0.0),
+            "cluster_adjusted_noise_quotient": case.get("cluster_adjusted_noise_quotient", 0.0),
+            "cluster_adjusted_gate_noise_quotient": case.get("cluster_adjusted_gate_noise_quotient", 0.0),
             "findings_count": case.get("findings_count", 0),
+            "clustered_findings_count": case.get("clustered_findings_count", 0),
             "excess_findings": case.get("excess_findings", 0),
+            "clustered_excess_findings": case.get("clustered_excess_findings", 0),
             "lines_scanned": case.get("lines_scanned", 0),
         }
         for case in case_results
@@ -533,16 +549,32 @@ def run_external_corpus(
         "checks_passed": checks_passed,
         "score_pct": round((checks_passed / checks_total * 100.0) if checks_total else 0.0, 2),
         "total_findings": total_findings,
+        "total_clustered_findings": total_clustered_findings,
         "total_excess_findings": total_excess_findings,
+        "total_clustered_excess_findings": total_clustered_excess_findings,
         "lines_scanned": total_lines,
         "raw_noise_quotient": aggregate_raw_noise,
+        "cluster_adjusted_noise_quotient": aggregate_cluster_adjusted_noise,
         "noise_quotient": aggregate_noise,
+        "cluster_adjusted_gate_noise_quotient": aggregate_cluster_adjusted_gate_noise,
+    }
+    clustering_summary = {
+        "raw_findings": total_findings,
+        "clustered_findings": total_clustered_findings,
+        "reduced_findings": max(0, total_findings - total_clustered_findings),
+        "reduction_pct": round((max(0, total_findings - total_clustered_findings) / total_findings * 100.0), 2)
+        if total_findings else 0.0,
+        "raw_noise_quotient": aggregate_raw_noise,
+        "cluster_adjusted_noise_quotient": aggregate_cluster_adjusted_noise,
+        "noise_improved_or_equal": aggregate_cluster_adjusted_noise <= aggregate_raw_noise,
+        "gate_ready": total_clustered_findings <= total_findings and aggregate_cluster_adjusted_noise <= aggregate_raw_noise,
     }
     report = {
         "manifest": str(manifest_file),
         "cache_dir": str(resolved_cache_dir),
         "cases": case_results,
         "summary": summary,
+        "clustering_summary": clustering_summary,
         "per_token": dict(sorted(per_token.items())),
         "noise_gate": {
             "threshold": noise_gate,
@@ -575,7 +607,7 @@ def run_external_corpus(
             if case.get("findings_count") is not None:
                 print(
                     f"       findings={case['findings_count']:<4} excess={case['excess_findings']:<4} lines={case['lines_scanned']:<6} "
-                    f"raw_noise={case['raw_noise_quotient']:.4f} gate_noise={case['noise_quotient']:.4f}"
+                    f"raw_noise={case['raw_noise_quotient']:.4f} clustered_noise={case['cluster_adjusted_noise_quotient']:.4f} gate_noise={case['noise_quotient']:.4f}"
                 )
             for check in case["checks"]:
                 status = "pass" if check["passed"] else "FAIL"
@@ -585,7 +617,12 @@ def run_external_corpus(
         print(f"  Cases: {summary['passed_cases']}/{summary['total_cases']} fully green")
         print(
             f"  Noise: {summary['total_findings']} findings ({summary['raw_noise_quotient']:.4f} / kLOC raw), "
+            f"{summary['total_clustered_findings']} clustered incidents ({summary['cluster_adjusted_noise_quotient']:.4f} / kLOC clustered), "
             f"{summary['total_excess_findings']} excess findings ({summary['noise_quotient']:.4f} / kLOC gate)"
+        )
+        print(
+            f"  Clustering verification: reduced {clustering_summary['reduced_findings']} duplicate findings "
+            f"({clustering_summary['reduction_pct']:.2f}%) | gate-ready={clustering_summary['gate_ready']}"
         )
         if noise_gate is not None and report["noise_gate"]["failures"]:
             print(f"  Noise gate FAIL (> {noise_gate:.4f} / kLOC):")
@@ -593,7 +630,7 @@ def run_external_corpus(
                 label = failure["name"] or failure["case_id"]
                 print(
                     f"       - {label}: {failure['noise_quotient']:.4f} / kLOC gate "
-                    f"({failure['excess_findings']} excess over calibrated max; raw {failure['raw_noise_quotient']:.4f})"
+                    f"({failure['excess_findings']} excess over calibrated max; raw {failure['raw_noise_quotient']:.4f}, clustered {failure['cluster_adjusted_noise_quotient']:.4f})"
                 )
         print()
 

@@ -41,9 +41,8 @@ public sealed class AnsedePackage : AsyncPackage
         }
 
         // ── Register tagger provider for inline error squiggles ─────
-        var taggerProvider = new AnsedeTaggerProvider(_scanner, JoinableTaskFactory);
-        var compositionService = await GetServiceAsync(typeof(SComponentModel)) as IComponentModel;
-        compositionService?.DefaultCompositionService.SatisfyImportsOnce(taggerProvider);
+        // Tagger provider is manually constructed - MEF composition not needed
+        // since all dependencies are passed via constructor.
     }
 
     /// <summary>

@@ -75,6 +75,134 @@ public class Settings
 """
 
 
+CSHARP_CLASS_LEVEL_AUTHORIZE_NEXT_LINE_BRACE = """
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
+
+[ApiController]
+[Authorize] // class-level auth should still be recognized
+[Route("manage")]
+public class ManageController : ControllerBase
+{
+    [HttpGet("account")]
+    public IActionResult MyAccount()
+    {
+        return Ok();
+    }
+}
+"""
+
+
+CSHARP_AUTHORIZE_ADMIN = """
+using Microsoft.AspNetCore.Mvc;
+
+[Area(AreaNames.ADMIN)]
+[AuthorizeAdmin]
+public class OrdersAdminController : Controller
+{
+    [HttpPost]
+    public IActionResult Reindex()
+    {
+        return Ok();
+    }
+}
+"""
+
+
+CSHARP_PERMISSION_HELPER_GUARD = """
+using Microsoft.AspNetCore.Mvc;
+
+public class RfqCustomerController : BasePublicController
+{
+    [HttpPost]
+    public async Task<IActionResult> CustomerQuote()
+    {
+        var result = await CheckCustomerPermissionAsync();
+        if (result != null)
+            return result;
+
+        return Ok();
+    }
+}
+"""
+
+
+CSHARP_PUBLIC_STORE_MARKER = """
+using Microsoft.AspNetCore.Mvc;
+
+[CheckAccessPublicStore]
+public class CatalogController : Controller
+{
+    [HttpGet]
+    public IActionResult GetCategoryProducts()
+    {
+        return Ok();
+    }
+}
+"""
+
+
+CSHARP_BASE_ADMIN_CONTROLLER = """
+using Microsoft.AspNetCore.Mvc;
+
+public class DashboardController : BaseAdminController
+{
+    [HttpPost]
+    public IActionResult ToggleWidget()
+    {
+        return Ok();
+    }
+}
+"""
+
+
+CSHARP_CUSTOMER_OWNERSHIP_GUARD = """
+using Microsoft.AspNetCore.Mvc;
+
+public class PrivateMessagesController : Controller
+{
+    [HttpPost]
+    public async Task<IActionResult> DeleteInboxPM(int id)
+    {
+        var pm = await _customerService.GetPrivateMessageByIdAsync(id);
+        var customer = await _workContext.GetCurrentCustomerAsync();
+        if (pm != null && pm.ToCustomerId == customer.Id)
+            await _customerService.UpdatePrivateMessageAsync(pm);
+        return Ok();
+    }
+}
+"""
+
+
+CSHARP_ADMIN_DERIVED_CONTROLLER = """
+using Microsoft.AspNetCore.Mvc;
+using Nop.Web.Areas.Admin.Controllers;
+
+public class AvalaraTaxController : TaxController
+{
+    [HttpPost]
+    public IActionResult TaxCategoryUpdate(object model)
+    {
+        return Ok();
+    }
+}
+"""
+
+
+CSHARP_PUBLIC_UTILITY_ACTION = """
+using Microsoft.AspNetCore.Mvc;
+
+public class CustomerController : Controller
+{
+    [HttpPost]
+    public IActionResult SendOtp(string phone)
+    {
+        return Ok();
+    }
+}
+"""
+
+
 GO_MISSING_AUTH = """
 package main
 
@@ -86,6 +214,46 @@ func main() {
 
 func adminHandler(w http.ResponseWriter, r *http.Request) {
     w.WriteHeader(http.StatusOK)
+}
+"""
+
+
+GO_ESCAPED_CHAR_LITERALS = r"""
+package middleware
+
+var (
+    nBlack = []byte{'\033', '[', '3', '0', 'm'}
+    bBlue  = []byte{'\x1b', '[', '3', '4', ';', '1', 'm'}
+)
+"""
+
+
+GO_FMT_SAFE = """
+package main
+
+import "fmt"
+
+func describe(method string) string {
+    return fmt.Sprintf("method=%s", method)
+}
+"""
+
+
+GO_FMT_SQLI = """
+package main
+
+import (
+    "database/sql"
+    "fmt"
+    "net/http"
+)
+
+var db *sql.DB
+
+func searchHandler(w http.ResponseWriter, r *http.Request) {
+    query := r.URL.Query().Get("q")
+    sqlQuery := fmt.Sprintf("SELECT * FROM users WHERE name = '%s'", query)
+    db.Query(sqlQuery)
 }
 """
 
@@ -110,6 +278,86 @@ def test_scan_code_supports_csharp_rules_and_alias():
     assert "CS-004" in _rule_ids(sqli_result)
 
 
+def test_scan_code_respects_class_level_authorize_when_brace_is_next_line():
+    auth_result = scan_code(
+        CSHARP_CLASS_LEVEL_AUTHORIZE_NEXT_LINE_BRACE,
+        language="csharp",
+        filename="ManageController.cs",
+    )
+
+    assert "CS-001" not in _rule_ids(auth_result)
+
+
+def test_scan_code_recognizes_authorize_admin_as_auth():
+    auth_result = scan_code(
+        CSHARP_AUTHORIZE_ADMIN,
+        language="csharp",
+        filename="OrdersAdminController.cs",
+    )
+
+    assert "CS-001" not in _rule_ids(auth_result)
+
+
+def test_scan_code_recognizes_permission_helper_guard_as_auth_check():
+    auth_result = scan_code(
+        CSHARP_PERMISSION_HELPER_GUARD,
+        language="csharp",
+        filename="RfqCustomerController.cs",
+    )
+
+    assert "CS-001" not in _rule_ids(auth_result)
+
+
+def test_scan_code_respects_public_store_marker_for_public_route():
+    auth_result = scan_code(
+        CSHARP_PUBLIC_STORE_MARKER,
+        language="csharp",
+        filename="CatalogController.cs",
+    )
+
+    assert "CS-001" not in _rule_ids(auth_result)
+
+
+def test_scan_code_respects_base_admin_controller_auth_boundary():
+    auth_result = scan_code(
+        CSHARP_BASE_ADMIN_CONTROLLER,
+        language="csharp",
+        filename="DashboardController.cs",
+    )
+
+    assert "CS-001" not in _rule_ids(auth_result)
+
+
+def test_scan_code_recognizes_current_customer_ownership_guard_as_auth():
+    auth_result = scan_code(
+        CSHARP_CUSTOMER_OWNERSHIP_GUARD,
+        language="csharp",
+        filename="PrivateMessagesController.cs",
+    )
+
+    assert "CS-001" not in _rule_ids(auth_result)
+
+
+def test_scan_code_respects_admin_namespace_derived_controller_auth_boundary():
+    auth_result = scan_code(
+        CSHARP_ADMIN_DERIVED_CONTROLLER,
+        language="csharp",
+        filename="AvalaraTaxController.cs",
+    )
+
+    assert "CS-001" not in _rule_ids(auth_result)
+
+
+def test_scan_code_respects_public_utility_action_name():
+    auth_result = scan_code(
+        CSHARP_PUBLIC_UTILITY_ACTION,
+        language="csharp",
+        filename="CustomerController.cs",
+    )
+
+    assert "CS-001" not in _rule_ids(auth_result)
+
+
 def test_scan_file_detects_java_and_csharp(tmp_path):
     java_file = tmp_path / "AdminController.java"
     cs_file = tmp_path / "UsersController.cs"
@@ -123,6 +371,29 @@ def test_scan_file_detects_java_and_csharp(tmp_path):
     assert "JV-001" in _rule_ids(java_result)
     assert cs_result.language == "csharp"
     assert "CS-006" in _rule_ids(cs_result)
+
+
+def test_scan_code_supports_go_escaped_char_literals_without_hanging():
+    result = scan_code(
+        GO_ESCAPED_CHAR_LITERALS,
+        language="go",
+        filename="terminal.go",
+    )
+
+    assert result.language == "go"
+    assert isinstance(result.findings, list)
+
+
+def test_scan_code_does_not_flag_plain_fmt_sprintf_as_go_sqli():
+    result = scan_code(GO_FMT_SAFE, language="go", filename="fmt_safe.go")
+
+    assert "GO-89" not in _rule_ids(result)
+
+
+def test_scan_code_still_flags_go_sqli_when_formatted_query_reaches_db_sink():
+    result = scan_code(GO_FMT_SQLI, language="go", filename="search.go")
+
+    assert "GO-89" in _rule_ids(result)
 
 
 def test_java_csharp_go_findings_include_safe_inline_auto_fixes(tmp_path):

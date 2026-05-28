@@ -478,6 +478,40 @@ class CPGTaintEngine:
     # Propagation logic
     # ------------------------------------------------------------------
 
+    def _propagate_isinstance_guard(
+        self, edge_kind: str, src_node: CPGNode, ast_node: ast.AST, mem: MemoryLayout,
+    ) -> bool:
+        """Handle isinstance type-guard stripping. Returns True if taint was stripped."""
+        if edge_kind != EdgeKind.CFG_BRANCH_TRUE:
+            return False
+        guard = src_node.meta.get("isinstance_guard", False)
+        guarded_var = src_node.meta.get("guarded_var", "")
+        if not guard or not guarded_var:
+            return False
+        mem.mark_tainted(guarded_var, CLEAN)
+        if isinstance(ast_node, ast.Name) and ast_node.id == guarded_var:
+            return True
+        return False
+
+    def _propagate_by_ast_kind(
+        self, ast_node: ast.AST, tstate: TaintState, mem: MemoryLayout,
+        ctx: tuple[int, ...], dst_node: CPGNode,
+    ) -> TaintState | None:
+        """Dispatch propagation based on AST node kind."""
+        if isinstance(ast_node, ast.Call):
+            return self._handle_call(ast_node, tstate, mem, ctx, dst_node)
+        if isinstance(ast_node, ast.Assign):
+            return self._handle_assign_propagation(ast_node, tstate, mem, dst_node)
+        if isinstance(ast_node, ast.AugAssign):
+            return tstate
+        if isinstance(ast_node, ast.Subscript):
+            return self._handle_subscript(ast_node, tstate, mem)
+        if isinstance(ast_node, ast.JoinedStr):
+            return self._handle_fstring(ast_node, tstate, mem)
+        if isinstance(ast_node, ast.BinOp) and isinstance(ast_node.op, ast.Mod):
+            return tstate
+        return None  # signal: use default below
+
     def _propagate(
         self,
         tstate: TaintState,
@@ -491,56 +525,30 @@ class CPGTaintEngine:
         Given a taint state flowing from src_node to dst_node via edge_kind,
         return the resulting taint state (or None if no propagation).
         """
-        # Exception edge — taint still flows into handler (may leak stack trace)
+        # Exception edge — taint still flows into handler
         if edge_kind == EdgeKind.CFG_EXCEPT:
             return tstate
 
+        # isinstance type-guard stripping
         ast_node = dst_node.ast_node
+        if self._propagate_isinstance_guard(edge_kind, src_node, ast_node, mem):
+            return None
 
-        # ── isinstance type-guard stripping ─────────────────────────────
-        if edge_kind == EdgeKind.CFG_BRANCH_TRUE:
-            guard = src_node.meta.get("isinstance_guard", False)
-            guarded_var = src_node.meta.get("guarded_var", "")
-            if guard and guarded_var:
-                # Strip taint from the guarded variable in the true branch
-                mem.mark_tainted(guarded_var, CLEAN)
-                # If the current node uses only that var, result is clean
-                if ast_node and isinstance(ast_node, ast.Name) and ast_node.id == guarded_var:
-                    return None
-
-        # ── DATA_DEPENDENCY edge ─────────────────────────────────────────
+        # Direct data dependency → taint flows
         if edge_kind == EdgeKind.DATA_DEPENDENCY:
-            return tstate  # direct data dependency → taint flows
+            return tstate
 
-        # ── CFG_NEXT / CFG_BRANCH ────────────────────────────────────────
+        # Only CFG edges are handled below
         if edge_kind not in (EdgeKind.CFG_NEXT, EdgeKind.CFG_BRANCH_TRUE, EdgeKind.CFG_BRANCH_FALSE):
             return None
 
         if ast_node is None:
             return tstate
 
-        # ── Call node: check sanitizer / sink / function summary ─────────
-        if isinstance(ast_node, ast.Call):
-            return self._handle_call(ast_node, tstate, mem, ctx, dst_node)
-
-        # ── Assignment: propagate through RHS ────────────────────────────
-        if isinstance(ast_node, ast.Assign):
-            return self._handle_assign_propagation(ast_node, tstate, mem, dst_node)
-
-        # ── Augmented assignment: x += tainted → tainted ────────────────
-        if isinstance(ast_node, ast.AugAssign):
-            return tstate
-
-        # ── Subscript: x = tainted_list[i] ──────────────────────────────
-        if isinstance(ast_node, ast.Subscript):
-            return self._handle_subscript(ast_node, tstate, mem)
-
-        # ── f-string / BinOp / format call ──────────────────────────────
-        if isinstance(ast_node, ast.JoinedStr):
-            return self._handle_fstring(ast_node, tstate, mem)
-
-        if isinstance(ast_node, ast.BinOp) and isinstance(ast_node.op, ast.Mod):
-            return tstate  # %-format: if either side tainted, result tainted
+        # Dispatch by AST kind
+        result = self._propagate_by_ast_kind(ast_node, tstate, mem, ctx, dst_node)
+        if result is not None:
+            return result
 
         # Default: taint flows
         return tstate
@@ -597,6 +605,36 @@ class CPGTaintEngine:
         # Default: taint flows through unknown calls
         return tstate
 
+    def _propagate_assign_rhs(
+        self, value: ast.AST, var_dst: str, tstate: TaintState, mem: MemoryLayout,
+    ) -> TaintState | None:
+        """Propagate taint through the RHS of an assignment to var_dst."""
+        # Alias: x = y
+        if isinstance(value, ast.Name):
+            mem.alias(var_dst, value.id)
+        # Subscript read: x = tainted_list[i]
+        elif isinstance(value, ast.Subscript):
+            if isinstance(value.value, ast.Name) and mem.is_tainted(value.value.id):
+                mem.mark_tainted(var_dst, tstate)
+                return tstate
+        # Collection literal: any tainted element → result tainted
+        elif isinstance(value, (ast.List, ast.Tuple, ast.Set)):
+            for elt in value.elts:
+                if isinstance(elt, ast.Name) and mem.is_tainted(elt.id):
+                    mem.mark_tainted(var_dst, tstate)
+                    return tstate
+        # f-string
+        elif isinstance(value, ast.JoinedStr):
+            result = self._handle_fstring(value, tstate, mem)
+            if result and result.is_tainted():
+                mem.mark_tainted(var_dst, result)
+                return result
+        # BinOp %-format
+        elif isinstance(value, ast.BinOp) and isinstance(value.op, ast.Mod):
+            mem.mark_tainted(var_dst, tstate)
+            return tstate
+        return tstate
+
     def _handle_assign_propagation(
         self,
         node: ast.Assign,
@@ -605,33 +643,8 @@ class CPGTaintEngine:
         cpg_node: CPGNode,
     ) -> Optional[TaintState]:
         """Check if the RHS can produce tainted output; update alias map."""
-        # Alias: x = y  (simple name assignment)
         if len(node.targets) == 1 and isinstance(node.targets[0], ast.Name):
-            var_dst = node.targets[0].id
-            if isinstance(node.value, ast.Name):
-                mem.alias(var_dst, node.value.id)
-            # Subscript read: x = tainted_list[i]
-            elif isinstance(node.value, ast.Subscript):
-                if isinstance(node.value.value, ast.Name):
-                    if mem.is_tainted(node.value.value.id):
-                        mem.mark_tainted(var_dst, tstate)
-                        return tstate
-            # Collection literal: any tainted element → result tainted
-            elif isinstance(node.value, (ast.List, ast.Tuple, ast.Set)):
-                for elt in node.value.elts:
-                    if isinstance(elt, ast.Name) and mem.is_tainted(elt.id):
-                        mem.mark_tainted(var_dst, tstate)
-                        return tstate
-            # f-string
-            elif isinstance(node.value, ast.JoinedStr):
-                result = self._handle_fstring(node.value, tstate, mem)
-                if result and result.is_tainted():
-                    mem.mark_tainted(var_dst, result)
-                    return result
-            # BinOp %-format
-            elif isinstance(node.value, ast.BinOp) and isinstance(node.value.op, ast.Mod):
-                mem.mark_tainted(var_dst, tstate)
-                return tstate
+            return self._propagate_assign_rhs(node.value, node.targets[0].id, tstate, mem)
         return tstate
 
     def _handle_subscript(
@@ -750,41 +763,32 @@ class CPGTaintEngine:
                 return True
         return False
 
+    def _is_call_a_sink(self, call: ast.Call) -> bool:
+        """Check if a call node is a sink, factoring in parameterized SQL."""
+        name = self._call_name(call)
+        if not self._matches_sink(name):
+            return False
+        sink_base = name.split(".")[-1]
+        if sink_base in self._SQL_SINKS and self._is_parameterized_sql_call(call):
+            return False
+        return True
+
+    def _extract_call_from_ast(self, ast_node: ast.AST) -> ast.Call | None:
+        """Extract a Call node from an Expr, Assign, or direct Call wrapper."""
+        if isinstance(ast_node, ast.Expr) and isinstance(ast_node.value, ast.Call):
+            return ast_node.value
+        if isinstance(ast_node, ast.Assign) and isinstance(ast_node.value, ast.Call):
+            return ast_node.value
+        if isinstance(ast_node, ast.Call):
+            return ast_node
+        return None
+
     def _is_sink_node(self, node: CPGNode) -> bool:
         ast_node = node.ast_node
         if ast_node is None:
             return False
-        # Expr wrapping a Call
-        if isinstance(ast_node, ast.Expr) and isinstance(ast_node.value, ast.Call):
-            call = ast_node.value
-            name = self._call_name(call)
-            if self._matches_sink(name):
-                # Suppress SQL sinks that use parameterized queries
-                sink_base = name.split(".")[-1]
-                if sink_base in self._SQL_SINKS and self._is_parameterized_sql_call(call):
-                    return False
-                return True
-            return False
-        # Assign whose RHS is a call that is a sink
-        if isinstance(ast_node, ast.Assign) and isinstance(ast_node.value, ast.Call):
-            call = ast_node.value
-            name = self._call_name(call)
-            if self._matches_sink(name):
-                sink_base = name.split(".")[-1]
-                if sink_base in self._SQL_SINKS and self._is_parameterized_sql_call(call):
-                    return False
-                return True
-            return False
-        # Call node directly
-        if isinstance(ast_node, ast.Call):
-            name = self._call_name(ast_node)
-            if self._matches_sink(name):
-                sink_base = name.split(".")[-1]
-                if sink_base in self._SQL_SINKS and self._is_parameterized_sql_call(ast_node):
-                    return False
-                return True
-            return False
-        return False
+        call = self._extract_call_from_ast(ast_node)
+        return call is not None and self._is_call_a_sink(call)
 
     def _sink_cwe(self, node: CPGNode) -> str:
         ast_node = node.ast_node

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from ansede_static._types import Finding, Severity
-from ansede_static.engine.triage import CWETriageRules
+from ansede_static.engine.triage import CWETriageRules, cluster_findings
 
 
 def _finding(cwe: str, title: str = "finding") -> Finding:
@@ -80,3 +80,27 @@ return post
 """
         res = CWETriageRules.triage_cwe_639(_finding("CWE-639"), snippet, "views.py")
         assert res is None
+
+
+class TestIncidentClusteringInTriage:
+    def test_same_line_related_findings_collapse_to_one_incident(self):
+        findings = [
+            _finding("CWE-862", title="Missing authorization"),
+            Finding(
+                category="security",
+                severity=Severity.HIGH,
+                title="Missing authentication",
+                description="",
+                line=1,
+                suggestion="",
+                cwe="CWE-306",
+                rule_id="TEST-002",
+                agent="tests",
+            ),
+        ]
+
+        clustered = cluster_findings(findings)
+
+        assert len(clustered) == 1
+        assert clustered[0].analysis_kind == "incident-cluster"
+        assert "[+1 related]" in clustered[0].title

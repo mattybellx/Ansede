@@ -267,27 +267,39 @@ def _guess_language_from_suffix(path: Path) -> str | None:
 
 def _iter_supported_files(repo_root: Path) -> list[Path]:
     files: list[Path] = []
-    for child in repo_root.rglob("*"):
-        if not child.is_file():
-            continue
-        if any(part in IGNORE_DIRS for part in child.parts):
-            continue
-        if _supported_file(child):
-            files.append(child)
+    try:
+        for child in repo_root.rglob("*"):
+            try:
+                if not child.is_file():
+                    continue
+            except OSError:
+                continue
+            if any(part in IGNORE_DIRS for part in child.parts):
+                continue
+            if _supported_file(child):
+                files.append(child)
+    except OSError:
+        pass
     return sorted(files)
 
 
 def _repo_source_bytes(repo_root: Path) -> int:
     total = 0
-    for child in repo_root.rglob("*"):
-        if not child.is_file():
-            continue
-        if any(part in IGNORE_DIRS for part in child.parts):
-            continue
-        try:
-            total += child.stat().st_size
-        except OSError:
-            continue
+    try:
+        for child in repo_root.rglob("*"):
+            try:
+                if not child.is_file():
+                    continue
+            except OSError:
+                continue
+            if any(part in IGNORE_DIRS for part in child.parts):
+                continue
+            try:
+                total += child.stat().st_size
+            except OSError:
+                continue
+    except OSError:
+        pass
     return total
 
 
@@ -500,6 +512,54 @@ def _scan_repo(repo: dict[str, Any], repo_root: Path, *, js_backend: str) -> dic
     }
 
 
+def _aggregate_repo_results(repo_reports: list[dict[str, Any]]) -> dict[str, Any]:
+    """Aggregate counters and compute summary statistics from per-repo reports."""
+    verdicts: Counter[str] = Counter()
+    cwes: Counter[str] = Counter()
+    severities: Counter[str] = Counter()
+    rules: Counter[str] = Counter()
+    api_languages: Counter[str] = Counter()
+    file_languages: Counter[str] = Counter()
+    repos_with_findings = repos_with_tp = repos_with_review = 0
+
+    for repo in repo_reports:
+        if int(repo["findings_count"]):
+            repos_with_findings += 1
+        if int(repo["verdicts"].get("TP", 0)):
+            repos_with_tp += 1
+        if int(repo["verdicts"].get("NEEDS_REVIEW", 0)):
+            repos_with_review += 1
+        verdicts.update(repo["verdicts"])
+        cwes.update(repo["cwes"])
+        severities.update(repo["severities"])
+        rules.update(repo["rule_ids"])
+        api_languages.update([str(repo.get("api_language", "") or "unknown")])
+        file_languages.update(repo["file_languages"])
+
+    total_files = sum(int(repo["files_scanned"]) for repo in repo_reports)
+    total_lines = sum(int(repo["lines_scanned"]) for repo in repo_reports)
+    total_findings = sum(int(repo["findings_count"]) for repo in repo_reports)
+    total_clustered = sum(int(repo["clustered_findings_count"]) for repo in repo_reports)
+    total_source_bytes = sum(int(repo["source_bytes"]) for repo in repo_reports)
+
+    return {
+        "verdicts": dict(verdicts),
+        "cwes": dict(cwes),
+        "severities": dict(severities),
+        "rules": dict(rules),
+        "api_languages": dict(api_languages),
+        "file_languages": dict(file_languages),
+        "repos_with_findings": repos_with_findings,
+        "repos_with_tp": repos_with_tp,
+        "repos_with_review": repos_with_review,
+        "total_files": total_files,
+        "total_lines": total_lines,
+        "total_findings": total_findings,
+        "total_clustered": total_clustered,
+        "total_source_bytes": total_source_bytes,
+    }
+
+
 def run_live_random_repo_sample(
     *,
     target_repos: int = 50,
@@ -576,11 +636,8 @@ def run_live_random_repo_sample(
 
     elapsed = round(time.perf_counter() - started, 4)
 
-    total_files = sum(int(repo["files_scanned"]) for repo in repo_reports)
-    total_lines = sum(int(repo["lines_scanned"]) for repo in repo_reports)
-    total_findings = sum(int(repo["findings_count"]) for repo in repo_reports)
-    total_clustered = sum(int(repo["clustered_findings_count"]) for repo in repo_reports)
-    total_source_bytes = sum(int(repo["source_bytes"]) for repo in repo_reports)
+    agg = _aggregate_repo_results(repo_reports)
+
     total_scan_seconds = round(sum(float(repo["scan_seconds"]) for repo in repo_reports), 4)
     total_audit_seconds = round(sum(float(repo["audit_seconds"]) for repo in repo_reports), 4)
 
@@ -588,54 +645,30 @@ def run_live_random_repo_sample(
     repo_scan_times = [float(repo["scan_seconds"]) for repo in repo_reports]
     source_kb_values = [float(repo["source_kb"]) for repo in repo_reports]
 
-    verdicts = Counter()
-    cwes = Counter()
-    severities = Counter()
-    rules = Counter()
-    api_languages = Counter()
-    file_languages = Counter()
-    repos_with_findings = 0
-    repos_with_tp = 0
-    repos_with_review = 0
-
-    for repo in repo_reports:
-        if int(repo["findings_count"]):
-            repos_with_findings += 1
-        if int(repo["verdicts"].get("TP", 0)):
-            repos_with_tp += 1
-        if int(repo["verdicts"].get("NEEDS_REVIEW", 0)):
-            repos_with_review += 1
-        verdicts.update(repo["verdicts"])
-        cwes.update(repo["cwes"])
-        severities.update(repo["severities"])
-        rules.update(repo["rule_ids"])
-        api_languages.update([str(repo.get("api_language", "") or "unknown")])
-        file_languages.update(repo["file_languages"])
-
     summary = {
         "repos_requested": target_repos,
         "repos_scanned": len(repo_reports),
         "repos_failed": len(failures),
-        "files_scanned": total_files,
-        "lines_scanned": total_lines,
-        "source_megabytes": round(total_source_bytes / (1024.0 * 1024.0), 4),
-        "total_findings": total_findings,
-        "total_clustered_findings": total_clustered,
-        "repos_with_findings": repos_with_findings,
-        "repos_with_findings_pct": round((repos_with_findings / len(repo_reports) * 100.0), 2) if repo_reports else 0.0,
-        "repos_with_tp": repos_with_tp,
-        "repos_with_tp_pct": round((repos_with_tp / len(repo_reports) * 100.0), 2) if repo_reports else 0.0,
-        "repos_with_needs_review": repos_with_review,
-        "repos_with_needs_review_pct": round((repos_with_review / len(repo_reports) * 100.0), 2) if repo_reports else 0.0,
-        "raw_noise_quotient": noise_quotient(total_findings, total_lines),
-        "cluster_adjusted_noise_quotient": noise_quotient(total_clustered, total_lines),
-        "cluster_reduction_pct": round(((total_findings - total_clustered) / total_findings * 100.0), 2) if total_findings else 0.0,
+        "files_scanned": agg["total_files"],
+        "lines_scanned": agg["total_lines"],
+        "source_megabytes": round(agg["total_source_bytes"] / (1024.0 * 1024.0), 4),
+        "total_findings": agg["total_findings"],
+        "total_clustered_findings": agg["total_clustered"],
+        "repos_with_findings": agg["repos_with_findings"],
+        "repos_with_findings_pct": round((agg["repos_with_findings"] / len(repo_reports) * 100.0), 2) if repo_reports else 0.0,
+        "repos_with_tp": agg["repos_with_tp"],
+        "repos_with_tp_pct": round((agg["repos_with_tp"] / len(repo_reports) * 100.0), 2) if repo_reports else 0.0,
+        "repos_with_needs_review": agg["repos_with_review"],
+        "repos_with_needs_review_pct": round((agg["repos_with_review"] / len(repo_reports) * 100.0), 2) if repo_reports else 0.0,
+        "raw_noise_quotient": noise_quotient(agg["total_findings"], agg["total_lines"]),
+        "cluster_adjusted_noise_quotient": noise_quotient(agg["total_clustered"], agg["total_lines"]),
+        "cluster_reduction_pct": round(((agg["total_findings"] - agg["total_clustered"]) / agg["total_findings"] * 100.0), 2) if agg["total_findings"] else 0.0,
         "wall_clock_seconds": elapsed,
         "pure_scan_seconds": total_scan_seconds,
         "pure_audit_seconds": total_audit_seconds,
         "repos_per_minute": round((len(repo_reports) / elapsed) * 60.0, 4) if elapsed else 0.0,
-        "files_per_second": round(total_files / elapsed, 4) if elapsed else 0.0,
-        "kloc_per_second": round((total_lines / 1000.0) / elapsed, 4) if elapsed else 0.0,
+        "files_per_second": round(agg["total_files"] / elapsed, 4) if elapsed else 0.0,
+        "kloc_per_second": round((agg["total_lines"] / 1000.0) / elapsed, 4) if elapsed else 0.0,
         "median_repo_seconds": _median(repo_times),
         "mean_repo_seconds": _mean(repo_times),
         "median_scan_seconds": _median(repo_scan_times),

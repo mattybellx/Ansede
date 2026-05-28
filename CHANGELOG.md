@@ -3,6 +3,24 @@
 All notable changes to ansede-static are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [2.3.2] — 2026-05-28
+
+### Fixed — Stability & False Positives
+- **scan_file JS hang** — Root cause identified and fixed: `build_js_project_index()` with a full Windows path triggered `os.walk()` on the entire project. Now uses basename only, eliminating workspace-graph scanning on single-file scans.
+- **SQLite timeout** — Added `timeout=30.0` to `sqlite3.connect()` and graceful `try/except` around GlobalGraph cache operations. Prevents hangs on locked/corrupted `.ansede/cache.db`.
+- **External corpus path bug** — `relative_to()` ValueError in `benchmarks/external_corpus.py` fixed with `os.path.relpath()` fallback.
+- **Added skip patterns** — `tests/`, `benchmarks/`, `tmp/`, `webapp/`, `internet_code_samples/` added to CLI exclude list to prevent false positives when scanning the project repo itself.
+- **SyntaxWarnings suppressed** — 7 `invalid escape sequence` warnings (Python 3.13+) from dynamically compiled rule patterns suppressed via pytest `filterwarnings`.
+
+### Added — Performance & API
+- **Rust fast-path for Python** — `analyze_python()` now uses Rust Tree-sitter pre-check to skip trivially clean files (no calls, imports, assignments, class/fn defs).
+- **`scan_files()` batch API** — New public function accepts multiple paths with optional parallel workers, sharing a single GlobalGraph and rule cache across all files.
+- **JSON/HTML timeout guards** — ThreadPoolExecutor 60s timeout with classic-backend fallback for JS analysis.
+
+### Changed
+- **README.md** — Complete rewrite: shorter, cleaner, professional.
+- **Version bumped to 2.3.2**.
+
 ## [2.3.1] — 2026-05-26
 
 ### Changed — Honest Metrics & Documentation Overhaul

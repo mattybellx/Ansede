@@ -7,6 +7,8 @@ from ansede_static._types import AnalysisResult, Finding, Severity
 from ansede_static.cli import (
     _apply_auto_fixes,
     _artifact_suffix,
+    _build_cross_language_execution,
+    _cross_language_results_from_paths,
     _collect_files,
     _collect_entropy_files,
     _default_output_filename,
@@ -21,6 +23,7 @@ from ansede_static.cli import (
     _rule_catalog_output_path,
     _resolve_output_path,
     _resolve_workspace_relative_path,
+    _should_skip_file,
     _write_output_artifact,
     build_parser,
 )
@@ -319,3 +322,133 @@ def test_collect_entropy_files_includes_markdown_and_env(tmp_path):
     assert readme in collected
     assert env_file in collected
     assert script not in collected
+
+
+def test_build_parser_accepts_cross_language_and_auto_rule_flags():
+    args = build_parser().parse_args(["--cross-language", "--auto-rule", "--apply-auto-rules"])
+
+    assert args.cross_language is True
+    assert args.auto_rule is True
+    assert args.apply_auto_rules is True
+
+
+def test_should_skip_file_rejects_minified_and_large_assets(tmp_path):
+    minified = tmp_path / "bundle.min.js"
+    minified.write_text("console.log('x')\n", encoding="utf-8")
+    skip_minified, reason_minified = _should_skip_file(minified)
+
+    huge = tmp_path / "huge.js"
+    huge.write_text("a" * (1024 * 500 + 10), encoding="utf-8")
+    skip_huge, reason_huge = _should_skip_file(huge)
+
+    assert skip_minified is True
+    assert "minified" in reason_minified
+    assert skip_huge is True
+    assert "large file" in reason_huge
+
+
+def test_collect_files_skips_declaration_and_minified_sources(tmp_path):
+    src = tmp_path / "src"
+    src.mkdir()
+    normal = src / "app.ts"
+    normal.write_text("export const ok = true\n", encoding="utf-8")
+    declaration = src / "types.d.ts"
+    declaration.write_text("declare const something: string\n", encoding="utf-8")
+    minified = src / "bundle.min.js"
+    minified.write_text("console.log('min')\n", encoding="utf-8")
+
+    collected = _collect_files([src], [])
+
+    assert normal in collected
+    assert declaration not in collected
+    assert minified not in collected
+
+
+def test_build_cross_language_execution_returns_graph_stats(tmp_path):
+    (tmp_path / "app.py").write_text(
+        "@app.get('/api/users/{user_id}')\n"
+        "def users(user_id):\n"
+        "    return {'ok': user_id}\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "api.js").write_text(
+        "function renderUser() {\n"
+        "  fetch('/api/users/${userId}')\n"
+        "  document.body.innerHTML = '<div>' + userId + '</div>'\n"
+        "}\n",
+        encoding="utf-8",
+    )
+
+    execution = _build_cross_language_execution(tmp_path)
+
+    assert execution["enabled"] is True
+    assert execution["status"] == "graph-built"
+    assert execution["stats"]["languages"]["python"] >= 1
+    assert execution["stats"]["languages"]["javascript"] >= 1
+    assert execution["taint_paths_found"] >= 1
+    assert execution["sample_taint_paths"]
+
+
+def test_cross_language_results_from_paths_builds_reportable_finding():
+    results = _cross_language_results_from_paths([
+        {
+            "source_file": "C:/repo/app.py",
+            "source_line": 3,
+            "sink_file": "C:/repo/ui.js",
+            "sink_line": 8,
+            "sink_name": "innerHTML",
+            "languages": ["python", "javascript"],
+            "confidence": 0.88,
+        }
+    ])
+
+    assert len(results) == 1
+    assert results[0].file_path == "C:/repo/ui.js"
+    assert results[0].findings[0].rule_id == "XL-001"
+    assert results[0].findings[0].cwe == "CWE-79"
+
+
+def test_cross_language_results_from_paths_classifies_code_execution_sink():
+    results = _cross_language_results_from_paths([
+        {
+            "source_file": "C:/repo/app.py",
+            "source_line": 3,
+            "sink_file": "C:/repo/ui.js",
+            "sink_line": 8,
+            "sink_name": "eval",
+            "sink_family": "code_execution",
+            "languages": ["python", "javascript"],
+            "confidence": 0.91,
+        }
+    ])
+
+    assert len(results) == 1
+    finding = results[0].findings[0]
+    assert finding.rule_id == "XL-002"
+    assert finding.cwe == "CWE-94"
+    assert finding.severity == Severity.CRITICAL
+    assert "code-execution sink" in finding.trace[-1].label
+
+
+def test_parse_timeout_flag_is_accepted():
+    """TASK-2.2: --timeout-per-file CLI flag should parse correctly."""
+    from ansede_static.cli import build_parser
+    args = build_parser().parse_args(["--timeout-per-file", "15.0", "src"])
+    assert args.timeout_per_file == 15.0
+
+
+def test_incremental_flag_is_accepted():
+    """TASK-2.6: --incremental and --incremental-sha256 CLI flags should parse correctly."""
+    from ansede_static.cli import build_parser
+    args = build_parser().parse_args(["--incremental", "src"])
+    assert args.incremental is True
+
+    args2 = build_parser().parse_args(["--incremental-sha256", "src"])
+    assert args2.incremental_sha256 is True
+
+
+def test_profile_flag_is_accepted():
+    """TASK-0.2: --profile CLI flag should parse correctly."""
+    from ansede_static.cli import build_parser
+    args = build_parser().parse_args(["--profile", "src"])
+    assert args.profile is True
